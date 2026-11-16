@@ -1,0 +1,267 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { CalendarRange, CheckCircle2, Loader2, Plus, Trash2 } from 'lucide-react';
+
+interface PpdbPeriodRow {
+  id: string;
+  name: string;
+  open_date: string;
+  close_date: string;
+  announcement_date: string | null;
+  quota: number | null;
+  is_active: boolean;
+}
+
+export default function ManajemenPpdbPage() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [periods, setPeriods] = useState<PpdbPeriodRow[]>([]);
+
+  const [form, setForm] = useState({
+    name: 'PPDB Tahun Ajaran 2026/2027',
+    open_date: '2026-01-01',
+    close_date: '2026-07-15',
+    announcement_date: '2026-07-20',
+    quota: 180,
+    is_active: true,
+  });
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  }
+
+  async function loadPeriods() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/cms/ppdb-periods');
+      const data = await res.json();
+      setPeriods(data.periods || []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadPeriods();
+  }, []);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const res = await fetch('/api/cms/ppdb-periods', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || 'Gagal menyimpan periode PPDB.');
+        return;
+      }
+      showToast('Periode pembukaan PPDB berhasil disimpan.');
+      await loadPeriods();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleToggleActive(period: PpdbPeriodRow) {
+    const res = await fetch('/api/cms/ppdb-periods', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: period.id, is_active: !period.is_active }),
+    });
+    if (res.ok) {
+      showToast(
+        !period.is_active
+          ? `Periode "${period.name}" diaktifkan.`
+          : `Periode "${period.name}" dinonaktifkan.`
+      );
+      await loadPeriods();
+    }
+  }
+
+  async function handleDelete(id: string) {
+    const res = await fetch(`/api/cms/ppdb-periods?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (res.ok) {
+      showToast('Periode PPDB dihapus.');
+      await loadPeriods();
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-6xl mx-auto glass-card rounded-3xl p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin" /> Memuat pengaturan periode PPDB...
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-6">
+      {toast && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{toast}</span>
+        </div>
+      )}
+
+      <div className="grid lg:grid-cols-12 gap-6">
+        <form
+          onSubmit={handleCreate}
+          className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-4 h-fit"
+        >
+          <h1 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <Plus className="w-4 h-4 text-emerald-700" /> Atur Periode Pembukaan PPDB
+          </h1>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Nama Periode / Gelombang
+            </label>
+            <input
+              required
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Tanggal Buka
+              </label>
+              <input
+                required
+                type="date"
+                value={form.open_date}
+                onChange={(e) => setForm({ ...form, open_date: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Tanggal Tutup
+              </label>
+              <input
+                required
+                type="date"
+                value={form.close_date}
+                onChange={(e) => setForm({ ...form, close_date: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Tanggal Pengumuman
+              </label>
+              <input
+                type="date"
+                value={form.announcement_date}
+                onChange={(e) => setForm({ ...form, announcement_date: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Kuota Penerimaan
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={form.quota}
+                onChange={(e) => setForm({ ...form, quota: Number(e.target.value) || 1 })}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.is_active}
+              onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+            />
+            <span>Langsung aktifkan sebagai periode berjalan</span>
+          </label>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-2xl text-xs transition"
+          >
+            {saving ? 'Menyimpan...' : 'Simpan Periode PPDB'}
+          </button>
+        </form>
+
+        <div className="lg:col-span-7 glass-card rounded-3xl p-6 space-y-4">
+          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <CalendarRange className="w-4 h-4 text-emerald-700" /> Daftar Periode PPDB (
+            {periods.length})
+          </h2>
+
+          {periods.length === 0 ? (
+            <p className="text-sm text-slate-600">Belum ada periode PPDB yang dikonfigurasi.</p>
+          ) : (
+            <div className="space-y-3">
+              {periods.map((p) => (
+                <div
+                  key={p.id}
+                  className="modular-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-slate-900 text-sm">{p.name}</p>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          p.is_active
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {p.is_active ? 'AKTIF' : 'NONAKTIF'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Buka: {p.open_date} s/d {p.close_date} • Pengumuman:{' '}
+                      {p.announcement_date || '-'} • Kuota: {p.quota ?? '-'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleActive(p)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200 bg-white hover:bg-emerald-50 hover:text-emerald-700 transition"
+                    >
+                      {p.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(p.id)}
+                      className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 transition"
+                      title="Hapus Periode"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

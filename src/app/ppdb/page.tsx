@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import {
   AlertCircle,
   CheckCircle2,
@@ -172,11 +173,19 @@ export default function PpdbPage() {
     <PublicShell>
       <div className="max-w-4xl mx-auto py-10 px-4 space-y-6">
         <div className="glass-card rounded-3xl overflow-hidden">
-          <div className="bg-gradient-to-r from-emerald-700 to-teal-700 text-white p-7">
-            <h1 className="text-2xl font-bold">Penerimaan Peserta Didik Baru (PPDB)</h1>
-            <p className="text-emerald-100 text-sm mt-1">
-              Formulir pendaftaran daring, unggah berkas persyaratan, dan cek status seleksi mandiri.
-            </p>
+          <div className="bg-gradient-to-r from-emerald-700 to-teal-700 text-white p-7 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold">Penerimaan Peserta Didik Baru (PPDB)</h1>
+              <p className="text-emerald-100 text-sm mt-1">
+                Formulir pendaftaran daring, unggah berkas persyaratan, dan cek status seleksi mandiri.
+              </p>
+            </div>
+            <Link
+              href="/ppdb/mutasi"
+              className="text-xs font-semibold bg-white/15 hover:bg-white/25 border border-white/25 px-4 py-2 rounded-xl transition"
+            >
+              Khusus Mutasi Masuk →
+            </Link>
           </div>
 
           <div className="border-b border-slate-200/80 flex bg-white/60">

@@ -161,7 +161,8 @@ export function PublicFooter() {
             Layanan Digital
           </p>
           <ul className="space-y-1.5">
-            <li><Link href="/ppdb" className="hover:text-emerald-700">PPDB Online</Link></li>
+            <li><Link href="/ppdb" className="hover:text-emerald-700">PPDB Siswa Baru</Link></li>
+            <li><Link href="/ppdb/mutasi" className="hover:text-emerald-700">PPDB Mutasi Masuk</Link></li>
             <li><Link href="/kontak" className="hover:text-emerald-700">Pengaduan &amp; FAQ</Link></li>
             <li><Link href="/portal" className="hover:text-emerald-700">Portal Akademik &amp; TU</Link></li>
             <li><Link href="/login" className="hover:text-emerald-700">Login Akun</Link></li>

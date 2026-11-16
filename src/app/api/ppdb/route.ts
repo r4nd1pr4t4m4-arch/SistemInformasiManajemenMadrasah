@@ -26,7 +26,9 @@ const PpdbRegisterSchema = z.object({
   address: z.string().min(4),
   parentName: z.string().min(2),
   parentPhone: z.string().min(6),
-  pathway: z.enum(['REGULER', 'PRESTASI', 'AFIRMASI']).default('REGULER'),
+  pathway: z.enum(['REGULER', 'PRESTASI', 'AFIRMASI', 'MUTASI']).default('REGULER'),
+  targetGrade: z.string().optional().default(''),
+  mutationReason: z.string().optional().default(''),
   documents: z.array(PpdbDocumentInput).optional().default([]),
 });
 
@@ -39,6 +41,20 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
+  const info = searchParams.get('info');
+  const supabase = createSupabaseAdminClient();
+
+  if (info === 'active') {
+    const { data: period } = await supabase
+      .from('ppdb_periods')
+      .select('id, name, open_date, close_date, announcement_date, quota, is_active')
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+
+    return NextResponse.json({ period: period || null });
+  }
+
   const code = searchParams.get('code')?.trim().toUpperCase();
 
   if (!code) {
@@ -47,8 +63,6 @@ export async function GET(request: Request) {
       { status: 400 }
     );
   }
-
-  const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from('ppdb_registrations')
     .select(
@@ -121,7 +135,17 @@ export async function POST(request: Request) {
       activePeriod = createdPeriod;
     }
 
-    const registrationNumber = `PPDB-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+    const prefix = parsed.data.pathway === 'MUTASI' ? 'MUTASI-2026' : 'PPDB-2026';
+    const registrationNumber = `${prefix}-${Math.floor(10000 + Math.random() * 90000)}`;
+    const extraMutationNote =
+      parsed.data.pathway === 'MUTASI'
+        ? [
+            parsed.data.targetGrade ? `Kelas Tujuan: ${parsed.data.targetGrade}` : '',
+            parsed.data.mutationReason ? `Alasan Mutasi: ${parsed.data.mutationReason}` : '',
+          ]
+            .filter(Boolean)
+            .join(' | ')
+        : null;
 
     const { data: inserted, error: insertErr } = await supabase
       .from('ppdb_registrations')
@@ -140,6 +164,7 @@ export async function POST(request: Request) {
         parent_phone: parsed.data.parentPhone,
         pathway: parsed.data.pathway,
         status: 'MENUNGGU_VERIFIKASI',
+        admin_notes: extraMutationNote,
       })
       .select('id, registration_number')
       .single();
