@@ -118,7 +118,7 @@ export default function PortalLayananPage() {
       | 'SURAT_TUGAS'
       | 'LAINNYA',
     letter_number: '',
-    letter_date: new Date().toISOString().slice(0, 10),
+    letter_date: '',
     subject: '',
     counterparty: '',
   });
@@ -196,6 +196,9 @@ export default function PortalLayananPage() {
   }
 
   useEffect(() => {
+    setLetterForm((prev) =>
+      prev.letter_date ? prev : { ...prev, letter_date: new Date().toISOString().slice(0, 10) }
+    );
     refreshAll();
   }, []);
 
