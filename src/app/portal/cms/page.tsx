@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -27,7 +28,15 @@ interface PpdbRow {
 }
 
 export default function PortalCmsPage() {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<'settings' | 'posts' | 'ppdb'>('settings');
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t === 'settings' || t === 'posts' || t === 'ppdb') {
+      setTab(t);
+    }
+  }, [searchParams]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);

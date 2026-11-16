@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -67,7 +68,15 @@ interface HonorariumRow {
 }
 
 export default function PortalKeuanganPage() {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<'spp' | 'tabungan' | 'honorarium'>('spp');
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t === 'spp' || t === 'tabungan' || t === 'honorarium') {
+      setTab(t);
+    }
+  }, [searchParams]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -68,9 +69,17 @@ interface ExamPeriodRow {
 const DAY_NAMES = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Ahad'];
 
 export function PortalAkademikClient() {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<'buku_induk' | 'kelas_jadwal' | 'presensi' | 'ujian'>(
     'buku_induk'
   );
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t === 'buku_induk' || t === 'kelas_jadwal' || t === 'presensi' || t === 'ujian') {
+      setTab(t);
+    }
+  }, [searchParams]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
 

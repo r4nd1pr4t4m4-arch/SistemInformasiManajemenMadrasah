@@ -1,18 +1,32 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
+  BookOpen,
   BookOpenCheck,
   Building2,
+  Calculator,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCheck,
   FileText,
   Globe,
+  GraduationCap,
+  HeartHandshake,
   LayoutDashboard,
   LogOut,
+  MapPin,
   Menu,
   Newspaper,
+  PiggyBank,
+  Receipt,
+  Settings,
+  ShieldAlert,
   ShieldCheck,
+  Users,
   Wallet,
   X,
 } from 'lucide-react';
@@ -27,92 +41,203 @@ interface UserInfo {
 
 interface NavItem {
   href: string;
+  path: string;
+  tab?: string;
   label: string;
   icon: React.ReactNode;
   allowedRoles?: AppRole[];
 }
 
-const PORTAL_SECTIONS: { group: string; items: NavItem[] }[] = [
+interface AccordionGroup {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  items: NavItem[];
+}
+
+const ACCORDION_GROUPS: AccordionGroup[] = [
   {
-    group: 'Menu Utama',
+    id: 'publikasi',
+    label: 'Publikasi & PPDB',
+    icon: <Newspaper className="w-4 h-4" />,
     items: [
       {
-        href: '/portal',
-        label: 'Dashboard',
-        icon: <LayoutDashboard className="w-4 h-4" />,
+        href: '/portal/cms?tab=settings',
+        path: '/portal/cms',
+        tab: 'settings',
+        label: 'Profil & Lembaga',
+        icon: <Settings className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
       },
-    ],
-  },
-  {
-    group: 'Publikasi & PPDB',
-    items: [
       {
-        href: '/portal/cms',
-        label: 'CMS & Verifikasi PPDB',
-        icon: <Newspaper className="w-4 h-4" />,
+        href: '/portal/cms?tab=posts',
+        path: '/portal/cms',
+        tab: 'posts',
+        label: 'Berita & Artikel',
+        icon: <Newspaper className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
+      },
+      {
+        href: '/portal/cms?tab=ppdb',
+        path: '/portal/cms',
+        tab: 'ppdb',
+        label: 'Verifikasi PPDB',
+        icon: <Users className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
       },
     ],
   },
   {
-    group: 'Akademik',
+    id: 'akademik',
+    label: 'Akademik',
+    icon: <BookOpenCheck className="w-4 h-4" />,
     items: [
       {
-        href: '/portal/akademik',
-        label: 'Buku Induk, Jadwal & Ujian',
-        icon: <BookOpenCheck className="w-4 h-4" />,
+        href: '/portal/akademik?tab=buku_induk',
+        path: '/portal/akademik',
+        tab: 'buku_induk',
+        label: 'Buku Induk Digital',
+        icon: <Users className="w-3.5 h-3.5" />,
         allowedRoles: [
           'SUPERADMIN',
           'OPERATOR',
           'KEPALA_LEMBAGA',
           'WAKA_KURIKULUM',
           'WAKA_KESISWAAN',
-          'GURU',
-          'WALI_KELAS',
           'KEPALA_TU',
           'STAF_TU',
+        ],
+      },
+      {
+        href: '/portal/akademik?tab=kelas_jadwal',
+        path: '/portal/akademik',
+        tab: 'kelas_jadwal',
+        label: 'Kelas & Jadwal',
+        icon: <Calendar className="w-3.5 h-3.5" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'WAKA_KURIKULUM',
+          'GURU',
+          'WALI_KELAS',
+        ],
+      },
+      {
+        href: '/portal/akademik?tab=presensi',
+        path: '/portal/akademik',
+        tab: 'presensi',
+        label: 'Presensi GPS & Delegasi',
+        icon: <MapPin className="w-3.5 h-3.5" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'WAKA_KURIKULUM',
+          'GURU',
+          'WALI_KELAS',
+        ],
+      },
+      {
+        href: '/portal/akademik?tab=ujian',
+        path: '/portal/akademik',
+        tab: 'ujian',
+        label: 'Periode Ujian (JTM)',
+        icon: <ClipboardCheck className="w-3.5 h-3.5" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'WAKA_KURIKULUM',
+          'GURU',
+          'WALI_KELAS',
         ],
       },
     ],
   },
   {
-    group: 'Keuangan & Layanan',
+    id: 'keuangan',
+    label: 'Keuangan & Honor',
+    icon: <Wallet className="w-4 h-4" />,
     items: [
       {
-        href: '/portal/keuangan',
-        label: 'SPP, Tabungan & Honor',
-        icon: <Wallet className="w-4 h-4" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'BENDAHARA',
-          'BENDAHARA_KOMITE',
-          'PENGELOLA_TABUNGAN',
-          'KEPALA_TU',
-        ],
+        href: '/portal/keuangan?tab=spp',
+        path: '/portal/keuangan',
+        tab: 'spp',
+        label: 'SPP & Iuran Komite',
+        icon: <Receipt className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'BENDAHARA', 'BENDAHARA_KOMITE'],
       },
       {
-        href: '/portal/layanan',
-        label: 'Surat, E-Library, BK & Alumni',
-        icon: <FileText className="w-4 h-4" />,
+        href: '/portal/keuangan?tab=tabungan',
+        path: '/portal/keuangan',
+        tab: 'tabungan',
+        label: 'Tabungan Digital',
+        icon: <PiggyBank className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'PENGELOLA_TABUNGAN'],
+      },
+      {
+        href: '/portal/keuangan?tab=honorarium',
+        path: '/portal/keuangan',
+        tab: 'honorarium',
+        label: 'Honorarium Guru',
+        icon: <Calculator className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'BENDAHARA', 'KEPALA_TU'],
+      },
+    ],
+  },
+  {
+    id: 'layanan',
+    label: 'Layanan & Arsip',
+    icon: <FileText className="w-4 h-4" />,
+    items: [
+      {
+        href: '/portal/layanan?tab=persuratan',
+        path: '/portal/layanan',
+        tab: 'persuratan',
+        label: 'Persuratan & Kartu',
+        icon: <FileText className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'KEPALA_TU', 'STAF_TU'],
+      },
+      {
+        href: '/portal/layanan?tab=elibrary',
+        path: '/portal/layanan',
+        tab: 'elibrary',
+        label: 'E-Library',
+        icon: <BookOpen className="w-3.5 h-3.5" />,
         allowedRoles: [
           'SUPERADMIN',
           'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'KEPALA_TU',
-          'STAF_TU',
           'PUSTAKAWAN',
-          'GURU_BK',
-          'GURU_WALI',
-          'WALI_KELAS',
           'GURU',
-          'WAKA_KESISWAAN',
-          'WAKA_HUMAS',
-          'ALUMNI',
+          'STAF_TU',
           'SISWA',
           'UMUM',
         ],
+      },
+      {
+        href: '/portal/layanan?tab=bk',
+        path: '/portal/layanan',
+        tab: 'bk',
+        label: 'Bimbingan Konseling (BK)',
+        icon: <ShieldAlert className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_KESISWAAN', 'GURU_BK'],
+      },
+      {
+        href: '/portal/layanan?tab=guru_wali',
+        path: '/portal/layanan',
+        tab: 'guru_wali',
+        label: 'Manajemen Guru Wali',
+        icon: <HeartHandshake className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'GURU_WALI', 'WALI_KELAS', 'GURU'],
+      },
+      {
+        href: '/portal/layanan?tab=alumni',
+        path: '/portal/layanan',
+        tab: 'alumni',
+        label: 'Tracer Study Alumni',
+        icon: <GraduationCap className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'WAKA_HUMAS', 'GURU_BK', 'ALUMNI', 'STAF_TU'],
       },
     ],
   },
@@ -126,11 +251,15 @@ const PAGE_TITLES: Record<string, string> = {
   '/portal/layanan': 'Persuratan, E-Library, BK, Guru Wali & Alumni',
 };
 
-export function PortalShell({ children }: { children: React.ReactNode }) {
+function PortalShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState<UserInfo | null>(null);
+
+  // Default: seluruh kelompok accordion dalam keadaan collapse (tertutup)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -147,20 +276,28 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     router.refresh();
   }
 
+  function toggleGroup(groupId: string) {
+    setOpenGroups((prev) => ({
+      ...prev,
+      [groupId]: !prev[groupId],
+    }));
+  }
+
   const userRoles: AppRole[] = user
     ? user.roles && user.roles.length > 0
       ? user.roles
       : [user.primaryRole]
     : [];
 
-  const visibleSections = PORTAL_SECTIONS.map((section) => ({
-    ...section,
-    items: section.items.filter((item) => {
+  const visibleGroups = ACCORDION_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => {
       if (!item.allowedRoles || userRoles.length === 0) return true;
       return userRoles.some((r) => item.allowedRoles!.includes(r));
     }),
-  })).filter((s) => s.items.length > 0);
+  })).filter((g) => g.items.length > 0);
 
+  const currentTab = searchParams.get('tab');
   const pageTitle = PAGE_TITLES[pathname] || 'Portal Terpadu';
 
   const SidebarContent = (
@@ -184,32 +321,77 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
-        {visibleSections.map((section) => (
-          <div key={section.group} className="space-y-1">
-            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              {section.group}
-            </p>
-            {section.items.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setSidebarOpen(false)}
-                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
-                    active
-                      ? 'bg-emerald-600 text-white shadow-sm'
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
+        {/* Dashboard Link */}
+        <Link
+          href="/portal"
+          onClick={() => setSidebarOpen(false)}
+          className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+            pathname === '/portal'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-700 hover:bg-white/80 hover:text-emerald-700'
+          }`}
+        >
+          <LayoutDashboard className="w-4 h-4" />
+          <span>Dashboard</span>
+        </Link>
+
+        {/* Accordion Menu Groups */}
+        <div className="pt-1 space-y-1.5">
+          {visibleGroups.map((group) => {
+            const isOpen = Boolean(openGroups[group.id]);
+            const hasActiveChild = group.items.some((item) => item.path === pathname);
+
+            return (
+              <div key={group.id} className="rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.id)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                    hasActiveChild
+                      ? 'bg-emerald-50/90 text-emerald-800'
                       : 'text-slate-700 hover:bg-white/80 hover:text-emerald-700'
                   }`}
                 >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        ))}
+                  <span className="flex items-center gap-2.5">
+                    {group.icon}
+                    <span>{group.label}</span>
+                  </span>
+                  {isOpen ? (
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                </button>
+
+                {isOpen && (
+                  <div className="mt-1 ml-3 pl-3 border-l border-slate-200/80 space-y-1">
+                    {group.items.map((item) => {
+                      const isActive =
+                        pathname === item.path &&
+                        (currentTab === item.tab || (!currentTab && item.tab === group.items[0].tab));
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setSidebarOpen(false)}
+                          className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition ${
+                            isActive
+                              ? 'bg-emerald-600 text-white shadow-xs font-semibold'
+                              : 'text-slate-600 hover:bg-white/80 hover:text-emerald-700'
+                          }`}
+                        >
+                          {item.icon}
+                          <span>{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="p-3 border-t border-slate-200/70 space-y-2">
@@ -303,5 +485,13 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         </footer>
       </div>
     </div>
+  );
+}
+
+export function PortalShell({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen simms-ambient" />}>
+      <PortalShellInner>{children}</PortalShellInner>
+    </Suspense>
   );
 }

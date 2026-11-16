@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -28,9 +29,23 @@ interface TeacherOpt {
 }
 
 export default function PortalLayananPage() {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<'persuratan' | 'elibrary' | 'bk' | 'guru_wali' | 'alumni'>(
     'persuratan'
   );
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (
+      t === 'persuratan' ||
+      t === 'elibrary' ||
+      t === 'bk' ||
+      t === 'guru_wali' ||
+      t === 'alumni'
+    ) {
+      setTab(t);
+    }
+  }, [searchParams]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
 
