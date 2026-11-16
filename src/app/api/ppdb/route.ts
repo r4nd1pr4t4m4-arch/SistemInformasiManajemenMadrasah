@@ -18,15 +18,15 @@ const PpdbDocumentInput = z.object({
 
 const PpdbRegisterSchema = z.object({
   fullName: z.string().min(2),
-  nisn: z.string().optional().default(''),
-  nik: z.string().min(8),
+  nisn: z.string().regex(/^\d{10}$/, 'NISN harus berupa 10 digit angka.'),
+  nik: z.string().regex(/^\d{16}$/, 'NIK harus berupa 16 digit angka.'),
   gender: z.enum(['L', 'P']),
   birthPlace: z.string().min(2),
   birthDate: z.string().min(4),
   previousSchool: z.string().min(2),
-  address: z.string().min(4),
+  address: z.string().min(6),
   parentName: z.string().min(2),
-  parentPhone: z.string().min(6),
+  parentPhone: z.string().regex(/^\d{12}$/, 'No. WhatsApp Orang Tua / Wali harus berupa 12 digit angka.'),
   pathway: z.enum(['DOMISILI', 'AFIRMASI', 'PRESTASI', 'MUTASI', 'REGULER']).default('DOMISILI'),
   targetGrade: z.string().optional().default(''),
   mutationReason: z.string().optional().default(''),
@@ -46,12 +46,20 @@ export async function GET(request: Request) {
   const supabase = createSupabaseAdminClient();
 
   if (info === 'active') {
-    const { data: period } = await supabase
-      .from('ppdb_periods')
-      .select('*')
-      .eq('is_active', true)
-      .limit(1)
-      .maybeSingle();
+    const [{ data: period }, { data: classroomRows }] = await Promise.all([
+      supabase
+        .from('ppdb_periods')
+        .select('*')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle(),
+      supabase.from('classrooms').select('grade_level').order('grade_level'),
+    ]);
+
+    const dbGrades = Array.from(
+      new Set((classroomRows || []).map((c) => String(c.grade_level).trim()).filter(Boolean))
+    );
+    const gradeLevels = dbGrades.length > 0 ? dbGrades : ['VII', 'VIII', 'IX'];
 
     return NextResponse.json({
       period: period
@@ -60,6 +68,7 @@ export async function GET(request: Request) {
             pathway_quotas: period.pathway_quotas || DEFAULT_PATHWAY_QUOTAS,
           }
         : null,
+      gradeLevels,
     });
   }
 
@@ -114,8 +123,8 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseAdminClient();
 
-    // Cari periode PPDB aktif; jika belum ada, buat periode default
-    let { data: activePeriod } = await supabase
+    // Pastikan ada periode PPDB aktif
+    const { data: activePeriod } = await supabase
       .from('ppdb_periods')
       .select('id')
       .eq('is_active', true)
@@ -123,24 +132,10 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (!activePeriod) {
-      const { data: createdPeriod, error: periodErr } = await supabase
-        .from('ppdb_periods')
-        .insert({
-          name: 'PPDB Tahun Ajaran 2026/2027',
-          open_date: '2026-01-01',
-          close_date: '2026-12-31',
-          is_active: true,
-        })
-        .select('id')
-        .single();
-
-      if (periodErr || !createdPeriod) {
-        return NextResponse.json(
-          { error: 'Gagal menyiapkan periode PPDB aktif.' },
-          { status: 500 }
-        );
-      }
-      activePeriod = createdPeriod;
+      return NextResponse.json(
+        { error: 'Saat ini tidak ada periode pendaftaran PPDB yang aktif.' },
+        { status: 400 }
+      );
     }
 
     const prefix = parsed.data.pathway === 'MUTASI' ? 'MUTASI-2026' : 'PPDB-2026';

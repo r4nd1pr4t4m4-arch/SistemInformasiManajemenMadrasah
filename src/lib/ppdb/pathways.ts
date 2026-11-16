@@ -66,14 +66,7 @@ export const PPDB_PATHWAYS: PathwayDefinition[] = [
     description:
       'Diperuntukkan bagi calon peserta didik yang berdomisili di wilayah sekitar madrasah/sekolah sesuai alamat pada Kartu Keluarga.',
     generalDocs: GENERAL_PPDB_DOCS,
-    specialDocs: [
-      {
-        key: 'BUKTI_DOMISILI',
-        label: 'Surat Keterangan Domisili / Bukti Alamat Wilayah',
-        documentType: 'LAINNYA',
-        required: true,
-      },
-    ],
+    specialDocs: [],
   },
   {
     code: 'AFIRMASI',

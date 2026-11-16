@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
+  AlertTriangle,
   CalendarCheck,
   CheckCircle2,
   FileText,
@@ -24,6 +25,7 @@ import {
   PpdbRegistrationCard,
   type RegistrationCardData,
 } from '@/components/ppdb/registration-card';
+import { IndonesianAddressFields } from '@/components/ppdb/address-fields';
 
 interface ActivePeriod {
   name: string;
@@ -46,6 +48,7 @@ interface UploadedDoc {
 
 export default function PpdbPage() {
   const [activeTab, setActiveTab] = useState<'daftar' | 'cek'>('daftar');
+  const [loadingPeriod, setLoadingPeriod] = useState(true);
   const [activePeriod, setActivePeriod] = useState<ActivePeriod | null>(null);
   const [selectedPathway, setSelectedPathway] = useState<PpdbPathwayCode | null>(null);
 
@@ -65,6 +68,7 @@ export default function PpdbPage() {
     parentName: '',
     parentPhone: '',
   });
+  const [addressComplete, setAddressComplete] = useState(false);
 
   const [files, setFiles] = useState<Record<string, File | undefined>>({});
 
@@ -79,9 +83,16 @@ export default function PpdbPage() {
       .then((d) => {
         if (d?.period) setActivePeriod(d.period);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoadingPeriod(false));
   }, []);
 
+  const handleAddressChange = useCallback((fullAddress: string, isComplete: boolean) => {
+    setForm((prev) => ({ ...prev, address: fullAddress }));
+    setAddressComplete(isComplete);
+  }, []);
+
+  const hasActivePeriod = Boolean(activePeriod);
   const quotas: PathwayQuotas = activePeriod?.pathway_quotas || DEFAULT_PATHWAY_QUOTAS;
   const activePathwayDef = PPDB_PATHWAYS.find((p) => p.code === selectedPathway) || null;
 
@@ -118,8 +129,28 @@ export default function PpdbPage() {
 
   async function handleRegisterSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!hasActivePeriod) {
+      setErrorMsg('Pendaftaran tidak dapat dikirim karena tidak ada periode PPDB yang aktif.');
+      return;
+    }
     if (!activePathwayDef) {
       setErrorMsg('Silakan pilih jalur pendaftaran terlebih dahulu.');
+      return;
+    }
+    if (form.nisn.length !== 10) {
+      setErrorMsg('NISN harus tepat 10 digit angka.');
+      return;
+    }
+    if (form.nik.length !== 16) {
+      setErrorMsg('NIK harus tepat 16 digit angka.');
+      return;
+    }
+    if (form.parentPhone.length !== 12) {
+      setErrorMsg('No. WhatsApp Orang Tua / Wali harus tepat 12 digit angka.');
+      return;
+    }
+    if (!addressComplete) {
+      setErrorMsg('Lengkapi seluruh rincian alamat (Provinsi, Kab/Kota, Kecamatan, Desa, RT, RW, dan Alamat).');
       return;
     }
 
@@ -264,7 +295,7 @@ export default function PpdbPage() {
           </div>
 
           <div className="p-6 md:p-8 space-y-6">
-            {activePeriod && (
+            {!loadingPeriod && activePeriod && (
               <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-900 print:hidden">
                 <span className="font-semibold flex items-center gap-2">
                   <CalendarCheck className="w-4 h-4 text-emerald-700" />
@@ -273,6 +304,20 @@ export default function PpdbPage() {
                 <span>
                   {activePeriod.open_date} s/d {activePeriod.close_date}
                 </span>
+              </div>
+            )}
+
+            {!loadingPeriod && !activePeriod && activeTab === 'daftar' && (
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300/80 text-amber-900 text-xs flex items-start gap-3 print:hidden">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-sm">
+                    Periode Pendaftaran PPDB Saat Ini Belum Dibuka / Sudah Ditutup
+                  </p>
+                  <p className="leading-relaxed">
+                    Saat ini belum ada periode PPDB yang aktif sehingga pengunggahan dokumen persyaratan dan pengiriman formulir dinonaktifkan sementara. Silakan hubungi panitia PPDB atau pantau halaman pengumuman untuk jadwal pembukaan berikutnya.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -348,11 +393,17 @@ export default function PpdbPage() {
                               <p className="font-bold text-slate-700 flex items-center gap-1">
                                 <FileText className="w-3.5 h-3.5 text-emerald-700" /> Syarat Khusus:
                               </p>
-                              {pw.specialDocs.map((d) => (
-                                <p key={d.key} className="text-emerald-800 font-medium">
-                                  • {d.label}
+                              {pw.specialDocs.length === 0 ? (
+                                <p className="text-slate-500 italic">
+                                  Tidak ada persyaratan khusus.
                                 </p>
-                              ))}
+                              ) : (
+                                pw.specialDocs.map((d) => (
+                                  <p key={d.key} className="text-emerald-800 font-medium">
+                                    • {d.label}
+                                  </p>
+                                ))
+                              )}
                               <p className="text-slate-500 pt-1">
                                 + Persyaratan Umum (KK, Akta, Ijazah/SKL)
                               </p>
@@ -373,15 +424,13 @@ export default function PpdbPage() {
                       onSubmit={handleRegisterSubmit}
                       className="space-y-5 pt-4 border-t border-slate-200/80"
                     >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
-                            Langkah 2
-                          </span>
-                          <h2 className="text-base font-bold text-slate-900">
-                            Lengkapi Biodata &amp; Berkas — {activePathwayDef.title}
-                          </h2>
-                        </div>
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+                          Langkah 2
+                        </span>
+                        <h2 className="text-base font-bold text-slate-900">
+                          Lengkapi Biodata &amp; Berkas — {activePathwayDef.title}
+                        </h2>
                       </div>
 
                       {errorMsg && (
@@ -406,28 +455,55 @@ export default function PpdbPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            NISN
-                          </label>
-                          <input
-                            type="text"
-                            value={form.nisn}
-                            onChange={(e) => setForm({ ...form, nisn: e.target.value })}
-                            placeholder="10 digit NISN"
-                            className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            NIK
-                          </label>
+                          <div className="flex justify-between mb-1">
+                            <label className="text-xs font-semibold text-slate-700">
+                              NISN (10 Digit Angka)
+                            </label>
+                            <span className="text-[11px] font-mono text-slate-400">
+                              {form.nisn.length}/10
+                            </span>
+                          </div>
                           <input
                             required
                             type="text"
+                            inputMode="numeric"
+                            minLength={10}
+                            maxLength={10}
+                            value={form.nisn}
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                nisn: e.target.value.replace(/\D/g, '').slice(0, 10),
+                              })
+                            }
+                            placeholder="10 digit angka NISN"
+                            className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm font-mono"
+                          />
+                        </div>
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <label className="text-xs font-semibold text-slate-700">
+                              NIK (16 Digit Angka)
+                            </label>
+                            <span className="text-[11px] font-mono text-slate-400">
+                              {form.nik.length}/16
+                            </span>
+                          </div>
+                          <input
+                            required
+                            type="text"
+                            inputMode="numeric"
+                            minLength={16}
+                            maxLength={16}
                             value={form.nik}
-                            onChange={(e) => setForm({ ...form, nik: e.target.value })}
-                            placeholder="16 digit NIK"
-                            className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                nik: e.target.value.replace(/\D/g, '').slice(0, 16),
+                              })
+                            }
+                            placeholder="16 digit angka NIK"
+                            className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm font-mono"
                           />
                         </div>
                         <div>
@@ -499,33 +575,35 @@ export default function PpdbPage() {
                           />
                         </div>
                         <div className="sm:col-span-2">
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            No. WhatsApp Orang Tua / Wali
-                          </label>
+                          <div className="flex justify-between mb-1">
+                            <label className="text-xs font-semibold text-slate-700">
+                              No. WhatsApp Orang Tua / Wali (12 Digit Angka)
+                            </label>
+                            <span className="text-[11px] font-mono text-slate-400">
+                              {form.parentPhone.length}/12
+                            </span>
+                          </div>
                           <input
                             required
-                            type="tel"
+                            type="text"
+                            inputMode="numeric"
+                            minLength={12}
+                            maxLength={12}
                             value={form.parentPhone}
-                            onChange={(e) => setForm({ ...form, parentPhone: e.target.value })}
-                            placeholder="08xxxxxxxxxx"
-                            className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                parentPhone: e.target.value.replace(/\D/g, '').slice(0, 12),
+                              })
+                            }
+                            placeholder="08xxxxxxxxxx (12 digit angka)"
+                            className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm font-mono"
                           />
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Alamat Lengkap
-                        </label>
-                        <textarea
-                          required
-                          rows={2}
-                          value={form.address}
-                          onChange={(e) => setForm({ ...form, address: e.target.value })}
-                          placeholder="Jalan, RT/RW, Kelurahan, Kecamatan, Kota/Kabupaten"
-                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
-                        />
-                      </div>
+                      {/* Alamat Emsifa API */}
+                      <IndonesianAddressFields onAddressChange={handleAddressChange} />
 
                       {/* Dokumen Persyaratan Umum & Khusus */}
                       <div className="border-t border-slate-200/80 pt-4 space-y-4">
@@ -537,7 +615,9 @@ export default function PpdbPage() {
                             {activePathwayDef.generalDocs.map((doc) => (
                               <label
                                 key={doc.key}
-                                className="modular-card rounded-2xl p-3.5 text-xs text-slate-600 cursor-pointer block"
+                                className={`modular-card rounded-2xl p-3.5 text-xs text-slate-600 block ${
+                                  hasActivePeriod ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'
+                                }`}
                               >
                                 <span className="font-semibold text-slate-800 block mb-1.5">
                                   {doc.label}{' '}
@@ -545,6 +625,7 @@ export default function PpdbPage() {
                                 </span>
                                 <input
                                   type="file"
+                                  disabled={!hasActivePeriod}
                                   accept=".pdf,.jpg,.jpeg,.png"
                                   onChange={(e) =>
                                     setFiles((prev) => ({
@@ -552,51 +633,60 @@ export default function PpdbPage() {
                                       [doc.key]: e.target.files?.[0],
                                     }))
                                   }
-                                  className="w-full text-[11px]"
+                                  className="w-full text-[11px] disabled:cursor-not-allowed"
                                 />
                               </label>
                             ))}
                           </div>
                         </div>
 
-                        <div className="space-y-2">
-                          <p className="text-sm font-bold text-emerald-800 flex items-center gap-2">
-                            <FileUp className="w-4 h-4 text-emerald-700" /> Dokumen Persyaratan Khusus (
-                            {activePathwayDef.title})
-                          </p>
-                          <div className="grid sm:grid-cols-2 gap-3">
-                            {activePathwayDef.specialDocs.map((doc) => (
-                              <label
-                                key={doc.key}
-                                className="modular-card rounded-2xl p-3.5 text-xs text-slate-600 cursor-pointer block border-emerald-200 bg-emerald-50/30"
-                              >
-                                <span className="font-semibold text-emerald-900 block mb-1.5">
-                                  {doc.label} <span className="text-rose-600">*</span>
-                                </span>
-                                <input
-                                  type="file"
-                                  accept=".pdf,.jpg,.jpeg,.png"
-                                  onChange={(e) =>
-                                    setFiles((prev) => ({
-                                      ...prev,
-                                      [doc.key]: e.target.files?.[0],
-                                    }))
-                                  }
-                                  className="w-full text-[11px]"
-                                />
-                              </label>
-                            ))}
+                        {activePathwayDef.specialDocs.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-sm font-bold text-emerald-800 flex items-center gap-2">
+                              <FileUp className="w-4 h-4 text-emerald-700" /> Dokumen Persyaratan
+                              Khusus ({activePathwayDef.title})
+                            </p>
+                            <div className="grid sm:grid-cols-2 gap-3">
+                              {activePathwayDef.specialDocs.map((doc) => (
+                                <label
+                                  key={doc.key}
+                                  className={`modular-card rounded-2xl p-3.5 text-xs text-slate-600 block border-emerald-200 bg-emerald-50/30 ${
+                                    hasActivePeriod
+                                      ? 'cursor-pointer'
+                                      : 'opacity-60 cursor-not-allowed'
+                                  }`}
+                                >
+                                  <span className="font-semibold text-emerald-900 block mb-1.5">
+                                    {doc.label} <span className="text-rose-600">*</span>
+                                  </span>
+                                  <input
+                                    type="file"
+                                    disabled={!hasActivePeriod}
+                                    accept=".pdf,.jpg,.jpeg,.png"
+                                    onChange={(e) =>
+                                      setFiles((prev) => ({
+                                        ...prev,
+                                        [doc.key]: e.target.files?.[0],
+                                      }))
+                                    }
+                                    className="w-full text-[11px] disabled:cursor-not-allowed"
+                                  />
+                                </label>
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
 
                       <button
                         type="submit"
-                        disabled={submitting}
-                        className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold py-3.5 rounded-2xl transition shadow-sm"
+                        disabled={!hasActivePeriod || submitting}
+                        className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-2xl transition shadow-sm"
                       >
                         {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                        {submitting
+                        {!hasActivePeriod
+                          ? 'Pendaftaran Ditutup (Tidak Ada Periode Aktif)'
+                          : submitting
                           ? 'Menyimpan & Mengunggah Berkas...'
                           : 'Kirim Pendaftaran & Buat Kartu Bukti'}
                       </button>
