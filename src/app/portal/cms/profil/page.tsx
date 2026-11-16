@@ -299,6 +299,50 @@ export default function CmsProfilPage() {
             </div>
           </div>
 
+          <div className="border-t border-slate-200/80 pt-5 space-y-4">
+            <h2 className="text-sm font-bold text-slate-900">
+              Kontak Resmi Institusi
+            </h2>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  No. Telepon / WhatsApp Resmi
+                </label>
+                <input
+                  type="text"
+                  value={settings.phone || ''}
+                  onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
+                  placeholder="Contoh: (021) 8241-xxxx / 0812-xxxx-xxxx"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Email Resmi
+                </label>
+                <input
+                  type="email"
+                  value={settings.email || ''}
+                  onChange={(e) => setSettings({ ...settings, email: e.target.value })}
+                  placeholder="Contoh: info@madrasah.sch.id"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Alamat Lengkap Lembaga
+                </label>
+                <textarea
+                  rows={2}
+                  value={settings.address || ''}
+                  onChange={(e) => setSettings({ ...settings, address: e.target.value })}
+                  placeholder="Jl. ..., Kecamatan, Kabupaten/Kota, Provinsi, Kode Pos"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+
           <button
             type="submit"
             disabled={saving}
