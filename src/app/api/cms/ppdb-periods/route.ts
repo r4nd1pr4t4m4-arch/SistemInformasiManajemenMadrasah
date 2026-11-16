@@ -3,12 +3,21 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 
+import { DEFAULT_PATHWAY_QUOTAS } from '@/lib/ppdb/pathways';
+
+const PathwayQuotasSchema = z.object({
+  DOMISILI: z.number().min(0),
+  AFIRMASI: z.number().min(0),
+  PRESTASI: z.number().min(0),
+});
+
 const CreatePeriodSchema = z.object({
   name: z.string().min(3),
   open_date: z.string().min(8),
   close_date: z.string().min(8),
   announcement_date: z.string().optional().nullable(),
   quota: z.number().min(1).optional().nullable(),
+  pathway_quotas: PathwayQuotasSchema.optional(),
   is_active: z.boolean().default(true),
 });
 
@@ -19,6 +28,7 @@ const UpdatePeriodSchema = z.object({
   close_date: z.string().optional(),
   announcement_date: z.string().optional().nullable(),
   quota: z.number().min(1).optional().nullable(),
+  pathway_quotas: PathwayQuotasSchema.optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -60,15 +70,42 @@ export async function POST(request: Request) {
       await supabase.from('ppdb_periods').update({ is_active: false }).eq('is_active', true);
     }
 
-    const { data, error } = await supabase
+    const pathwayQuotas = parsed.data.pathway_quotas || DEFAULT_PATHWAY_QUOTAS;
+    const totalQuota =
+      parsed.data.quota ||
+      pathwayQuotas.DOMISILI + pathwayQuotas.AFIRMASI + pathwayQuotas.PRESTASI;
+
+    let { data, error } = await supabase
       .from('ppdb_periods')
       .insert({
-        ...parsed.data,
+        name: parsed.data.name,
+        open_date: parsed.data.open_date,
+        close_date: parsed.data.close_date,
         announcement_date: parsed.data.announcement_date || null,
-        quota: parsed.data.quota || null,
+        quota: totalQuota,
+        pathway_quotas: pathwayQuotas,
+        is_active: parsed.data.is_active,
       })
       .select('*')
       .single();
+
+    // Fallback jika kolom pathway_quotas belum dimigrasi di Supabase
+    if (error && error.message.includes('pathway_quotas')) {
+      const retry = await supabase
+        .from('ppdb_periods')
+        .insert({
+          name: parsed.data.name,
+          open_date: parsed.data.open_date,
+          close_date: parsed.data.close_date,
+          announcement_date: parsed.data.announcement_date || null,
+          quota: totalQuota,
+          is_active: parsed.data.is_active,
+        })
+        .select('*')
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ period: data });

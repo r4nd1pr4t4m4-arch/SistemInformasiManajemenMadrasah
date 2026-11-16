@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { DEFAULT_PATHWAY_QUOTAS } from '@/lib/ppdb/pathways';
 
 const PpdbDocumentInput = z.object({
   documentType: z.enum([
@@ -26,7 +27,7 @@ const PpdbRegisterSchema = z.object({
   address: z.string().min(4),
   parentName: z.string().min(2),
   parentPhone: z.string().min(6),
-  pathway: z.enum(['REGULER', 'PRESTASI', 'AFIRMASI', 'MUTASI']).default('REGULER'),
+  pathway: z.enum(['DOMISILI', 'AFIRMASI', 'PRESTASI', 'MUTASI', 'REGULER']).default('DOMISILI'),
   targetGrade: z.string().optional().default(''),
   mutationReason: z.string().optional().default(''),
   documents: z.array(PpdbDocumentInput).optional().default([]),
@@ -47,12 +48,19 @@ export async function GET(request: Request) {
   if (info === 'active') {
     const { data: period } = await supabase
       .from('ppdb_periods')
-      .select('id, name, open_date, close_date, announcement_date, quota, is_active')
+      .select('*')
       .eq('is_active', true)
       .limit(1)
       .maybeSingle();
 
-    return NextResponse.json({ period: period || null });
+    return NextResponse.json({
+      period: period
+        ? {
+            ...period,
+            pathway_quotas: period.pathway_quotas || DEFAULT_PATHWAY_QUOTAS,
+          }
+        : null,
+    });
   }
 
   const code = searchParams.get('code')?.trim().toUpperCase();
@@ -66,7 +74,7 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from('ppdb_registrations')
     .select(
-      'registration_number, full_name, pathway, previous_school, status, admin_notes, created_at, ppdb_documents(document_type, file_name, is_verified)'
+      'registration_number, full_name, nisn, pathway, previous_school, parent_name, parent_phone, status, admin_notes, created_at, ppdb_documents(document_type, file_name, is_verified)'
     )
     .eq('registration_number', code)
     .maybeSingle();
@@ -188,6 +196,22 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       registrationNumber: inserted.registration_number,
+      registration: {
+        registration_number: inserted.registration_number,
+        full_name: parsed.data.fullName,
+        nisn: parsed.data.nisn || null,
+        pathway: parsed.data.pathway,
+        previous_school: parsed.data.previousSchool,
+        parent_name: parsed.data.parentName,
+        parent_phone: parsed.data.parentPhone,
+        status: 'MENUNGGU_VERIFIKASI',
+        admin_notes: extraMutationNote,
+        created_at: new Date().toISOString(),
+        documents: parsed.data.documents.map((d) => ({
+          label: d.fileName,
+          verified: false,
+        })),
+      },
       message: 'Pendaftaran PPDB berhasil disimpan.',
     });
   } catch (error) {

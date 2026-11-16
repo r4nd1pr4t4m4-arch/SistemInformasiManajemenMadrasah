@@ -11,6 +11,10 @@ import {
   Loader2,
 } from 'lucide-react';
 import { PublicShell } from '@/components/layout/public-shell';
+import {
+  PpdbRegistrationCard,
+  type RegistrationCardData,
+} from '@/components/ppdb/registration-card';
 
 interface ActivePeriod {
   name: string;
@@ -28,7 +32,7 @@ export default function PpdbMutasiPage() {
   const [activePeriod, setActivePeriod] = useState<ActivePeriod | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [submittedCode, setSubmittedCode] = useState<string | null>(null);
+  const [submittedCard, setSubmittedCard] = useState<RegistrationCardData | null>(null);
 
   const [form, setForm] = useState({
     fullName: '',
@@ -128,7 +132,19 @@ export default function PpdbMutasiPage() {
       if (!res.ok) {
         setErrorMsg(data.error || 'Gagal menyimpan pendaftaran mutasi masuk.');
       } else {
-        setSubmittedCode(data.registrationNumber);
+        setSubmittedCard({
+          registrationNumber: data.registrationNumber,
+          fullName: form.fullName,
+          nisn: form.nisn,
+          pathway: 'MUTASI',
+          previousSchool: form.previousSchool,
+          parentName: form.parentName,
+          parentPhone: form.parentPhone,
+          status: 'MENUNGGU_VERIFIKASI',
+          createdAt: new Date().toISOString(),
+          notes: `Kelas Tujuan: ${form.targetGrade} | Alasan: ${form.mutationReason}`,
+          documents: uploadedDocs.map((d) => ({ label: d.fileName })),
+        });
       }
     } catch {
       setErrorMsg('Terjadi kesalahan koneksi ke server.');
@@ -172,22 +188,15 @@ export default function PpdbMutasiPage() {
               </div>
             )}
 
-            {submittedCode ? (
-              <div className="p-7 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-center space-y-3">
-                <CheckCircle2 className="w-11 h-11 text-emerald-700 mx-auto" />
-                <h2 className="text-lg font-bold text-slate-900">
-                  Pengajuan Mutasi Masuk Berhasil Dicatat!
-                </h2>
-                <p className="text-sm text-slate-600">
-                  Simpan nomor pendaftaran berikut untuk memantau verifikasi berkas mutasi Anda:
-                </p>
-                <p className="text-2xl font-mono font-bold text-emerald-800">{submittedCode}</p>
-                <Link
-                  href="/ppdb"
-                  className="inline-flex items-center gap-2 bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold"
-                >
-                  Cek Status di Halaman PPDB
-                </Link>
+            {submittedCard ? (
+              <div className="space-y-5">
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2.5 print:hidden">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" />
+                  <span>
+                    <strong>Pengajuan Mutasi Masuk Berhasil!</strong> Simpan atau cetak Kartu Bukti Pendaftaran berikut untuk verifikasi berkas.
+                  </span>
+                </div>
+                <PpdbRegistrationCard data={submittedCard} />
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-5">
