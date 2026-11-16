@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, LogIn, Mail, UserPlus } from 'lucide-react';
@@ -17,6 +17,27 @@ export default function LoginPage() {
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const statusParam = params.get('account_status');
+    if (statusParam === 'DITOLAK') {
+      setMessage({
+        type: 'error',
+        text: 'Pendaftaran akun Anda ditolak oleh Admin.',
+      });
+    } else if (statusParam === 'NONAKTIF') {
+      setMessage({
+        type: 'error',
+        text: 'Akun Anda sedang dinonaktifkan oleh Admin. Hubungi operator lembaga.',
+      });
+    } else if (statusParam === 'PENDING') {
+      setMessage({
+        type: 'error',
+        text: 'Akun Anda belum aktif dan sedang menunggu persetujuan Admin.',
+      });
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,20 +74,63 @@ export default function LoginPage() {
       const supabase = createSupabaseBrowserClient();
 
       if (mode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data: authData, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (error) {
           setMessage({ type: 'error', text: error.message });
-        } else {
-          const params = new URLSearchParams(window.location.search);
-          const nextUrl = params.get('next') || '/portal';
-          router.push(nextUrl.startsWith('/') ? nextUrl : '/portal');
-          router.refresh();
+        } else if (authData.user) {
+          const { data: profile, error: profileErr } = await supabase
+            .from('profiles')
+            .select('is_active, account_status, rejection_reason')
+            .eq('id', authData.user.id)
+            .maybeSingle();
+
+          const fallbackProfile = profileErr
+            ? (
+                await supabase
+                  .from('profiles')
+                  .select('is_active')
+                  .eq('id', authData.user.id)
+                  .maybeSingle()
+              ).data
+            : profile;
+
+          const accountStatus = (profile as { account_status?: string } | null)?.account_status;
+          const rejectionReason = (profile as { rejection_reason?: string | null } | null)?.rejection_reason;
+          const isAllowed =
+            Boolean(fallbackProfile?.is_active) && (!accountStatus || accountStatus === 'AKTIF');
+
+          if (!isAllowed) {
+            await supabase.auth.signOut();
+            if (accountStatus === 'DITOLAK') {
+              setMessage({
+                type: 'error',
+                text: rejectionReason
+                  ? `Pendaftaran akun Anda ditolak oleh Admin. Alasan: ${rejectionReason}`
+                  : 'Pendaftaran akun Anda ditolak oleh Admin.',
+              });
+            } else if (accountStatus === 'NONAKTIF') {
+              setMessage({
+                type: 'error',
+                text: 'Akun Anda sedang dinonaktifkan oleh Admin. Silakan hubungi operator lembaga.',
+              });
+            } else {
+              setMessage({
+                type: 'error',
+                text: 'Akun Anda belum aktif dan sedang menunggu persetujuan Admin. Anda akan menerima email setelah akun disetujui.',
+              });
+            }
+          } else {
+            const params = new URLSearchParams(window.location.search);
+            const nextUrl = params.get('next') || '/portal';
+            router.push(nextUrl.startsWith('/') ? nextUrl : '/portal');
+            router.refresh();
+          }
         }
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data: signUpData, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -76,11 +140,14 @@ export default function LoginPage() {
         if (error) {
           setMessage({ type: 'error', text: error.message });
         } else {
+          if (signUpData.session) {
+            await supabase.auth.signOut();
+          }
           setPassword('');
           setConfirmPassword('');
           setMessage({
             type: 'success',
-            text: 'Akun berhasil dibuat! Silakan cek email untuk verifikasi atau langsung masuk.',
+            text: 'Pendaftaran akun berhasil! Status akun Anda saat ini belum aktif dan menunggu persetujuan Admin. Anda akan menerima email notifikasi setelah akun disetujui atau ditolak.',
           });
         }
       }

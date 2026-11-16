@@ -24,9 +24,13 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('full_name, primary_role, email, avatar_url')
+      .select('full_name, primary_role, email, avatar_url, is_active, account_status')
       .eq('id', user.id)
       .maybeSingle();
+
+    if (!profile || !profile.is_active || (profile.account_status && profile.account_status !== 'AKTIF')) {
+      return null;
+    }
 
     const { data: extraRoles } = await supabase
       .from('user_roles')

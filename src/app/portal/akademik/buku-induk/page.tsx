@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, GraduationCap, Loader2, UserCheck } from 'lucide-react';
+import Link from 'next/link';
+import { BookOpen, CheckCircle2, GraduationCap, Loader2, UserCheck, UserPlus } from 'lucide-react';
 
 interface StudentRow {
   id: string;
@@ -21,13 +22,27 @@ interface TeacherRow {
   employment_status: string | null;
 }
 
+interface ActiveAccountRow {
+  id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  primary_role: string;
+  is_student: boolean;
+  is_teacher: boolean;
+  is_library_member: boolean;
+}
+
 export default function BukuIndukPage() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [teachers, setTeachers] = useState<TeacherRow[]>([]);
+  const [activeAccounts, setActiveAccounts] = useState<ActiveAccountRow[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState('');
 
   const [studentForm, setStudentForm] = useState({
+    profile_id: null as string | null,
     full_name: '',
     nis: '',
     nisn: '',
@@ -37,6 +52,7 @@ export default function BukuIndukPage() {
     mother_name: '',
   });
   const [teacherForm, setTeacherForm] = useState({
+    profile_id: null as string | null,
     full_name: '',
     staff_type: 'GURU' as 'GURU' | 'TATA_USAHA' | 'LAINNYA',
     nuptk: '',
@@ -44,6 +60,7 @@ export default function BukuIndukPage() {
     gender: 'L' as 'L' | 'P',
     employment_status: 'GTY',
     initial_position: 'Guru Mata Pelajaran',
+    email: '',
   });
 
   function showToast(msg: string) {
@@ -58,6 +75,7 @@ export default function BukuIndukPage() {
       const data = await res.json();
       setStudents(data.students || []);
       setTeachers(data.teachers || []);
+      setActiveAccounts(data.activeAccounts || []);
     } finally {
       setLoading(false);
     }
@@ -91,6 +109,8 @@ export default function BukuIndukPage() {
     );
   }
 
+  const selectedAccount = activeAccounts.find((a) => a.id === selectedAccountId) || null;
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {toast && (
@@ -99,6 +119,108 @@ export default function BukuIndukPage() {
           <span>{toast}</span>
         </div>
       )}
+
+      {/* Penempatan Akun Aktif */}
+      <div className="glass-card rounded-3xl p-6 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <UserPlus className="w-4 h-4 text-emerald-700" /> Penempatan Akun Aktif ke Buku Induk / E-Library
+            </h2>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Pilih akun yang sudah disetujui & aktif untuk dimasukkan sebagai Siswa, Guru/GTK, atau hanya Anggota Perpustakaan Digital.
+            </p>
+          </div>
+          <Link
+            href="/portal/akun/manajemen-pengguna"
+            className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 underline shrink-0"
+          >
+            Kelola Persetujuan Akun →
+          </Link>
+        </div>
+
+        <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center">
+          <select
+            value={selectedAccountId}
+            onChange={(e) => setSelectedAccountId(e.target.value)}
+            className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs text-slate-800"
+          >
+            <option value="">-- Pilih Akun Aktif ({activeAccounts.length} akun tersedia) --</option>
+            {activeAccounts.map((acc) => {
+              const tags = [
+                acc.is_student ? 'Sudah Siswa' : '',
+                acc.is_teacher ? 'Sudah GTK' : '',
+                acc.is_library_member ? 'Sudah E-Library' : '',
+              ]
+                .filter(Boolean)
+                .join(', ');
+              return (
+                <option key={acc.id} value={acc.id}>
+                  {acc.full_name} ({acc.email || 'tanpa email'}) • Role: {acc.primary_role}
+                  {tags ? ` [${tags}]` : ' [Belum ditempatkan]'}
+                </option>
+              );
+            })}
+          </select>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={!selectedAccount || selectedAccount.is_student}
+              onClick={() => {
+                if (!selectedAccount) return;
+                setStudentForm((prev) => ({
+                  ...prev,
+                  profile_id: selectedAccount.id,
+                  full_name: selectedAccount.full_name,
+                }));
+                showToast(`Akun "${selectedAccount.full_name}" disiapkan di form Siswa. Lengkapi NIS/NISN lalu klik Simpan.`);
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold transition disabled:opacity-40"
+            >
+              Masukkan ke Siswa
+            </button>
+
+            <button
+              type="button"
+              disabled={!selectedAccount || selectedAccount.is_teacher}
+              onClick={() => {
+                if (!selectedAccount) return;
+                setTeacherForm((prev) => ({
+                  ...prev,
+                  profile_id: selectedAccount.id,
+                  full_name: selectedAccount.full_name,
+                  email: selectedAccount.email || '',
+                }));
+                showToast(`Akun "${selectedAccount.full_name}" disiapkan di form GTK. Lengkapi data lalu klik Simpan.`);
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition disabled:opacity-40"
+            >
+              Masukkan ke Guru / GTK
+            </button>
+
+            <button
+              type="button"
+              disabled={!selectedAccount || selectedAccount.is_library_member}
+              onClick={async () => {
+                if (!selectedAccount) return;
+                const ok = await submitEntity(
+                  {
+                    type: 'LIBRARY_ONLY',
+                    profile_id: selectedAccount.id,
+                    phone: selectedAccount.phone,
+                  },
+                  `Akun "${selectedAccount.full_name}" berhasil didaftarkan sebagai Anggota Perpustakaan Digital.`
+                );
+                if (ok) setSelectedAccountId('');
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition disabled:opacity-40"
+            >
+              <BookOpen className="w-3.5 h-3.5" /> Hanya Anggota E-Library
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Siswa */}
@@ -116,6 +238,7 @@ export default function BukuIndukPage() {
               );
               if (ok) {
                 setStudentForm({
+                  profile_id: null,
                   full_name: '',
                   nis: '',
                   nisn: '',
@@ -124,6 +247,7 @@ export default function BukuIndukPage() {
                   father_name: '',
                   mother_name: '',
                 });
+                setSelectedAccountId('');
               }
             }}
             className="grid sm:grid-cols-2 gap-3"
@@ -206,6 +330,7 @@ export default function BukuIndukPage() {
               );
               if (ok) {
                 setTeacherForm({
+                  profile_id: null,
                   full_name: '',
                   staff_type: 'GURU',
                   nuptk: '',
@@ -213,7 +338,9 @@ export default function BukuIndukPage() {
                   gender: 'L',
                   employment_status: 'GTY',
                   initial_position: 'Guru Mata Pelajaran',
+                  email: '',
                 });
+                setSelectedAccountId('');
               }
             }}
             className="grid sm:grid-cols-2 gap-3"

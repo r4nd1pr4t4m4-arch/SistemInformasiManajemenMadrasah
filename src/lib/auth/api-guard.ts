@@ -96,6 +96,12 @@ export const ROLE_GROUPS = {
     'ALUMNI',
     'STAF_TU',
   ] as AppRole[],
+  USER_MANAGEMENT: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'KEPALA_TU',
+  ] as AppRole[],
 };
 
 export async function requireApiRoles(allowedRoles: AppRole[]): Promise<

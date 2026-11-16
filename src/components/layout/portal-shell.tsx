@@ -257,6 +257,13 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         icon: <User className="w-3.5 h-3.5" />,
       },
       {
+        href: '/portal/akun/manajemen-pengguna',
+        path: '/portal/akun/manajemen-pengguna',
+        label: 'Manajemen Pengguna',
+        icon: <ShieldCheck className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'KEPALA_TU'],
+      },
+      {
         href: '/portal/akun/kata-sandi',
         path: '/portal/akun/kata-sandi',
         label: 'Ganti Kata Sandi',
@@ -291,6 +298,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/portal/layanan/guru-wali': 'Manajemen Guru Wali',
   '/portal/layanan/alumni': 'Tracer Study / Portal Alumni',
   '/portal/akun/profil': 'Profil Akun',
+  '/portal/akun/manajemen-pengguna': 'Manajemen Pengguna & Persetujuan Akun',
   '/portal/akun/kata-sandi': 'Ganti Kata Sandi',
   '/portal/akun/mfa': 'Manajemen MFA',
 };

@@ -53,6 +53,17 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
   },
   {
+    id: 'manajemen-pengguna',
+    title: 'Manajemen Pengguna & Persetujuan Akun',
+    description:
+      'Setujui, aktifkan, nonaktifkan, atau tolak pendaftaran akun baru beserta notifikasi email otomatis & pengaturan role.',
+    href: '/portal/akun/manajemen-pengguna',
+    badge: 'Administrasi Akun',
+    icon: <ShieldCheck className="w-5 h-5" />,
+    accentClass: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'KEPALA_TU'],
+  },
+  {
     id: 'akademik-buku-induk',
     title: 'Buku Induk & Manajemen Kelas',
     description:

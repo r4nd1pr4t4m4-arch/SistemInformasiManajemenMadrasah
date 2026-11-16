@@ -269,3 +269,163 @@ export function buildEmailChangeOtpEmail(params: {
     text,
   };
 }
+
+export function buildAccountStatusEmail(params: {
+  institutionName: string;
+  institutionAddress?: string | null;
+  institutionEmail?: string | null;
+  recipientName: string;
+  recipientEmail: string;
+  status: 'AKTIF' | 'DITOLAK' | 'NONAKTIF';
+  rejectionReason?: string | null;
+  loginUrl?: string | null;
+  reviewedAtWib: string;
+}) {
+  const safeName = escapeHtml(params.recipientName);
+  const safeEmail = escapeHtml(params.recipientEmail);
+  const safeTime = escapeHtml(params.reviewedAtWib);
+  const safeReason = params.rejectionReason ? escapeHtml(params.rejectionReason) : '';
+  const safeLoginUrl = params.loginUrl ? escapeHtml(params.loginUrl) : '';
+
+  if (params.status === 'AKTIF') {
+    const html = wrapEmailLayout({
+      institutionName: params.institutionName,
+      institutionAddress: params.institutionAddress,
+      institutionEmail: params.institutionEmail,
+      preheader: `Akun Anda di ${params.institutionName} telah disetujui dan aktif.`,
+      badgeText: 'Aktivasi Akun Disetujui',
+      title: 'Akun Anda Sudah Aktif & Siap Digunakan',
+      bodyHtml: `
+        <p style="margin:0 0 14px;font-size:14px;line-height:1.65;color:#334155;">
+          Assalamu'alaikum / Salam sejahtera, <strong>${safeName}</strong>,
+        </p>
+        <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#475569;">
+          Pendaftaran akun Anda pada Portal SIMMS <strong>${escapeHtml(params.institutionName)}</strong> telah <strong>disetujui</strong> oleh Admin. Akun Anda kini berstatus <strong>AKTIF</strong> dan Anda sudah dapat masuk (login) ke portal.
+        </p>
+
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;margin-bottom:20px;">
+          <tr>
+            <td style="padding:14px 16px;font-size:12px;color:#065f46;line-height:1.7;">
+              <div><strong>Email Akun:</strong> ${safeEmail}</div>
+              <div><strong>Status Akun:</strong> AKTIF (Disetujui)</div>
+              <div><strong>Waktu Persetujuan:</strong> ${safeTime}</div>
+            </td>
+          </tr>
+        </table>
+
+        ${
+          safeLoginUrl
+            ? `<div style="margin:20px 0;text-align:center;">
+                <a href="${safeLoginUrl}" style="display:inline-block;background-color:#047857;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700;padding:12px 24px;border-radius:12px;">
+                  Masuk ke Portal SIMMS
+                </a>
+              </div>`
+            : ''
+        }
+      `,
+    });
+
+    const text = [
+      `Halo ${params.recipientName},`,
+      `Pendaftaran akun Anda di ${params.institutionName} (${params.recipientEmail}) telah DISETUJUI dan berstatus AKTIF pada ${params.reviewedAtWib}.`,
+      'Anda sudah dapat masuk (login) ke Portal SIMMS.',
+      params.loginUrl ? `Login di: ${params.loginUrl}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return {
+      subject: `[${params.institutionName}] Akun Anda Telah Disetujui & Aktif`,
+      html,
+      text,
+    };
+  }
+
+  if (params.status === 'DITOLAK') {
+    const html = wrapEmailLayout({
+      institutionName: params.institutionName,
+      institutionAddress: params.institutionAddress,
+      institutionEmail: params.institutionEmail,
+      preheader: `Pendaftaran akun Anda di ${params.institutionName} ditolak.`,
+      badgeText: 'Status Pendaftaran Akun',
+      title: 'Pendaftaran Akun Ditolak',
+      bodyHtml: `
+        <p style="margin:0 0 14px;font-size:14px;line-height:1.65;color:#334155;">
+          Assalamu'alaikum / Salam sejahtera, <strong>${safeName}</strong>,
+        </p>
+        <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#475569;">
+          Mohon maaf, pendaftaran akun Anda pada Portal SIMMS <strong>${escapeHtml(params.institutionName)}</strong> belum dapat kami setujui (<strong>DITOLAK</strong>).
+        </p>
+
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#fff1f2;border:1px solid #fecdd3;border-radius:12px;margin-bottom:20px;">
+          <tr>
+            <td style="padding:14px 16px;font-size:12px;color:#9f1239;line-height:1.7;">
+              <div><strong>Email Akun:</strong> ${safeEmail}</div>
+              <div><strong>Status Pendaftaran:</strong> DITOLAK</div>
+              <div><strong>Waktu Peninjauan:</strong> ${safeTime}</div>
+              ${safeReason ? `<div><strong>Catatan / Alasan:</strong> ${safeReason}</div>` : ''}
+            </td>
+          </tr>
+        </table>
+
+        <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">
+          Jika Anda merasa ini adalah kekeliruan atau membutuhkan informasi lebih lanjut, silakan hubungi admin/operator lembaga.
+        </p>
+      `,
+    });
+
+    const text = [
+      `Halo ${params.recipientName},`,
+      `Mohon maaf, pendaftaran akun Anda di ${params.institutionName} (${params.recipientEmail}) DITOLAK pada ${params.reviewedAtWib}.`,
+      params.rejectionReason ? `Alasan: ${params.rejectionReason}` : '',
+      'Silakan hubungi admin/operator lembaga jika membutuhkan informasi lebih lanjut.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return {
+      subject: `[${params.institutionName}] Pendaftaran Akun Anda Ditolak`,
+      html,
+      text,
+    };
+  }
+
+  // NONAKTIF
+  const html = wrapEmailLayout({
+    institutionName: params.institutionName,
+    institutionAddress: params.institutionAddress,
+    institutionEmail: params.institutionEmail,
+    preheader: `Status akun Anda di ${params.institutionName} dinonaktifkan.`,
+    badgeText: 'Status Akun',
+    title: 'Akun Anda Dinonaktifkan',
+    bodyHtml: `
+      <p style="margin:0 0 14px;font-size:14px;line-height:1.65;color:#334155;">
+        Assalamu'alaikum / Salam sejahtera, <strong>${safeName}</strong>,
+      </p>
+      <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#475569;">
+        Akun Anda pada Portal SIMMS <strong>${escapeHtml(params.institutionName)}</strong> saat ini telah <strong>dinonaktifkan</strong> oleh Admin sehingga sementara tidak dapat digunakan untuk masuk ke portal.
+      </p>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:20px;">
+        <tr>
+          <td style="padding:14px 16px;font-size:12px;color:#475569;line-height:1.7;">
+            <div><strong>Email Akun:</strong> ${safeEmail}</div>
+            <div><strong>Status Akun:</strong> NONAKTIF</div>
+            <div><strong>Waktu Pembaruan:</strong> ${safeTime}</div>
+          </td>
+        </tr>
+      </table>
+    `,
+  });
+
+  const text = [
+    `Halo ${params.recipientName},`,
+    `Akun Anda di ${params.institutionName} (${params.recipientEmail}) saat ini DINONAKTIFKAN pada ${params.reviewedAtWib}.`,
+    'Silakan hubungi admin/operator lembaga jika membutuhkan informasi lebih lanjut.',
+  ].join('\n');
+
+  return {
+    subject: `[${params.institutionName}] Status Akun Anda Dinonaktifkan`,
+    html,
+    text,
+  };
+}
