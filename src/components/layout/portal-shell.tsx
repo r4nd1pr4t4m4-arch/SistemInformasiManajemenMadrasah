@@ -16,6 +16,7 @@ import {
   Globe,
   GraduationCap,
   HeartHandshake,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   MapPin,
@@ -26,6 +27,8 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  Smartphone,
+  User,
   Users,
   Wallet,
   X,
@@ -226,6 +229,31 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
       },
     ],
   },
+  {
+    id: 'akun',
+    label: 'Akun',
+    icon: <User className="w-4 h-4" />,
+    items: [
+      {
+        href: '/portal/akun/profil',
+        path: '/portal/akun/profil',
+        label: 'Profil',
+        icon: <User className="w-3.5 h-3.5" />,
+      },
+      {
+        href: '/portal/akun/kata-sandi',
+        path: '/portal/akun/kata-sandi',
+        label: 'Ganti Kata Sandi',
+        icon: <KeyRound className="w-3.5 h-3.5" />,
+      },
+      {
+        href: '/portal/akun/mfa',
+        path: '/portal/akun/mfa',
+        label: 'Manajemen MFA',
+        icon: <Smartphone className="w-3.5 h-3.5" />,
+      },
+    ],
+  },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -245,6 +273,9 @@ const PAGE_TITLES: Record<string, string> = {
   '/portal/layanan/bk': 'Bimbingan Konseling (BK) & Poin Siswa',
   '/portal/layanan/guru-wali': 'Manajemen Guru Wali',
   '/portal/layanan/alumni': 'Tracer Study / Portal Alumni',
+  '/portal/akun/profil': 'Profil Akun',
+  '/portal/akun/kata-sandi': 'Ganti Kata Sandi',
+  '/portal/akun/mfa': 'Manajemen MFA',
 };
 
 function PortalShellInner({ children }: { children: React.ReactNode }) {
