@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Newspaper } from 'lucide-react';
+import { Newspaper } from 'lucide-react';
 import { connection } from 'next/server';
+import { PublicShell } from '@/components/layout/public-shell';
 import { getPublishedPosts } from '@/lib/data/public-queries';
 
 async function BeritaContent() {
@@ -40,27 +40,20 @@ async function BeritaContent() {
 
 export default function BeritaPage() {
   return (
-    <div className="min-h-screen simms-ambient py-10 px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <PublicShell>
+      <div className="max-w-6xl mx-auto py-10 px-4 sm:px-6 space-y-8">
         <div className="flex items-center justify-between">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-emerald-700 bg-white/80 backdrop-blur px-3.5 py-2 rounded-xl border border-slate-200/80 transition"
-          >
-            <ArrowLeft className="w-4 h-4" /> Beranda
-          </Link>
-          <span className="text-xs font-semibold px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 inline-flex items-center gap-1.5">
-            <Newspaper className="w-3.5 h-3.5" /> Berita, Artikel &amp; Karya Tulis
+          <div className="space-y-1">
+            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+              Publikasi &amp; Informasi Lembaga
+            </h1>
+            <p className="text-sm text-slate-600">
+              Liputan kegiatan, pengumuman ujian/libur, artikel pendidikan, serta karya tulis guru dan siswa.
+            </p>
+          </div>
+          <span className="hidden sm:inline-flex text-xs font-semibold px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 items-center gap-1.5">
+            <Newspaper className="w-3.5 h-3.5" /> Berita &amp; Artikel
           </span>
-        </div>
-
-        <div className="space-y-2">
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-            Publikasi &amp; Informasi Lembaga
-          </h1>
-          <p className="text-sm text-slate-600">
-            Liputan kegiatan, pengumuman ujian/libur, artikel pendidikan, serta karya tulis guru dan siswa.
-          </p>
         </div>
 
         <Suspense
@@ -73,6 +66,6 @@ export default function BeritaPage() {
           <BeritaContent />
         </Suspense>
       </div>
-    </div>
+    </PublicShell>
   );
 }

@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Image as ImageIcon, PlayCircle, Video } from 'lucide-react';
+import { Image as ImageIcon, PlayCircle, Video } from 'lucide-react';
 import { connection } from 'next/server';
+import { PublicShell } from '@/components/layout/public-shell';
 import {
   getInstitutionSettings,
   getPublicGalleryAndFacilities,
@@ -16,32 +16,25 @@ async function GaleriContent() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-emerald-700 bg-white/80 backdrop-blur px-3.5 py-2 rounded-xl border border-slate-200/80 transition"
-        >
-          <ArrowLeft className="w-4 h-4" /> Beranda
-        </Link>
+      <div className="flex items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            Galeri &amp; Multimedia
+          </h1>
+          <p className="text-sm text-slate-600">
+            Dokumentasi foto kegiatan, video profil lembaga, dan tautan kanal media sosial resmi.
+          </p>
+        </div>
         {school.social_links?.youtube && (
           <a
             href={school.social_links.youtube}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full bg-rose-50 text-rose-700 border border-rose-200 shrink-0"
           >
-            <Video className="w-4 h-4" /> Kanal YouTube Resmi
+            <Video className="w-4 h-4" /> YouTube Resmi
           </a>
         )}
-      </div>
-
-      <div className="space-y-2">
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-          Galeri &amp; Multimedia
-        </h1>
-        <p className="text-sm text-slate-600">
-          Dokumentasi foto kegiatan, video profil lembaga, dan tautan kanal media sosial resmi.
-        </p>
       </div>
 
       {gallery.length === 0 ? (
@@ -86,8 +79,8 @@ async function GaleriContent() {
 
 export default function GaleriPage() {
   return (
-    <div className="min-h-screen simms-ambient py-10 px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <PublicShell>
+      <div className="max-w-6xl mx-auto py-10 px-4 sm:px-6 space-y-8">
         <Suspense
           fallback={
             <div className="glass-card rounded-3xl p-8 text-center text-sm text-slate-500">
@@ -98,6 +91,6 @@ export default function GaleriPage() {
           <GaleriContent />
         </Suspense>
       </div>
-    </div>
+    </PublicShell>
   );
 }

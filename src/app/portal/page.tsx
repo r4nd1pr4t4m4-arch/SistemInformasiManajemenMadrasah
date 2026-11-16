@@ -138,83 +138,27 @@ export default function PortalPage() {
   ];
 
   return (
-    <div className="min-h-screen simms-ambient flex flex-col">
-      {/* Top Glass Header */}
-      <header className="sticky top-0 z-20 glass-nav px-4 sm:px-6 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/"
-            className="p-2 rounded-xl bg-white/80 border border-slate-200/80 hover:bg-white text-slate-600 transition"
-            title="Kembali ke Website Resmi"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div>
-            <p className="font-bold text-slate-900 text-sm md:text-base tracking-tight">
-              Portal Terpadu — {institutionName}
-            </p>
-            <p className="text-xs text-slate-500">
-              Mode Lembaga:{' '}
-              <span className="font-semibold text-emerald-700">{institutionType}</span> •{' '}
-              {institutionType === 'MADRASAH' ? 'OSIM & Kepala Madrasah' : 'OSIS & Kepala Sekolah'}
-            </p>
-          </div>
+    <div className="max-w-7xl w-full mx-auto grid md:grid-cols-12 gap-6">
+      {/* Sub-navigation Simulator */}
+      <aside className="md:col-span-3">
+        <div className="glass-card rounded-3xl p-3 space-y-1.5 sticky top-24">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setActiveTab(item.id)}
+              className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl text-sm font-medium transition ${
+                activeTab === item.id
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-white/80'
+              }`}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/portal/layanan"
-            className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white transition"
-          >
-            Layanan &amp; Arsip
-          </Link>
-          <Link
-            href="/portal/keuangan"
-            className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white transition"
-          >
-            Keuangan &amp; Honor
-          </Link>
-          <Link
-            href="/portal/akademik"
-            className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white transition"
-          >
-            Portal Akademik
-          </Link>
-          <Link
-            href="/portal/cms"
-            className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition"
-          >
-            CMS &amp; PPDB
-          </Link>
-          <Link
-            href="/login"
-            className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-white/80 hover:bg-white text-slate-700 border border-slate-200/80 transition"
-          >
-            Login
-          </Link>
-        </div>
-      </header>
-
-      <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-7 grid md:grid-cols-12 gap-6 flex-1">
-        {/* Sidebar Modular */}
-        <aside className="md:col-span-3">
-          <div className="glass-card rounded-3xl p-3 space-y-1.5 sticky top-24">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl text-sm font-medium transition ${
-                  activeTab === item.id
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-700 hover:bg-white/80'
-                }`}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
-        </aside>
+      </aside>
 
         {/* Main Content */}
         <main className="md:col-span-9 space-y-6">
@@ -538,7 +482,6 @@ export default function PortalPage() {
             </div>
           )}
         </main>
-      </div>
     </div>
   );
 }

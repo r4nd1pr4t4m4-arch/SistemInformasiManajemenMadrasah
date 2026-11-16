@@ -221,20 +221,9 @@ export default function PortalLayananPage() {
   const cardStudent = students.find((s) => s.id === selectedCardStudentId) || students[0];
 
   return (
-    <div className="min-h-screen simms-ambient py-8 px-4 sm:px-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/portal"
-              className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-emerald-700 bg-white/80 backdrop-blur px-3.5 py-2 rounded-xl border border-slate-200/80 transition"
-            >
-              <ArrowLeft className="w-4 h-4" /> Portal Terpadu
-            </Link>
-            <h1 className="text-xl font-bold text-slate-900">Layanan Pendukung &amp; Arsip</h1>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5 bg-white/80 p-1 rounded-2xl border border-slate-200/80">
+    <div className="max-w-7xl mx-auto space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-1.5 bg-white/80 p-1 rounded-2xl border border-slate-200/80">
             {[
               { id: 'persuratan', label: 'Persuratan & Kartu', icon: <FileText className="w-3.5 h-3.5" /> },
               { id: 'elibrary', label: 'E-Library', icon: <BookOpen className="w-3.5 h-3.5" /> },
@@ -921,7 +910,6 @@ export default function PortalLayananPage() {
             )}
           </>
         )}
-      </div>
     </div>
   );
 }

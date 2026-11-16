@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Award, Building2, CheckCircle2, Layers } from 'lucide-react';
+import { Award, Building2, CheckCircle2, Layers } from 'lucide-react';
 import { connection } from 'next/server';
+import { PublicShell } from '@/components/layout/public-shell';
 import {
   getInstitutionSettings,
   getPublicGalleryAndFacilities,
@@ -17,12 +17,6 @@ async function ProfilContent() {
   return (
     <>
       <div className="flex items-center justify-between">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-emerald-700 bg-white/80 backdrop-blur px-3.5 py-2 rounded-xl border border-slate-200/80 transition"
-        >
-          <ArrowLeft className="w-4 h-4" /> Beranda
-        </Link>
         <span className="text-xs font-semibold px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80">
           Profil Lembaga ({school.institution_type})
         </span>
@@ -110,8 +104,8 @@ async function ProfilContent() {
 
 export default function ProfilPage() {
   return (
-    <div className="min-h-screen simms-ambient py-10 px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <PublicShell>
+      <div className="max-w-6xl mx-auto py-10 px-4 sm:px-6 space-y-8">
         <Suspense
           fallback={
             <div className="glass-card rounded-3xl p-8 text-center text-sm text-slate-500">
@@ -122,6 +116,6 @@ export default function ProfilPage() {
           <ProfilContent />
         </Suspense>
       </div>
-    </div>
+    </PublicShell>
   );
 }
