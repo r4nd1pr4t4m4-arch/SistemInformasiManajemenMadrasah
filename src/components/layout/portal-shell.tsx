@@ -16,67 +16,114 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import type { AppRole } from '@/types/database';
 
 interface UserInfo {
   fullName: string;
   email: string | null;
-  primaryRole: string;
+  primaryRole: AppRole;
+  roles?: AppRole[];
 }
 
-const PORTAL_SECTIONS = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  allowedRoles?: AppRole[];
+}
+
+const PORTAL_SECTIONS: { group: string; items: NavItem[] }[] = [
   {
-    group: 'Utama',
+    group: 'Menu Utama',
     items: [
       {
         href: '/portal',
-        label: 'Ringkasan Portal',
+        label: 'Dashboard',
         icon: <LayoutDashboard className="w-4 h-4" />,
       },
     ],
   },
   {
-    group: 'Pilar 1: Website & PPDB',
+    group: 'Publikasi & PPDB',
     items: [
       {
         href: '/portal/cms',
         label: 'CMS & Verifikasi PPDB',
         icon: <Newspaper className="w-4 h-4" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
       },
     ],
   },
   {
-    group: 'Pilar 2: Portal Akademik',
+    group: 'Akademik',
     items: [
       {
         href: '/portal/akademik',
         label: 'Buku Induk, Jadwal & Ujian',
         icon: <BookOpenCheck className="w-4 h-4" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'WAKA_KURIKULUM',
+          'WAKA_KESISWAAN',
+          'GURU',
+          'WALI_KELAS',
+          'KEPALA_TU',
+          'STAF_TU',
+        ],
       },
     ],
   },
   {
-    group: 'Pilar 3: Keuangan & Layanan',
+    group: 'Keuangan & Layanan',
     items: [
       {
         href: '/portal/keuangan',
         label: 'SPP, Tabungan & Honor',
         icon: <Wallet className="w-4 h-4" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'BENDAHARA',
+          'BENDAHARA_KOMITE',
+          'PENGELOLA_TABUNGAN',
+          'KEPALA_TU',
+        ],
       },
       {
         href: '/portal/layanan',
         label: 'Surat, E-Library, BK & Alumni',
         icon: <FileText className="w-4 h-4" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'KEPALA_TU',
+          'STAF_TU',
+          'PUSTAKAWAN',
+          'GURU_BK',
+          'GURU_WALI',
+          'WALI_KELAS',
+          'GURU',
+          'WAKA_KESISWAAN',
+          'WAKA_HUMAS',
+          'ALUMNI',
+          'SISWA',
+          'UMUM',
+        ],
       },
     ],
   },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
-  '/portal': 'Ringkasan Portal Terpadu',
+  '/portal': 'Dashboard',
   '/portal/cms': 'Manajemen Website CMS & PPDB Online',
-  '/portal/akademik': 'Portal Akademik (Buku Induk, Jadwal, Presensi GPS & Ujian)',
-  '/portal/keuangan': 'Keuangan SPP/Komite, Tabungan Digital & Honorarium Guru',
-  '/portal/layanan': 'Persuratan, E-Library, BK, Guru Wali & Tracer Study',
+  '/portal/akademik': 'Portal Akademik',
+  '/portal/keuangan': 'Keuangan, Tabungan & Honorarium',
+  '/portal/layanan': 'Persuratan, E-Library, BK, Guru Wali & Alumni',
 };
 
 export function PortalShell({ children }: { children: React.ReactNode }) {
@@ -100,7 +147,21 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     router.refresh();
   }
 
-  const pageTitle = PAGE_TITLES[pathname] || 'Portal Terpadu SIMMS';
+  const userRoles: AppRole[] = user
+    ? user.roles && user.roles.length > 0
+      ? user.roles
+      : [user.primaryRole]
+    : [];
+
+  const visibleSections = PORTAL_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => {
+      if (!item.allowedRoles || userRoles.length === 0) return true;
+      return userRoles.some((r) => item.allowedRoles!.includes(r));
+    }),
+  })).filter((s) => s.items.length > 0);
+
+  const pageTitle = PAGE_TITLES[pathname] || 'Portal Terpadu';
 
   const SidebarContent = (
     <div className="flex flex-col h-full">
@@ -111,7 +172,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
           </div>
           <div>
             <p className="font-bold text-slate-900 text-sm leading-tight">SIMMS Portal</p>
-            <p className="text-[11px] text-slate-500">Sistem Terpadu 3-in-1</p>
+            <p className="text-[11px] text-slate-500">Sistem Informasi Terpadu</p>
           </div>
         </Link>
         <button
@@ -124,7 +185,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
-        {PORTAL_SECTIONS.map((section) => (
+        {visibleSections.map((section) => (
           <div key={section.group} className="space-y-1">
             <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               {section.group}
