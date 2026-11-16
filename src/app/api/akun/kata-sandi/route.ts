@@ -4,6 +4,13 @@ import { z } from 'zod';
 import { getCurrentUserWithRoles } from '@/lib/auth/session';
 import { OTP_COOKIE_NAME, verifySignedOtpToken } from '@/lib/auth/otp-token';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { getInstitutionSettings } from '@/lib/data/public-queries';
+import {
+  formatWibDateTime,
+  isGmailSmtpConfigured,
+  sendInstitutionalEmail,
+} from '@/lib/email/mailer';
+import { buildPasswordChangedEmail } from '@/lib/email/templates';
 
 const ChangePasswordSchema = z.object({
   otpCode: z.string().min(4).max(10),
@@ -35,7 +42,10 @@ export async function POST(request: Request) {
 
     if (!token) {
       return NextResponse.json(
-        { error: 'Kode OTP belum dikirim atau sudah kedaluwarsa. Klik Kirim Kode OTP terlebih dahulu.' },
+        {
+          error:
+            'Kode OTP belum dikirim atau sudah kedaluwarsa. Klik Kirim Kode OTP terlebih dahulu.',
+        },
         { status: 400 }
       );
     }
@@ -55,6 +65,28 @@ export async function POST(request: Request) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Kirim notifikasi konfirmasi perubahan kata sandi (non-blocking)
+    if (session.email && isGmailSmtpConfigured()) {
+      try {
+        const school = await getInstitutionSettings();
+        const notice = buildPasswordChangedEmail({
+          institutionName: school.name,
+          institutionAddress: school.address,
+          institutionEmail: school.email,
+          recipientName: session.fullName,
+          recipientEmail: session.email,
+          changedAtWib: formatWibDateTime(),
+        });
+        await sendInstitutionalEmail({
+          senderLabel: school.short_name || school.name,
+          to: session.email,
+          ...notice,
+        });
+      } catch {
+        // Jangan gagalkan respons sukses jika notifikasi opsional gagal terkirim
+      }
     }
 
     const response = NextResponse.json({
