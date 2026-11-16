@@ -138,50 +138,53 @@ export default function PortalPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
-      {/* Top Header */}
-      <header className="bg-white border-b border-slate-200 px-4 h-16 flex items-center justify-between">
+    <div className="min-h-screen simms-ambient flex flex-col">
+      {/* Top Glass Header */}
+      <header className="sticky top-0 z-20 glass-nav px-4 sm:px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
             href="/"
-            className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"
+            className="p-2 rounded-xl bg-white/80 border border-slate-200/80 hover:bg-white text-slate-600 transition"
             title="Kembali ke Website Resmi"
           >
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <p className="font-bold text-slate-900 text-sm md:text-base">
+            <p className="font-bold text-slate-900 text-sm md:text-base tracking-tight">
               Portal Terpadu — {institutionName}
             </p>
             <p className="text-xs text-slate-500">
-              Mode Lembaga: <span className="font-semibold text-emerald-700">{institutionType}</span> •{' '}
+              Mode Lembaga:{' '}
+              <span className="font-semibold text-emerald-700">{institutionType}</span> •{' '}
               {institutionType === 'MADRASAH' ? 'OSIM & Kepala Madrasah' : 'OSIS & Kepala Sekolah'}
             </p>
           </div>
         </div>
-        <span className="text-xs font-medium px-3 py-1 rounded-full bg-amber-100 text-amber-800">
-          Tahap 1: Arsitektur &amp; Fondasi Aktif
+        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+          Clean Glassmorphism UI
         </span>
       </header>
 
-      <div className="max-w-7xl w-full mx-auto px-4 py-6 grid md:grid-cols-12 gap-6 flex-1">
-        {/* Sidebar */}
-        <aside className="md:col-span-3 space-y-1.5">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
-                activeTab === item.id
-                  ? 'bg-emerald-700 text-white shadow-sm'
-                  : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'
-              }`}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </button>
-          ))}
+      <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-7 grid md:grid-cols-12 gap-6 flex-1">
+        {/* Sidebar Modular */}
+        <aside className="md:col-span-3">
+          <div className="glass-card rounded-3xl p-3 space-y-1.5 sticky top-24">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveTab(item.id)}
+                className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl text-sm font-medium transition ${
+                  activeTab === item.id
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-700 hover:bg-white/80'
+                }`}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
         </aside>
 
         {/* Main Content */}

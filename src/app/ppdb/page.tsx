@@ -33,22 +33,22 @@ export default function PpdbPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 py-10 px-4">
+    <div className="min-h-screen simms-ambient py-10 px-4">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-emerald-700"
+            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-emerald-700 bg-white/80 backdrop-blur px-3.5 py-2 rounded-xl border border-slate-200/80 transition"
           >
             <ArrowLeft className="w-4 h-4" /> Kembali ke Website Resmi
           </Link>
-          <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800">
+          <span className="text-xs font-semibold px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80">
             PPDB Online 2026/2027
           </span>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-emerald-800 text-white p-6">
+        <div className="glass-card rounded-3xl overflow-hidden">
+          <div className="bg-gradient-to-r from-emerald-700 to-teal-700 text-white p-7">
             <h1 className="text-2xl font-bold">Penerimaan Peserta Didik Baru (PPDB)</h1>
             <p className="text-emerald-100 text-sm mt-1">
               Formulir pendaftaran daring, unggah berkas persyaratan (Cloudflare R2), dan cek status seleksi mandiri.
