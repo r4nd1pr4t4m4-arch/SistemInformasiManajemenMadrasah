@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getInstitutionSettings } from '@/lib/data/public-queries';
+import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 
 const SettingsUpdateSchema = z.object({
   institution_type: z.enum(['MADRASAH', 'SEKOLAH']),
@@ -31,6 +32,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  if (guard.errorResponse) return guard.errorResponse;
+
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json(
       { error: 'Supabase belum dikonfigurasi.' },

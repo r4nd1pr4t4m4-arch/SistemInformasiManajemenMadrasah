@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 
 const UpdateStatusSchema = z.object({
   id: z.string().uuid(),
@@ -16,6 +17,9 @@ const UpdateStatusSchema = z.object({
 });
 
 export async function GET() {
+  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  if (guard.errorResponse) return guard.errorResponse;
+
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ registrations: [] });
   }
@@ -32,6 +36,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  if (guard.errorResponse) return guard.errorResponse;
+
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
   }

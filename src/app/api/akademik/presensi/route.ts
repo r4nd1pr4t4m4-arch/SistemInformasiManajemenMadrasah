@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { verifyGeofence } from '@/lib/domain/geofence';
+import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 
 const StudentAttendanceSchema = z.object({
   action: z.literal('STUDENT_ATTENDANCE'),
@@ -36,6 +37,9 @@ const DelegationSchema = z.object({
 });
 
 export async function GET() {
+  const guard = await requireApiRoles(ROLE_GROUPS.AKADEMIK);
+  if (guard.errorResponse) return guard.errorResponse;
+
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({
       studentAttendances: [],
@@ -74,6 +78,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const guard = await requireApiRoles(ROLE_GROUPS.AKADEMIK);
+  if (guard.errorResponse) return guard.errorResponse;
+
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
   }

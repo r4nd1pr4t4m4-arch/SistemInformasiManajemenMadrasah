@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 
 const CreateLetterSchema = z.object({
   direction: z.enum(['MASUK', 'KELUAR']),
@@ -23,6 +24,9 @@ const CreateLetterSchema = z.object({
 });
 
 export async function GET() {
+  const guard = await requireApiRoles(ROLE_GROUPS.PERSURATAN);
+  if (guard.errorResponse) return guard.errorResponse;
+
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ letters: [] });
   }
@@ -39,6 +43,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const guard = await requireApiRoles(ROLE_GROUPS.PERSURATAN);
+  if (guard.errorResponse) return guard.errorResponse;
+
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
   }

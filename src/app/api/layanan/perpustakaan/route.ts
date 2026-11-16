@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 
 const AddBookSchema = z.object({
   action: z.literal('ADD_BOOK'),
@@ -67,6 +68,8 @@ export async function POST(request: Request) {
     const supabase = createSupabaseAdminClient();
 
     if (body.action === 'ADD_BOOK') {
+      const guard = await requireApiRoles(ROLE_GROUPS.PERPUSTAKAAN);
+      if (guard.errorResponse) return guard.errorResponse;
       const parsed = AddBookSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data buku tidak valid.' }, { status: 400 });
@@ -109,6 +112,8 @@ export async function POST(request: Request) {
     }
 
     if (body.action === 'BORROW_BOOK') {
+      const guard = await requireApiRoles(ROLE_GROUPS.PERPUSTAKAAN);
+      if (guard.errorResponse) return guard.errorResponse;
       const parsed = BorrowBookSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data peminjaman tidak valid.' }, { status: 400 });
@@ -144,6 +149,8 @@ export async function POST(request: Request) {
     }
 
     if (body.action === 'RETURN_BOOK') {
+      const guard = await requireApiRoles(ROLE_GROUPS.PERPUSTAKAAN);
+      if (guard.errorResponse) return guard.errorResponse;
       const parsed = ReturnBookSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data pengembalian tidak valid.' }, { status: 400 });

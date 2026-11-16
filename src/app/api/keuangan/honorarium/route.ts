@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { calculateTeacherHonorarium } from '@/lib/domain/honorarium';
+import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 
 const UpdateRateSchema = z.object({
   action: z.literal('UPDATE_RATE'),
@@ -35,6 +36,9 @@ const GenerateHonorariumSchema = z.object({
 });
 
 export async function GET() {
+  const guard = await requireApiRoles(ROLE_GROUPS.HONORARIUM);
+  if (guard.errorResponse) return guard.errorResponse;
+
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({
       ratePerJtm: 25000,
@@ -82,6 +86,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const guard = await requireApiRoles(ROLE_GROUPS.HONORARIUM);
+  if (guard.errorResponse) return guard.errorResponse;
+
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
   }
@@ -175,6 +182,9 @@ export async function PATCH(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const guard = await requireApiRoles(ROLE_GROUPS.HONORARIUM);
+  if (guard.errorResponse) return guard.errorResponse;
+
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
   }

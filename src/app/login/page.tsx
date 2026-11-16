@@ -39,7 +39,9 @@ export default function LoginPage() {
         if (error) {
           setMessage({ type: 'error', text: error.message });
         } else {
-          router.push('/portal');
+          const params = new URLSearchParams(window.location.search);
+          const nextUrl = params.get('next') || '/portal';
+          router.push(nextUrl.startsWith('/') ? nextUrl : '/portal');
           router.refresh();
         }
       } else {
