@@ -123,7 +123,8 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseAdminClient();
 
-    // Pastikan ada periode PPDB aktif
+    // Pastikan ada periode PPDB aktif untuk jalur reguler; Mutasi Masuk tetap dibuka sepanjang tahun
+    const isMutasi = parsed.data.pathway === 'MUTASI';
     const { data: activePeriod } = await supabase
       .from('ppdb_periods')
       .select('id')
@@ -131,29 +132,28 @@ export async function POST(request: Request) {
       .limit(1)
       .maybeSingle();
 
-    if (!activePeriod) {
+    if (!activePeriod && !isMutasi) {
       return NextResponse.json(
         { error: 'Saat ini tidak ada periode pendaftaran PPDB yang aktif.' },
         { status: 400 }
       );
     }
 
-    const prefix = parsed.data.pathway === 'MUTASI' ? 'MUTASI-2026' : 'PPDB-2026';
+    const prefix = isMutasi ? 'MUTASI-2026' : 'PPDB-2026';
     const registrationNumber = `${prefix}-${Math.floor(10000 + Math.random() * 90000)}`;
-    const extraMutationNote =
-      parsed.data.pathway === 'MUTASI'
-        ? [
-            parsed.data.targetGrade ? `Kelas Tujuan: ${parsed.data.targetGrade}` : '',
-            parsed.data.mutationReason ? `Alasan Mutasi: ${parsed.data.mutationReason}` : '',
-          ]
-            .filter(Boolean)
-            .join(' | ')
-        : null;
+    const extraMutationNote = isMutasi
+      ? [
+          parsed.data.targetGrade ? `Kelas Tujuan: ${parsed.data.targetGrade}` : '',
+          parsed.data.mutationReason ? `Alasan Mutasi: ${parsed.data.mutationReason}` : '',
+        ]
+          .filter(Boolean)
+          .join(' | ')
+      : null;
 
     const { data: inserted, error: insertErr } = await supabase
       .from('ppdb_registrations')
       .insert({
-        period_id: activePeriod.id,
+        period_id: activePeriod?.id ?? null,
         registration_number: registrationNumber,
         full_name: parsed.data.fullName,
         nisn: parsed.data.nisn || null,
