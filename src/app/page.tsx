@@ -141,6 +141,12 @@ function HeroIntroSkeleton() {
 async function HeadmasterCard() {
   await connection();
   const school = await getCachedInstitutionSettings();
+  const initials = (school.headmaster_name || 'KS')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('');
 
   return (
     <div className="glass-card rounded-3xl p-7 space-y-5">
@@ -155,7 +161,7 @@ async function HeadmasterCard() {
       </p>
       <div className="pt-4 border-t border-slate-200/70 flex items-center gap-3">
         <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-sm">
-          AF
+          {initials}
         </div>
         <div>
           <p className="font-bold text-slate-900 text-sm">{school.headmaster_name}</p>
@@ -272,6 +278,14 @@ function ProfileVisionSkeleton() {
 async function LatestPosts() {
   await connection();
   const posts = await getPublishedPosts(3);
+
+  if (posts.length === 0) {
+    return (
+      <div className="glass-card rounded-3xl p-8 text-center text-sm text-slate-500">
+        Belum ada berita atau pengumuman yang dipublikasikan.
+      </div>
+    );
+  }
 
   return (
     <div className="grid md:grid-cols-3 gap-6">

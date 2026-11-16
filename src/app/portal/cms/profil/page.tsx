@@ -53,6 +53,7 @@ export default function CmsProfilPage() {
           geofence_lat: settings.geofence_lat,
           geofence_lng: settings.geofence_lng,
           geofence_radius_meters: settings.geofence_radius_meters,
+          social_links: settings.social_links || {},
         }),
       });
       if (res.ok) {
@@ -339,6 +340,72 @@ export default function CmsProfilPage() {
                   placeholder="Jl. ..., Kecamatan, Kabupaten/Kota, Provinsi, Kode Pos"
                   className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
                 />
+              </div>
+            </div>
+
+            <div className="pt-2 space-y-3">
+              <p className="text-xs font-semibold text-slate-700">Media Sosial Resmi</p>
+              <div className="grid sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Facebook
+                  </label>
+                  <input
+                    type="url"
+                    value={settings.social_links?.facebook || ''}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        social_links: {
+                          ...(settings.social_links || {}),
+                          facebook: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="https://facebook.com/..."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Instagram
+                  </label>
+                  <input
+                    type="url"
+                    value={settings.social_links?.instagram || ''}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        social_links: {
+                          ...(settings.social_links || {}),
+                          instagram: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="https://instagram.com/..."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    YouTube
+                  </label>
+                  <input
+                    type="url"
+                    value={settings.social_links?.youtube || ''}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        social_links: {
+                          ...(settings.social_links || {}),
+                          youtube: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="https://youtube.com/@..."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+                  />
+                </div>
               </div>
             </div>
           </div>

@@ -25,6 +25,14 @@ const SettingsUpdateSchema = z.object({
   geofence_lat: z.number().optional().nullable(),
   geofence_lng: z.number().optional().nullable(),
   geofence_radius_meters: z.number().min(20).max(5000),
+  social_links: z
+    .object({
+      facebook: z.string().optional(),
+      instagram: z.string().optional(),
+      youtube: z.string().optional(),
+      tiktok: z.string().optional(),
+    })
+    .optional(),
 });
 
 export async function GET() {

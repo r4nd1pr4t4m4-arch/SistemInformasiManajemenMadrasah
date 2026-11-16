@@ -8,6 +8,18 @@ async function BeritaContent() {
   await connection();
   const posts = await getPublishedPosts(30);
 
+  if (posts.length === 0) {
+    return (
+      <div className="glass-card rounded-3xl p-8 text-center space-y-2">
+        <Newspaper className="w-9 h-9 text-emerald-600 mx-auto" />
+        <p className="font-bold text-slate-900">Belum Ada Berita atau Publikasi</p>
+        <p className="text-sm text-slate-600 max-w-md mx-auto">
+          Berita, pengumuman, dan artikel pendidikan akan tampil di sini setelah dipublikasikan melalui Portal CMS.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="grid md:grid-cols-3 gap-6">
       {posts.map((post) => (

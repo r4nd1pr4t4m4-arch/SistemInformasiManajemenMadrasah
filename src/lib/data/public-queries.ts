@@ -18,10 +18,8 @@ export async function getInstitutionSettings(): Promise<InstitutionSettings> {
     return {
       ...DEFAULT_INSTITUTION_SETTINGS,
       ...data,
-      mission: Array.isArray(data.mission) && data.mission.length > 0
-        ? data.mission
-        : DEFAULT_INSTITUTION_SETTINGS.mission,
-      social_links: data.social_links || DEFAULT_INSTITUTION_SETTINGS.social_links,
+      mission: Array.isArray(data.mission) ? data.mission : [],
+      social_links: data.social_links || {},
     };
   } catch {
     return DEFAULT_INSTITUTION_SETTINGS;
@@ -40,10 +38,10 @@ export async function getPublishedPosts(limit = 12): Promise<PostItem[]> {
       .order('published_at', { ascending: false })
       .limit(limit);
 
-    if (error || !data || data.length === 0) return DEFAULT_POSTS;
-    return data as PostItem[];
+    if (error) return [];
+    return (data || []) as PostItem[];
   } catch {
-    return DEFAULT_POSTS;
+    return [];
   }
 }
 

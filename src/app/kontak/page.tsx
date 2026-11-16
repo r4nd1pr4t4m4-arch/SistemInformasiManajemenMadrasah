@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CheckCircle2,
   HelpCircle,
@@ -13,23 +13,33 @@ import {
 import { PublicShell } from '@/components/layout/public-shell';
 import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 
-const SAMPLE_FAQS = [
-  {
-    q: 'Bagaimana cara mendaftar PPDB Online?',
-    a: 'Buka menu PPDB Online, isi formulir biodata, unggah scan KK/Akta/SKL, lalu simpan nomor pendaftaran Anda untuk memantau status kelulusan.',
-  },
-  {
-    q: 'Apakah masyarakat umum dapat mengakses E-Library?',
-    a: 'Ya. Masyarakat umum dapat mendaftar sebagai anggota perpustakaan digital untuk membaca koleksi e-book. Warga lembaga otomatis terdaftar beserta kartu anggota.',
-  },
-  {
-    q: 'Siapa saja yang dapat membuka tabungan di lembaga?',
-    a: 'Tabungan terbuka untuk siswa, guru, staf tata usaha, serta masyarakat umum yang dikelola oleh Pengelola Tabungan.',
-  },
-];
+interface FaqItem {
+  id: string;
+  question: string;
+  answer: string;
+}
 
 export default function KontakPage() {
   const school = useInstitutionSettings();
+  const [faqs, setFaqs] = useState<FaqItem[]>([]);
+  const [loadingFaqs, setLoadingFaqs] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/public/faqs', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (mounted && Array.isArray(data?.faqs)) {
+          setFaqs(data.faqs);
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoadingFaqs(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const [form, setForm] = useState({
     senderName: '',
     senderEmail: '',
@@ -213,6 +223,47 @@ export default function KontakPage() {
                   <span>{school.email}</span>
                 </p>
               </div>
+              {(school.social_links?.facebook ||
+                school.social_links?.instagram ||
+                school.social_links?.youtube) && (
+                <div className="pt-3 border-t border-slate-200/80 space-y-2">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Media Sosial Resmi
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {school.social_links?.facebook && (
+                      <a
+                        href={school.social_links.facebook}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-xs font-semibold text-slate-700 transition"
+                      >
+                        Facebook
+                      </a>
+                    )}
+                    {school.social_links?.instagram && (
+                      <a
+                        href={school.social_links.instagram}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-xs font-semibold text-slate-700 transition"
+                      >
+                        Instagram
+                      </a>
+                    )}
+                    {school.social_links?.youtube && (
+                      <a
+                        href={school.social_links.youtube}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-xs font-semibold text-slate-700 transition"
+                      >
+                        YouTube
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="glass-card rounded-3xl p-6 space-y-4">
@@ -220,12 +271,20 @@ export default function KontakPage() {
                 <HelpCircle className="w-5 h-5 text-emerald-700" /> Pertanyaan Umum (FAQ)
               </h2>
               <div className="space-y-3">
-                {SAMPLE_FAQS.map((item, i) => (
-                  <div key={i} className="modular-card rounded-2xl p-4 space-y-1">
-                    <p className="font-bold text-slate-900 text-xs">{item.q}</p>
-                    <p className="text-xs text-slate-600 leading-relaxed">{item.a}</p>
-                  </div>
-                ))}
+                {loadingFaqs ? (
+                  <p className="text-xs text-slate-500">Memuat daftar pertanyaan...</p>
+                ) : faqs.length === 0 ? (
+                  <p className="text-xs text-slate-500">
+                    Belum ada pertanyaan umum (FAQ) yang dipublikasikan.
+                  </p>
+                ) : (
+                  faqs.map((item) => (
+                    <div key={item.id} className="modular-card rounded-2xl p-4 space-y-1">
+                      <p className="font-bold text-slate-900 text-xs">{item.question}</p>
+                      <p className="text-xs text-slate-600 leading-relaxed">{item.answer}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

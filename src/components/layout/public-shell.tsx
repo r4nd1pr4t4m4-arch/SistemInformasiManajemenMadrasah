@@ -185,6 +185,42 @@ export function PublicFooter() {
             <Mail className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
             <span>{school.email}</span>
           </p>
+          {(school.social_links?.facebook ||
+            school.social_links?.instagram ||
+            school.social_links?.youtube) && (
+            <div className="flex flex-wrap gap-2 pt-1.5">
+              {school.social_links?.facebook && (
+                <a
+                  href={school.social_links.facebook}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
+                >
+                  Facebook
+                </a>
+              )}
+              {school.social_links?.instagram && (
+                <a
+                  href={school.social_links.instagram}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
+                >
+                  Instagram
+                </a>
+              )}
+              {school.social_links?.youtube && (
+                <a
+                  href={school.social_links.youtube}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
+                >
+                  YouTube
+                </a>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

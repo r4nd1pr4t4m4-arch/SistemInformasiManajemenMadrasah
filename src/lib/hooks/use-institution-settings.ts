@@ -4,6 +4,24 @@ import { useEffect, useState } from 'react';
 import { DEFAULT_INSTITUTION_SETTINGS } from '@/lib/data/demo-seed';
 import type { InstitutionSettings } from '@/types/database';
 
+const EMPTY_LOADING_SETTINGS: InstitutionSettings = {
+  ...DEFAULT_INSTITUTION_SETTINGS,
+  name: '',
+  short_name: '',
+  npsn: '',
+  nsm: '',
+  accreditation: '',
+  headmaster_name: '',
+  headmaster_greeting: '',
+  history: '',
+  vision: '',
+  mission: [],
+  address: '',
+  phone: '',
+  email: '',
+  social_links: {},
+};
+
 let cachedSettings: InstitutionSettings | null = null;
 let inflightPromise: Promise<InstitutionSettings> | null = null;
 
@@ -34,7 +52,7 @@ async function fetchInstitutionSettings(): Promise<InstitutionSettings> {
 
 export function useInstitutionSettings(): InstitutionSettings {
   const [school, setSchool] = useState<InstitutionSettings>(
-    () => cachedSettings || DEFAULT_INSTITUTION_SETTINGS
+    () => cachedSettings || EMPTY_LOADING_SETTINGS
   );
 
   useEffect(() => {
