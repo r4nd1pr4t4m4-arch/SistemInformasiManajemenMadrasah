@@ -93,6 +93,13 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         icon: <CalendarRange className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
       },
+      {
+        href: '/portal/cms/sarana-prasarana',
+        path: '/portal/cms/sarana-prasarana',
+        label: 'Sarana & Prasarana',
+        icon: <Building2 className="w-3.5 h-3.5" />,
+        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
+      },
     ],
   },
   {
