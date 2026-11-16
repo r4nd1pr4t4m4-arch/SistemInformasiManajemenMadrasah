@@ -39,6 +39,7 @@ import type { AppRole } from '@/types/database';
 interface UserInfo {
   fullName: string;
   email: string | null;
+  avatarUrl?: string | null;
   primaryRole: AppRole;
   roles?: AppRole[];
 }
@@ -492,8 +493,21 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-2.5 shrink-0">
             {user && (
-              <div className="hidden sm:flex items-center gap-2 bg-white/85 border border-slate-200/80 rounded-xl px-3 py-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <Link
+                href="/portal/akun/profil"
+                className="hidden sm:flex items-center gap-2.5 bg-white/85 hover:bg-white border border-slate-200/80 rounded-xl px-3 py-1.5 transition"
+              >
+                {user.avatarUrl ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.fullName}
+                    className="w-7 h-7 rounded-full object-cover border border-emerald-200"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[11px] font-bold">
+                    {(user.fullName || 'U').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
                 <div className="text-left">
                   <p className="text-xs font-bold text-slate-800 leading-tight">
                     {user.fullName}
@@ -502,7 +516,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
                     {user.primaryRole}
                   </p>
                 </div>
-              </div>
+              </Link>
             )}
             <button
               type="button"

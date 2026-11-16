@@ -201,3 +201,71 @@ export function buildPasswordChangedEmail(params: {
     text,
   };
 }
+
+export function buildEmailChangeOtpEmail(params: {
+  institutionName: string;
+  institutionAddress?: string | null;
+  institutionEmail?: string | null;
+  recipientName: string;
+  newEmail: string;
+  otpCode: string;
+  requestedAtWib: string;
+}) {
+  const safeName = escapeHtml(params.recipientName);
+  const safeEmail = escapeHtml(params.newEmail);
+  const safeOtp = escapeHtml(params.otpCode);
+  const safeTime = escapeHtml(params.requestedAtWib);
+
+  const html = wrapEmailLayout({
+    institutionName: params.institutionName,
+    institutionAddress: params.institutionAddress,
+    institutionEmail: params.institutionEmail,
+    preheader: `Kode OTP verifikasi email baru Anda adalah ${params.otpCode}. Berlaku 10 menit.`,
+    badgeText: 'Verifikasi Email Baru',
+    title: 'Konfirmasi Pergantian Alamat Email',
+    bodyHtml: `
+      <p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#1e293b;">
+        Halo <strong>${safeName}</strong>,
+      </p>
+      <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#475569;">
+        Kami menerima permintaan untuk mengganti alamat email akun Anda di <strong>${escapeHtml(params.institutionName)}</strong> menjadi <strong>${safeEmail}</strong>. Masukkan kode OTP 6 digit berikut untuk memverifikasi alamat email baru ini:
+      </p>
+
+      <div style="margin:20px 0;padding:20px;border-radius:16px;background:linear-gradient(135deg,#ecfdf5 0%,#f0fdfa 100%);border:1.5px dashed #10b981;text-align:center;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#047857;margin-bottom:8px;">
+          Kode OTP Verifikasi Email (Berlaku 10 Menit)
+        </div>
+        <div style="font-family:'Courier New',Courier,monospace;font-size:34px;font-weight:800;letter-spacing:8px;color:#065f46;">
+          ${safeOtp}
+        </div>
+      </div>
+
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:20px;">
+        <tr>
+          <td style="padding:14px 16px;font-size:12px;color:#475569;line-height:1.7;">
+            <div><strong>Email Tujuan Baru:</strong> ${safeEmail}</div>
+            <div><strong>Waktu Permintaan:</strong> ${safeTime}</div>
+            <div><strong>Masa Berlaku:</strong> 10 menit sejak email ini dikirim</div>
+          </td>
+        </tr>
+      </table>
+
+      <div style="background-color:#fffbeb;border-left:4px solid #f59e0b;border-radius:8px;padding:12px 14px;font-size:12px;color:#92400e;line-height:1.6;">
+        <strong>Peringatan Keamanan:</strong> Jangan bagikan kode OTP ini kepada siapa pun. Jika Anda tidak mengajukan pergantian email, abaikan email ini.
+      </div>
+    `,
+  });
+
+  const text = [
+    `Halo ${params.recipientName},`,
+    `Kode OTP verifikasi pergantian email baru (${params.newEmail}) Anda di ${params.institutionName} adalah: ${params.otpCode}`,
+    `Kode berlaku selama 10 menit sejak ${params.requestedAtWib}.`,
+    'Jangan bagikan kode OTP ini kepada siapa pun.',
+  ].join('\n');
+
+  return {
+    subject: `[${params.institutionName}] Kode OTP Verifikasi Email Baru: ${params.otpCode}`,
+    html,
+    text,
+  };
+}

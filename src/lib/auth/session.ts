@@ -5,6 +5,7 @@ export interface AuthenticatedSession {
   userId: string;
   email: string | null;
   fullName: string;
+  avatarUrl: string | null;
   primaryRole: AppRole;
   roles: AppRole[];
 }
@@ -23,7 +24,7 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('full_name, primary_role, email')
+      .select('full_name, primary_role, email, avatar_url')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -42,6 +43,7 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
       userId: user.id,
       email: user.email ?? profile?.email ?? null,
       fullName: profile?.full_name || user.email || 'Pengguna',
+      avatarUrl: profile?.avatar_url ?? null,
       primaryRole,
       roles: Array.from(rolesSet),
     };

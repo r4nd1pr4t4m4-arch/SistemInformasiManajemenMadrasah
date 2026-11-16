@@ -27,9 +27,17 @@ async function DirektoriContent() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {teachers.map((t) => (
               <div key={t.id} className="modular-card rounded-2xl p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center shrink-0">
-                  {t.full_name.slice(0, 2).toUpperCase()}
-                </div>
+                {t.photo_url ? (
+                  <img
+                    src={t.photo_url}
+                    alt={t.full_name}
+                    className="w-12 h-12 rounded-2xl object-cover border border-emerald-200 shrink-0"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center shrink-0">
+                    {t.full_name.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
                 <div>
                   <p className="font-bold text-slate-900 text-sm">{t.full_name}</p>
                   <p className="text-xs text-slate-500">
