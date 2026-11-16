@@ -71,7 +71,7 @@ async function NavbarBrand() {
   return (
     <Link href="/" className="flex items-center gap-3.5">
       <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-lg shadow-sm">
-        {school.short_name?.slice(0, 1) || 'S'}
+        {(school.name || school.short_name || 'S').slice(0, 1).toUpperCase()}
       </div>
       <div>
         <p className="font-bold text-slate-900 leading-tight tracking-tight">
@@ -205,7 +205,7 @@ async function ProfileVisionContent() {
         <div className="inline-flex items-center gap-2 text-emerald-700 font-semibold text-xs uppercase tracking-wider">
           <Building2 className="w-4 h-4" /> Profil &amp; Sejarah
         </div>
-        <h2 className="text-2xl font-bold text-slate-900">Mengenal {school.short_name}</h2>
+        <h2 className="text-2xl font-bold text-slate-900">Mengenal {school.name}</h2>
         <p className="text-slate-600 leading-relaxed text-sm md:text-base">{school.history}</p>
         <div className="grid grid-cols-2 gap-4 pt-2">
           <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/80">
