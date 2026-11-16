@@ -14,7 +14,6 @@ import {
   Loader2,
   ShieldAlert,
   X,
-  Info,
   Search,
   UserPlus,
   Sparkles,
@@ -434,20 +433,6 @@ export default function PpdbMutasiPage() {
                 <span>
                   {activePeriod.open_date} s/d {activePeriod.close_date}
                 </span>
-              </div>
-            )}
-
-            {!loadingPeriod && !activePeriod && activeTab === 'daftar' && (
-              <div className="p-4 rounded-2xl bg-teal-50/80 border border-teal-200/80 text-teal-950 text-xs flex items-start gap-3 print:hidden">
-                <Info className="w-5 h-5 text-teal-700 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-bold text-sm">
-                    Layanan Mutasi Masuk Tetap Dibuka Sepanjang Tahun Ajaran
-                  </p>
-                  <p className="leading-relaxed text-teal-900">
-                    Meskipun periode PPDB reguler sedang tidak aktif, pengajuan <strong>PPDB Khusus Mutasi Masuk</strong> tetap dapat diajukan kapan saja sesuai ketersediaan kuota rombongan belajar.
-                  </p>
-                </div>
               </div>
             )}
 

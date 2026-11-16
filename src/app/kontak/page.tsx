@@ -11,7 +11,7 @@ import {
   Send,
 } from 'lucide-react';
 import { PublicShell } from '@/components/layout/public-shell';
-import { DEFAULT_INSTITUTION_SETTINGS } from '@/lib/data/demo-seed';
+import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 
 const SAMPLE_FAQS = [
   {
@@ -29,7 +29,7 @@ const SAMPLE_FAQS = [
 ];
 
 export default function KontakPage() {
-  const school = DEFAULT_INSTITUTION_SETTINGS;
+  const school = useInstitutionSettings();
   const [form, setForm] = useState({
     senderName: '',
     senderEmail: '',

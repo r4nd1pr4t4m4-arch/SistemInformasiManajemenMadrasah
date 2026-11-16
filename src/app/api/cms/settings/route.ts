@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { connection } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getInstitutionSettings } from '@/lib/data/public-queries';
@@ -27,6 +28,7 @@ const SettingsUpdateSchema = z.object({
 });
 
 export async function GET() {
+  await connection();
   const settings = await getInstitutionSettings();
   return NextResponse.json({ settings });
 }

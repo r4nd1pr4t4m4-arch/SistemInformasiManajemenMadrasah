@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
-import { DEFAULT_INSTITUTION_SETTINGS } from '@/lib/data/demo-seed';
+import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 
 const PUBLIC_NAV_LINKS = [
   { href: '/', label: 'Beranda' },
@@ -26,7 +26,7 @@ const PUBLIC_NAV_LINKS = [
 export function PublicNavbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const school = DEFAULT_INSTITUTION_SETTINGS;
+  const school = useInstitutionSettings();
 
   return (
     <>
@@ -134,7 +134,7 @@ export function PublicNavbar() {
 }
 
 export function PublicFooter() {
-  const school = DEFAULT_INSTITUTION_SETTINGS;
+  const school = useInstitutionSettings();
 
   return (
     <footer className="border-t border-slate-200/80 bg-white/75 backdrop-blur mt-auto">

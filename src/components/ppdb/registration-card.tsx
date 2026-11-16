@@ -1,7 +1,7 @@
 'use client';
 
 import { CheckCircle2, Printer } from 'lucide-react';
-import { DEFAULT_INSTITUTION_SETTINGS } from '@/lib/data/demo-seed';
+import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 import { getPathwayLabel } from '@/lib/ppdb/pathways';
 
 export interface RegistrationCardData {
@@ -19,7 +19,7 @@ export interface RegistrationCardData {
 }
 
 export function PpdbRegistrationCard({ data }: { data: RegistrationCardData }) {
-  const school = DEFAULT_INSTITUTION_SETTINGS;
+  const school = useInstitutionSettings();
   const formattedDate = data.createdAt
     ? new Date(data.createdAt).toLocaleDateString('id-ID', {
         dateStyle: 'long',
