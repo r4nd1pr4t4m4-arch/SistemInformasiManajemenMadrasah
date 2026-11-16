@@ -68,20 +68,21 @@ export default function GantiKataSandiPage() {
     setFeedback(null);
     setSendingOtp(true);
     try {
-      const supabase = createSupabaseBrowserClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: false },
-      });
-      if (error) {
-        setFeedback({ type: 'error', text: error.message });
+      const res = await fetch('/api/akun/otp/send', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setFeedback({ type: 'error', text: data.error || 'Gagal mengirim kode OTP.' });
       } else {
         setOtpSent(true);
         setFeedback({
           type: 'success',
-          text: `Kode OTP telah dikirim ke ${email}. Periksa kotak masuk atau folder spam Anda.`,
+          text:
+            data.message ||
+            `Kode OTP 6 digit telah dikirim ke ${email}. Periksa kotak masuk atau folder spam Anda.`,
         });
       }
+    } catch {
+      setFeedback({ type: 'error', text: 'Gagal terhubung ke server.' });
     } finally {
       setSendingOtp(false);
     }
@@ -104,7 +105,7 @@ export default function GantiKataSandiPage() {
         type: 'error',
         text:
           method === 'otp'
-            ? 'Masukkan kode OTP dari email Anda terlebih dahulu.'
+            ? 'Masukkan kode OTP 6 digit dari email Anda terlebih dahulu.'
             : 'Masukkan kode 6 digit dari aplikasi Authenticator MFA Anda.',
       });
       return;
@@ -112,19 +113,22 @@ export default function GantiKataSandiPage() {
 
     setSubmitting(true);
     try {
-      const supabase = createSupabaseBrowserClient();
-
       if (method === 'otp') {
-        const { error: otpError } = await supabase.auth.verifyOtp({
-          email,
-          token: verificationCode.trim(),
-          type: 'email',
+        const res = await fetch('/api/akun/kata-sandi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            otpCode: verificationCode.trim(),
+            newPassword,
+          }),
         });
-        if (otpError) {
-          setFeedback({ type: 'error', text: `Verifikasi OTP gagal: ${otpError.message}` });
+        const data = await res.json();
+        if (!res.ok) {
+          setFeedback({ type: 'error', text: data.error || 'Verifikasi OTP gagal.' });
           return;
         }
       } else {
+        const supabase = createSupabaseBrowserClient();
         if (!selectedFactorId) {
           setFeedback({
             type: 'error',
@@ -140,21 +144,21 @@ export default function GantiKataSandiPage() {
           setFeedback({ type: 'error', text: `Verifikasi MFA gagal: ${mfaError.message}` });
           return;
         }
+
+        const { error: updateErr } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+        if (updateErr) {
+          setFeedback({ type: 'error', text: updateErr.message });
+          return;
+        }
       }
 
-      const { error: updateErr } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (updateErr) {
-        setFeedback({ type: 'error', text: updateErr.message });
-      } else {
-        setNewPassword('');
-        setConfirmPassword('');
-        setVerificationCode('');
-        setOtpSent(false);
-        setFeedback({ type: 'success', text: 'Kata sandi akun berhasil diperbarui.' });
-      }
+      setNewPassword('');
+      setConfirmPassword('');
+      setVerificationCode('');
+      setOtpSent(false);
+      setFeedback({ type: 'success', text: 'Kata sandi akun berhasil diperbarui.' });
     } finally {
       setSubmitting(false);
     }
