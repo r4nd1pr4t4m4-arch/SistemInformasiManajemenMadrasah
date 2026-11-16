@@ -18,7 +18,11 @@ import {
   Wallet,
 } from 'lucide-react';
 import { connection } from 'next/server';
-import { getInstitutionSettings, getPublishedPosts } from '@/lib/data/public-queries';
+import {
+  getInstitutionSettings,
+  getPublishedPosts,
+  getPublicGalleryAndFacilities,
+} from '@/lib/data/public-queries';
 
 const getCachedInstitutionSettings = cache(getInstitutionSettings);
 
@@ -317,6 +321,69 @@ async function LatestPosts() {
   );
 }
 
+async function FacilitiesHighlightContent() {
+  await connection();
+  const { facilities } = await getPublicGalleryAndFacilities();
+
+  if (facilities.length === 0) {
+    return (
+      <div className="glass-card rounded-3xl p-8 text-center text-sm text-slate-500">
+        Data sarana dan prasarana akan tampil di sini setelah ditambahkan melalui Portal CMS.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      {facilities.slice(0, 6).map((f) => {
+        const condLabel =
+          f.condition === 'BAIK'
+            ? 'Baik'
+            : f.condition === 'RUSAK_RINGAN'
+            ? 'Rusak Ringan'
+            : f.condition === 'RUSAK_BERAT'
+            ? 'Rusak Berat'
+            : f.condition === 'DALAM_PERBAIKAN'
+            ? 'Dalam Perbaikan'
+            : f.condition || 'Baik';
+
+        return (
+          <div key={f.id} className="modular-card rounded-2xl p-5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-bold text-slate-900 text-sm">{f.name}</h3>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 shrink-0">
+                {f.quantity} Unit
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              {f.category || 'Umum'} • Kondisi: {condLabel}
+            </p>
+            {f.description && (
+              <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                {f.description}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FacilitiesHighlightSkeleton() {
+  return (
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      {[0, 1, 2].map((item) => (
+        <div key={item} className="modular-card rounded-2xl p-5 space-y-3">
+          <div className="h-4 w-40 rounded bg-slate-200 animate-pulse" />
+          <div className="h-3 w-32 rounded bg-slate-200/70 animate-pulse" />
+          <div className="h-3 w-full rounded bg-slate-200/70 animate-pulse" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function LatestPostsSkeleton() {
   return (
     <div className="grid md:grid-cols-3 gap-6">
@@ -504,6 +571,30 @@ export default function HomePage() {
       <section id="profil" className="max-w-7xl mx-auto px-4 sm:px-6 py-12 w-full">
         <Suspense fallback={<ProfileVisionSkeleton />}>
           <ProfileVisionContent />
+        </Suspense>
+      </section>
+
+      {/* Sarana & Prasarana */}
+      <section id="sarana" className="max-w-7xl mx-auto px-4 sm:px-6 py-12 w-full">
+        <div className="flex items-end justify-between mb-8">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+              Fasilitas Penunjang
+            </p>
+            <h2 className="text-2xl font-bold text-slate-900 mt-1">
+              Sarana &amp; Prasarana Lembaga
+            </h2>
+          </div>
+          <Link
+            href="/profil"
+            className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 inline-flex items-center gap-1"
+          >
+            Lihat Selengkapnya <ArrowUpRight className="w-4 h-4" />
+          </Link>
+        </div>
+
+        <Suspense fallback={<FacilitiesHighlightSkeleton />}>
+          <FacilitiesHighlightContent />
         </Suspense>
       </section>
 

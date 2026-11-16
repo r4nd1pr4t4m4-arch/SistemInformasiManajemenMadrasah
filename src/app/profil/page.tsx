@@ -79,22 +79,34 @@ async function ProfilContent() {
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {facilities.map((f) => (
-              <div key={f.id} className="modular-card rounded-2xl p-5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-slate-900 text-sm">{f.name}</h3>
-                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                    {f.quantity} Unit
-                  </span>
+            {facilities.map((f) => {
+              const condLabel =
+                f.condition === 'BAIK'
+                  ? 'Baik'
+                  : f.condition === 'RUSAK_RINGAN'
+                  ? 'Rusak Ringan'
+                  : f.condition === 'RUSAK_BERAT'
+                  ? 'Rusak Berat'
+                  : f.condition === 'DALAM_PERBAIKAN'
+                  ? 'Dalam Perbaikan'
+                  : f.condition || 'Baik';
+              return (
+                <div key={f.id} className="modular-card rounded-2xl p-5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-bold text-slate-900 text-sm">{f.name}</h3>
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 shrink-0">
+                      {f.quantity} Unit
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {f.category || 'Umum'} • Kondisi: {condLabel}
+                  </p>
+                  {f.description && (
+                    <p className="text-xs text-slate-600 leading-relaxed">{f.description}</p>
+                  )}
                 </div>
-                <p className="text-xs text-slate-500">
-                  {f.category || 'Umum'} • Kondisi: {f.condition}
-                </p>
-                {f.description && (
-                  <p className="text-xs text-slate-600 leading-relaxed">{f.description}</p>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
