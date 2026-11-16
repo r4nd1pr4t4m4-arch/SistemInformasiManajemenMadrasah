@@ -160,7 +160,13 @@ export default function PortalPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/portal/keuangan"
+            className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white transition"
+          >
+            Keuangan &amp; Honor
+          </Link>
           <Link
             href="/portal/akademik"
             className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white transition"
