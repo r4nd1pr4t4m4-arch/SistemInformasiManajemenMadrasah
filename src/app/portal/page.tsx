@@ -160,18 +160,24 @@ export default function PortalPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
+          <Link
+            href="/portal/akademik"
+            className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white transition"
+          >
+            Portal Akademik
+          </Link>
           <Link
             href="/portal/cms"
             className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition"
           >
-            Buka CMS &amp; PPDB
+            CMS &amp; PPDB
           </Link>
           <Link
             href="/login"
             className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-white/80 hover:bg-white text-slate-700 border border-slate-200/80 transition"
           >
-            Login Akun
+            Login
           </Link>
         </div>
       </header>
