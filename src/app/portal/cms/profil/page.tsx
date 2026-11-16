@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Loader2, Save } from 'lucide-react';
+import { CheckCircle2, Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import type { InstitutionSettings, InstitutionType } from '@/types/database';
+import { invalidateInstitutionSettingsCache } from '@/lib/hooks/use-institution-settings';
 
 export default function CmsProfilPage() {
   const [loading, setLoading] = useState(true);
@@ -45,7 +46,7 @@ export default function CmsProfilPage() {
           headmaster_greeting: settings.headmaster_greeting,
           history: settings.history,
           vision: settings.vision,
-          mission: settings.mission,
+          mission: (settings.mission || []).map((m) => m.trim()).filter(Boolean),
           address: settings.address,
           phone: settings.phone,
           email: settings.email,
@@ -55,6 +56,9 @@ export default function CmsProfilPage() {
         }),
       });
       if (res.ok) {
+        const updated = await res.json();
+        if (updated?.settings) setSettings(updated.settings);
+        invalidateInstitutionSettingsCache();
         showToast('Pengaturan lembaga berhasil disimpan.');
       } else {
         const d = await res.json();
@@ -134,6 +138,28 @@ export default function CmsProfilPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Akreditasi
+              </label>
+              <input
+                type="text"
+                list="accreditation-options"
+                value={settings.accreditation || ''}
+                onChange={(e) => setSettings({ ...settings, accreditation: e.target.value })}
+                placeholder="Contoh: A (Unggul)"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+              />
+              <datalist id="accreditation-options">
+                <option value="A" />
+                <option value="B" />
+                <option value="C" />
+                <option value="Unggul" />
+                <option value="Baik Sekali" />
+                <option value="Baik" />
+                <option value="Belum Terakreditasi" />
+              </datalist>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Radius Geofencing (Meter)
               </label>
               <input
@@ -179,6 +205,34 @@ export default function CmsProfilPage() {
           </div>
 
           <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Sambutan {settings.head_title_label}
+            </label>
+            <textarea
+              rows={3}
+              value={settings.headmaster_greeting || ''}
+              onChange={(e) =>
+                setSettings({ ...settings, headmaster_greeting: e.target.value })
+              }
+              placeholder={`Tuliskan kata sambutan resmi ${settings.head_title_label}...`}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Profil &amp; Sejarah Lembaga
+            </label>
+            <textarea
+              rows={4}
+              value={settings.history || ''}
+              onChange={(e) => setSettings({ ...settings, history: e.target.value })}
+              placeholder="Tuliskan profil singkat dan sejarah berdirinya lembaga..."
+              className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+            />
+          </div>
+
+          <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Visi</label>
             <textarea
               rows={2}
@@ -186,6 +240,63 @@ export default function CmsProfilPage() {
               onChange={(e) => setSettings({ ...settings, vision: e.target.value })}
               className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
             />
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-slate-700">
+                Misi Lembaga
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  setSettings({
+                    ...settings,
+                    mission: [...(settings.mission || []), ''],
+                  })
+                }
+                className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+              >
+                <Plus className="w-3.5 h-3.5" /> Tambah Poin Misi
+              </button>
+            </div>
+            <div className="space-y-2">
+              {(settings.mission && settings.mission.length > 0 ? settings.mission : ['']).map(
+                (item, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="w-6 text-xs font-bold text-slate-400 text-right shrink-0">
+                      {idx + 1}.
+                    </span>
+                    <input
+                      type="text"
+                      value={item}
+                      onChange={(e) => {
+                        const next = [
+                          ...(settings.mission && settings.mission.length > 0
+                            ? settings.mission
+                            : ['']),
+                        ];
+                        next[idx] = e.target.value;
+                        setSettings({ ...settings, mission: next });
+                      }}
+                      placeholder={`Poin misi ke-${idx + 1}...`}
+                      className="flex-1 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = (settings.mission || []).filter((_, i) => i !== idx);
+                        setSettings({ ...settings, mission: next });
+                      }}
+                      className="p-2 rounded-xl border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition"
+                      aria-label={`Hapus misi ${idx + 1}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )
+              )}
+            </div>
           </div>
 
           <button

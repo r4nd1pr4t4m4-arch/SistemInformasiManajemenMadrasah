@@ -7,6 +7,11 @@ import type { InstitutionSettings } from '@/types/database';
 let cachedSettings: InstitutionSettings | null = null;
 let inflightPromise: Promise<InstitutionSettings> | null = null;
 
+export function invalidateInstitutionSettingsCache() {
+  cachedSettings = null;
+  inflightPromise = null;
+}
+
 async function fetchInstitutionSettings(): Promise<InstitutionSettings> {
   if (cachedSettings) return cachedSettings;
   if (!inflightPromise) {
