@@ -16,11 +16,15 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
-import { DEFAULT_INSTITUTION_SETTINGS, DEFAULT_POSTS } from '@/lib/data/demo-seed';
+import { connection } from 'next/server';
+import { getInstitutionSettings, getPublishedPosts } from '@/lib/data/public-queries';
 
-export default function HomePage() {
-  const school = DEFAULT_INSTITUTION_SETTINGS;
-  const posts = DEFAULT_POSTS;
+export default async function HomePage() {
+  await connection();
+  const [school, posts] = await Promise.all([
+    getInstitutionSettings(),
+    getPublishedPosts(3),
+  ]);
 
   return (
     <div className="min-h-screen flex flex-col simms-ambient">
@@ -64,22 +68,28 @@ export default function HomePage() {
             </div>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600">
-            <a href="#profil" className="hover:text-emerald-700 transition">
+          <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-600">
+            <Link href="/profil" className="hover:text-emerald-700 transition">
               Profil
-            </a>
-            <a href="#berita" className="hover:text-emerald-700 transition">
-              Berita &amp; Artikel
-            </a>
-            <a href="#layanan" className="hover:text-emerald-700 transition">
-              Ekosistem
-            </a>
+            </Link>
+            <Link href="/berita" className="hover:text-emerald-700 transition">
+              Berita
+            </Link>
+            <Link href="/galeri" className="hover:text-emerald-700 transition">
+              Galeri
+            </Link>
+            <Link href="/direktori" className="hover:text-emerald-700 transition">
+              Direktori
+            </Link>
             <Link href="/ppdb" className="hover:text-emerald-700 transition">
               PPDB Online
             </Link>
+            <Link href="/kontak" className="hover:text-emerald-700 transition">
+              Kontak &amp; FAQ
+            </Link>
             <Link
               href="/portal"
-              className="inline-flex items-center gap-2 bg-slate-900 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-semibold transition shadow-sm"
+              className="inline-flex items-center gap-2 bg-slate-900 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-semibold transition shadow-sm"
             >
               <ShieldCheck className="w-4 h-4" />
               Portal Terpadu
@@ -88,7 +98,7 @@ export default function HomePage() {
 
           <Link
             href="/portal"
-            className="md:hidden inline-flex items-center gap-1.5 bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs font-semibold"
+            className="lg:hidden inline-flex items-center gap-1.5 bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs font-semibold"
           >
             Portal
           </Link>
