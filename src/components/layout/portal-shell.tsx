@@ -62,25 +62,22 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
     icon: <Newspaper className="w-4 h-4" />,
     items: [
       {
-        href: '/portal/cms?tab=settings',
-        path: '/portal/cms',
-        tab: 'settings',
+        href: '/portal/cms/profil',
+        path: '/portal/cms/profil',
         label: 'Profil & Lembaga',
         icon: <Settings className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
       },
       {
-        href: '/portal/cms?tab=posts',
-        path: '/portal/cms',
-        tab: 'posts',
+        href: '/portal/cms/berita',
+        path: '/portal/cms/berita',
         label: 'Berita & Artikel',
         icon: <Newspaper className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
       },
       {
-        href: '/portal/cms?tab=ppdb',
-        path: '/portal/cms',
-        tab: 'ppdb',
+        href: '/portal/cms/ppdb',
+        path: '/portal/cms/ppdb',
         label: 'Verifikasi PPDB',
         icon: <Users className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
@@ -93,9 +90,8 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
     icon: <BookOpenCheck className="w-4 h-4" />,
     items: [
       {
-        href: '/portal/akademik?tab=buku_induk',
-        path: '/portal/akademik',
-        tab: 'buku_induk',
+        href: '/portal/akademik/buku-induk',
+        path: '/portal/akademik/buku-induk',
         label: 'Buku Induk Digital',
         icon: <Users className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -109,9 +105,8 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         ],
       },
       {
-        href: '/portal/akademik?tab=kelas_jadwal',
-        path: '/portal/akademik',
-        tab: 'kelas_jadwal',
+        href: '/portal/akademik/kelas-jadwal',
+        path: '/portal/akademik/kelas-jadwal',
         label: 'Kelas & Jadwal',
         icon: <Calendar className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -124,9 +119,8 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         ],
       },
       {
-        href: '/portal/akademik?tab=presensi',
-        path: '/portal/akademik',
-        tab: 'presensi',
+        href: '/portal/akademik/presensi',
+        path: '/portal/akademik/presensi',
         label: 'Presensi GPS & Delegasi',
         icon: <MapPin className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -139,9 +133,8 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         ],
       },
       {
-        href: '/portal/akademik?tab=ujian',
-        path: '/portal/akademik',
-        tab: 'ujian',
+        href: '/portal/akademik/ujian',
+        path: '/portal/akademik/ujian',
         label: 'Periode Ujian (JTM)',
         icon: <ClipboardCheck className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -161,25 +154,22 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
     icon: <Wallet className="w-4 h-4" />,
     items: [
       {
-        href: '/portal/keuangan?tab=spp',
-        path: '/portal/keuangan',
-        tab: 'spp',
+        href: '/portal/keuangan/spp',
+        path: '/portal/keuangan/spp',
         label: 'SPP & Iuran Komite',
         icon: <Receipt className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'BENDAHARA', 'BENDAHARA_KOMITE'],
       },
       {
-        href: '/portal/keuangan?tab=tabungan',
-        path: '/portal/keuangan',
-        tab: 'tabungan',
+        href: '/portal/keuangan/tabungan',
+        path: '/portal/keuangan/tabungan',
         label: 'Tabungan Digital',
         icon: <PiggyBank className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'PENGELOLA_TABUNGAN'],
       },
       {
-        href: '/portal/keuangan?tab=honorarium',
-        path: '/portal/keuangan',
-        tab: 'honorarium',
+        href: '/portal/keuangan/honorarium',
+        path: '/portal/keuangan/honorarium',
         label: 'Honorarium Guru',
         icon: <Calculator className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'BENDAHARA', 'KEPALA_TU'],
@@ -192,17 +182,15 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
     icon: <FileText className="w-4 h-4" />,
     items: [
       {
-        href: '/portal/layanan?tab=persuratan',
-        path: '/portal/layanan',
-        tab: 'persuratan',
+        href: '/portal/layanan/persuratan',
+        path: '/portal/layanan/persuratan',
         label: 'Persuratan & Kartu',
         icon: <FileText className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'KEPALA_TU', 'STAF_TU'],
       },
       {
-        href: '/portal/layanan?tab=elibrary',
-        path: '/portal/layanan',
-        tab: 'elibrary',
+        href: '/portal/layanan/perpustakaan',
+        path: '/portal/layanan/perpustakaan',
         label: 'E-Library',
         icon: <BookOpen className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -216,25 +204,22 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         ],
       },
       {
-        href: '/portal/layanan?tab=bk',
-        path: '/portal/layanan',
-        tab: 'bk',
+        href: '/portal/layanan/bk',
+        path: '/portal/layanan/bk',
         label: 'Bimbingan Konseling (BK)',
         icon: <ShieldAlert className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_KESISWAAN', 'GURU_BK'],
       },
       {
-        href: '/portal/layanan?tab=guru_wali',
-        path: '/portal/layanan',
-        tab: 'guru_wali',
+        href: '/portal/layanan/guru-wali',
+        path: '/portal/layanan/guru-wali',
         label: 'Manajemen Guru Wali',
         icon: <HeartHandshake className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'GURU_WALI', 'WALI_KELAS', 'GURU'],
       },
       {
-        href: '/portal/layanan?tab=alumni',
-        path: '/portal/layanan',
-        tab: 'alumni',
+        href: '/portal/layanan/alumni',
+        path: '/portal/layanan/alumni',
         label: 'Tracer Study Alumni',
         icon: <GraduationCap className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'WAKA_HUMAS', 'GURU_BK', 'ALUMNI', 'STAF_TU'],
@@ -245,10 +230,21 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
 
 const PAGE_TITLES: Record<string, string> = {
   '/portal': 'Dashboard',
-  '/portal/cms': 'Manajemen Website CMS & PPDB Online',
-  '/portal/akademik': 'Portal Akademik',
-  '/portal/keuangan': 'Keuangan, Tabungan & Honorarium',
-  '/portal/layanan': 'Persuratan, E-Library, BK, Guru Wali & Alumni',
+  '/portal/cms/profil': 'Profil & Identitas Lembaga',
+  '/portal/cms/berita': 'Berita, Artikel & Pengumuman',
+  '/portal/cms/ppdb': 'Verifikasi & Kelulusan PPDB Online',
+  '/portal/akademik/buku-induk': 'Buku Induk Digital (Siswa & GTK)',
+  '/portal/akademik/kelas-jadwal': 'Manajemen Kelas & Jadwal Pelajaran',
+  '/portal/akademik/presensi': 'Presensi GPS & Delegasi Guru Pengganti',
+  '/portal/akademik/ujian': 'Periode Ujian (Pengawas & Panitia JTM)',
+  '/portal/keuangan/spp': 'Keuangan SPP & Iuran Komite',
+  '/portal/keuangan/tabungan': 'Tabungan Digital Warga & Umum',
+  '/portal/keuangan/honorarium': 'Manajemen Honorarium Guru',
+  '/portal/layanan/persuratan': 'Persuratan, Arsip Digital & Kartu Pelajar',
+  '/portal/layanan/perpustakaan': 'Perpustakaan Digital (E-Library)',
+  '/portal/layanan/bk': 'Bimbingan Konseling (BK) & Poin Siswa',
+  '/portal/layanan/guru-wali': 'Manajemen Guru Wali',
+  '/portal/layanan/alumni': 'Tracer Study / Portal Alumni',
 };
 
 function PortalShellInner({ children }: { children: React.ReactNode }) {
@@ -367,9 +363,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
                 {isOpen && (
                   <div className="mt-1 ml-3 pl-3 border-l border-slate-200/80 space-y-1">
                     {group.items.map((item) => {
-                      const isActive =
-                        pathname === item.path &&
-                        (currentTab === item.tab || (!currentTab && item.tab === group.items[0].tab));
+                      const isActive = pathname === item.path;
                       return (
                         <Link
                           key={item.href}

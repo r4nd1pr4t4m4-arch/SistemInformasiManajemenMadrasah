@@ -46,7 +46,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Website Resmi & Verifikasi PPDB',
     description:
       'Kelola profil lembaga, publikasi berita/artikel, pengumuman, serta verifikasi berkas & kelulusan PPDB Online.',
-    href: '/portal/cms?tab=settings',
+    href: '/portal/cms/profil',
     badge: 'Publikasi & PPDB',
     icon: <Newspaper className="w-5 h-5" />,
     accentClass: 'bg-emerald-50 text-emerald-700 border-emerald-100',
@@ -57,7 +57,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Buku Induk & Manajemen Kelas',
     description:
       'Database siswa (NIS/NISN/NIK), data kepegawaian GTK, rombongan belajar, wali kelas, jadwal pelajaran, dan piket.',
-    href: '/portal/akademik',
+    href: '/portal/akademik/buku-induk',
     badge: 'Akademik',
     icon: <BookOpenCheck className="w-5 h-5" />,
     accentClass: 'bg-sky-50 text-sky-700 border-sky-100',
@@ -76,7 +76,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Presensi GPS, Delegasi & Ujian',
     description:
       'Absensi mengajar & piket berbasis GPS geofencing, delegasi guru pengganti, serta jadwal & JTM pengawas/panitia ujian.',
-    href: '/portal/akademik?tab=presensi',
+    href: '/portal/akademik/presensi',
     badge: 'Kehadiran & Ujian',
     icon: <MapPin className="w-5 h-5" />,
     accentClass: 'bg-indigo-50 text-indigo-700 border-indigo-100',
@@ -94,7 +94,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Keuangan SPP & Iuran Komite',
     description:
       'Penerbitan tagihan SPP/Komite/Uang Gedung, pencatatan pembayaran tunai/transfer/QRIS, dan laporan tunggakan siswa.',
-    href: '/portal/keuangan?tab=spp',
+    href: '/portal/keuangan/spp',
     badge: 'Bendahara Komite',
     icon: <Receipt className="w-5 h-5" />,
     accentClass: 'bg-amber-50 text-amber-700 border-amber-100',
@@ -105,7 +105,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Tabungan Digital Warga & Umum',
     description:
       'Pengelolaan buku tabungan digital dan transaksi setor/tarik untuk siswa, guru, tata usaha, serta masyarakat umum.',
-    href: '/portal/keuangan?tab=tabungan',
+    href: '/portal/keuangan/tabungan',
     badge: 'Pengelola Tabungan',
     icon: <PiggyBank className="w-5 h-5" />,
     accentClass: 'bg-teal-50 text-teal-700 border-teal-100',
@@ -116,7 +116,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Manajemen Honorarium Guru',
     description:
       'Pengaturan tarif per JTM, tunjangan tugas tambahan, dan pembuatan slip honorarium bulanan guru.',
-    href: '/portal/keuangan?tab=honorarium',
+    href: '/portal/keuangan/honorarium',
     badge: 'Keuangan & TU',
     icon: <Calculator className="w-5 h-5" />,
     accentClass: 'bg-orange-50 text-orange-700 border-orange-100',
@@ -127,7 +127,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Persuratan, Arsip & Kartu Pelajar',
     description:
       'Pencatatan surat masuk/keluar, surat keterangan aktif, surat mutasi, surat tugas, dan kartu pelajar digital.',
-    href: '/portal/layanan?tab=persuratan',
+    href: '/portal/layanan/persuratan',
     badge: 'Tata Usaha',
     icon: <FileText className="w-5 h-5" />,
     accentClass: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -138,7 +138,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Perpustakaan Digital (E-Library)',
     description:
       'Katalog buku fisik & koleksi e-book, kartu anggota otomatis warga lembaga, registrasi umum, peminjaman & denda.',
-    href: '/portal/layanan?tab=elibrary',
+    href: '/portal/layanan/perpustakaan',
     badge: 'E-Library',
     icon: <BookOpen className="w-5 h-5" />,
     accentClass: 'bg-emerald-50 text-emerald-700 border-emerald-100',
@@ -157,7 +157,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Bimbingan Konseling (BK) & Poin',
     description:
       'Rekam jejak pelanggaran kedisiplinan, poin prestasi siswa, serta catatan konsultasi bersama Guru BK.',
-    href: '/portal/layanan?tab=bk',
+    href: '/portal/layanan/bk',
     badge: 'Guru BK',
     icon: <ShieldAlert className="w-5 h-5" />,
     accentClass: 'bg-rose-50 text-rose-700 border-rose-100',
@@ -168,7 +168,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Manajemen Guru Wali',
     description:
       'Pemetaan siswa binaan dan rekam jejak pendampingan personal bersama Guru Wali (terpisah dari BK).',
-    href: '/portal/layanan?tab=guru_wali',
+    href: '/portal/layanan/guru-wali',
     badge: 'Guru Wali',
     icon: <HeartHandshake className="w-5 h-5" />,
     accentClass: 'bg-violet-50 text-violet-700 border-violet-100',
@@ -179,7 +179,7 @@ const DASHBOARD_CARDS: DashboardCard[] = [
     title: 'Tracer Study / Portal Alumni',
     description:
       'Pendataan sebaran lulusan di perguruan tinggi, pesantren, maupun dunia kerja dan wirausaha.',
-    href: '/portal/layanan?tab=alumni',
+    href: '/portal/layanan/alumni',
     badge: 'Alumni',
     icon: <GraduationCap className="w-5 h-5" />,
     accentClass: 'bg-sky-50 text-sky-700 border-sky-100',
