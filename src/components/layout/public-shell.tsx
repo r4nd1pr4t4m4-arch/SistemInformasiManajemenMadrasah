@@ -42,10 +42,15 @@ export function PublicNavbar() {
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-slate-300">NPSN {school.npsn}</span>
-            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 rounded-full font-medium">
-              Akreditasi {school.accreditation}
-            </span>
+            {school.npsn && <span className="text-slate-300">NPSN {school.npsn}</span>}
+            {school.institution_type === 'MADRASAH' && school.nsm && (
+              <span className="text-slate-300">• NSM {school.nsm}</span>
+            )}
+            {school.accreditation && (
+              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 rounded-full font-medium">
+                Akreditasi {school.accreditation}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -55,13 +60,15 @@ export function PublicNavbar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-base shadow-sm">
-              {school.short_name?.slice(0, 1) || 'S'}
+              {(school.short_name || school.name || 'S').slice(0, 1).toUpperCase()}
             </div>
             <div>
               <p className="font-bold text-slate-900 text-sm leading-tight tracking-tight">
-                {school.short_name || school.name}
+                {school.name || school.short_name || 'Memuat...'}
               </p>
-              <p className="text-[11px] text-slate-500">Website Resmi &amp; Portal</p>
+              <p className="text-[11px] text-slate-500">
+                Website Resmi &amp; Portal Terpadu ({school.institution_type})
+              </p>
             </div>
           </Link>
 

@@ -128,6 +128,44 @@ export default function CmsProfilPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Nama Singkat / Akronim
+              </label>
+              <input
+                type="text"
+                value={settings.short_name || ''}
+                onChange={(e) => setSettings({ ...settings, short_name: e.target.value })}
+                placeholder="Contoh: MTs Nurul Falah"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                NPSN
+              </label>
+              <input
+                type="text"
+                value={settings.npsn || ''}
+                onChange={(e) => setSettings({ ...settings, npsn: e.target.value })}
+                placeholder="Nomor Pokok Sekolah Nasional"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-mono"
+              />
+            </div>
+            {settings.institution_type === 'MADRASAH' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  NSM (Nomor Statistik Madrasah)
+                </label>
+                <input
+                  type="text"
+                  value={settings.nsm || ''}
+                  onChange={(e) => setSettings({ ...settings, nsm: e.target.value })}
+                  placeholder="Nomor Statistik Madrasah"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-mono"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Nama {settings.head_title_label}
               </label>
               <input
