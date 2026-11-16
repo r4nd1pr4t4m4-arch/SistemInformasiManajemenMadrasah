@@ -69,17 +69,14 @@ export default function GantiKataSandiPage() {
     setSendingOtp(true);
     try {
       const supabase = createSupabaseBrowserClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: false },
-      });
+      const { error } = await supabase.auth.reauthenticate();
       if (error) {
         setFeedback({ type: 'error', text: error.message });
       } else {
         setOtpSent(true);
         setFeedback({
           type: 'success',
-          text: `Kode OTP telah dikirim ke ${email}. Periksa kotak masuk atau folder spam Anda.`,
+          text: `Kode OTP re-autentikasi telah dikirim ke ${email}. Periksa kotak masuk atau folder spam Anda.`,
         });
       }
     } finally {
@@ -115,13 +112,12 @@ export default function GantiKataSandiPage() {
       const supabase = createSupabaseBrowserClient();
 
       if (method === 'otp') {
-        const { error: otpError } = await supabase.auth.verifyOtp({
-          email,
-          token: verificationCode.trim(),
-          type: 'email',
+        const { error: updateErr } = await supabase.auth.updateUser({
+          password: newPassword,
+          nonce: verificationCode.trim(),
         });
-        if (otpError) {
-          setFeedback({ type: 'error', text: `Verifikasi OTP gagal: ${otpError.message}` });
+        if (updateErr) {
+          setFeedback({ type: 'error', text: `Verifikasi OTP / ganti kata sandi gagal: ${updateErr.message}` });
           return;
         }
       } else {
@@ -140,21 +136,21 @@ export default function GantiKataSandiPage() {
           setFeedback({ type: 'error', text: `Verifikasi MFA gagal: ${mfaError.message}` });
           return;
         }
+
+        const { error: updateErr } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+        if (updateErr) {
+          setFeedback({ type: 'error', text: updateErr.message });
+          return;
+        }
       }
 
-      const { error: updateErr } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (updateErr) {
-        setFeedback({ type: 'error', text: updateErr.message });
-      } else {
-        setNewPassword('');
-        setConfirmPassword('');
-        setVerificationCode('');
-        setOtpSent(false);
-        setFeedback({ type: 'success', text: 'Kata sandi akun berhasil diperbarui.' });
-      }
+      setNewPassword('');
+      setConfirmPassword('');
+      setVerificationCode('');
+      setOtpSent(false);
+      setFeedback({ type: 'success', text: 'Kata sandi akun berhasil diperbarui.' });
     } finally {
       setSubmitting(false);
     }
