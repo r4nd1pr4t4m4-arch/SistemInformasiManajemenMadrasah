@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, LogIn, Mail, UserPlus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, KeyRound, LogIn, Mail, UserPlus } from 'lucide-react';
 import { createSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { validatePasswordStrength } from '@/lib/auth/password-policy';
 import { PasswordInput } from '@/components/auth/password-strength-input';
@@ -16,6 +16,15 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [duplicateEmailModal, setDuplicateEmailModal] = useState<{
+    email: string;
+    accountStatus: string;
+  } | null>(null);
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   useEffect(() => {
@@ -39,6 +48,77 @@ export default function LoginPage() {
     }
   }, []);
 
+  async function handleSendRegisterOtp() {
+    setMessage(null);
+    if (!email.trim()) {
+      setMessage({ type: 'error', text: 'Masukkan alamat email terlebih dahulu.' });
+      return;
+    }
+
+    setOtpSending(true);
+    try {
+      const res = await fetch('/api/auth/register/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), fullName: fullName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 409 || data.code === 'EMAIL_ALREADY_REGISTERED') {
+          setDuplicateEmailModal({
+            email: data.email || email.trim(),
+            accountStatus: data.accountStatus || 'AKTIF',
+          });
+          return;
+        }
+        setMessage({ type: 'error', text: data.error || 'Gagal mengirim kode OTP.' });
+        return;
+      }
+      setOtpSent(true);
+      setOtpVerified(false);
+      setOtpCode('');
+      setMessage({
+        type: 'success',
+        text: data.message || 'Kode OTP 6 digit telah dikirim ke email Anda.',
+      });
+    } catch {
+      setMessage({ type: 'error', text: 'Terjadi kesalahan jaringan saat mengirim OTP.' });
+    } finally {
+      setOtpSending(false);
+    }
+  }
+
+  async function handleVerifyRegisterOtp() {
+    setMessage(null);
+    if (otpCode.trim().length !== 6) {
+      setMessage({ type: 'error', text: 'Masukkan 6 digit kode OTP yang dikirim ke email Anda.' });
+      return;
+    }
+
+    setOtpVerifying(true);
+    try {
+      const res = await fetch('/api/auth/register/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), otpCode: otpCode.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: 'error', text: data.error || 'Kode OTP tidak valid.' });
+        return;
+      }
+      setOtpVerified(true);
+      setMessage({
+        type: 'success',
+        text: data.message || 'Email terverifikasi! Sekarang Anda dapat klik "Buat Akun".',
+      });
+    } catch {
+      setMessage({ type: 'error', text: 'Terjadi kesalahan jaringan saat memverifikasi OTP.' });
+    } finally {
+      setOtpVerifying(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setMessage(null);
@@ -52,6 +132,13 @@ export default function LoginPage() {
     }
 
     if (mode === 'register') {
+      if (!otpVerified) {
+        setMessage({
+          type: 'error',
+          text: 'Silakan verifikasi alamat email Anda dengan kode OTP terlebih dahulu sebelum membuat akun.',
+        });
+        return;
+      }
       const policy = validatePasswordStrength(password, fullName);
       if (!policy.isValid) {
         setMessage({
@@ -130,24 +217,29 @@ export default function LoginPage() {
           }
         }
       } else {
-        const { data: signUpData, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { full_name: fullName },
-          },
+        const res = await fetch('/api/auth/register/confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fullName: fullName.trim(),
+            email: email.trim(),
+            password,
+          }),
         });
-        if (error) {
-          setMessage({ type: 'error', text: error.message });
+        const data = await res.json();
+        if (!res.ok) {
+          setMessage({ type: 'error', text: data.error || 'Gagal membuat akun.' });
         } else {
-          if (signUpData.session) {
-            await supabase.auth.signOut();
-          }
           setPassword('');
           setConfirmPassword('');
+          setOtpCode('');
+          setOtpSent(false);
+          setOtpVerified(false);
           setMessage({
             type: 'success',
-            text: 'Pendaftaran akun berhasil! Status akun Anda saat ini belum aktif dan menunggu persetujuan Admin. Anda akan menerima email notifikasi setelah akun disetujui atau ditolak.',
+            text:
+              data.message ||
+              'Pendaftaran akun berhasil! Email Anda telah terverifikasi dan akun menunggu persetujuan Admin.',
           });
         }
       }
@@ -246,18 +338,76 @@ export default function LoginPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">Email</label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                <input
-                  required
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="nama@lembaga.sch.id"
-                  className="w-full rounded-xl border border-slate-300/90 bg-white/95 pl-10 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    required
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (mode === 'register') {
+                        setOtpVerified(false);
+                        setOtpSent(false);
+                        setOtpCode('');
+                      }
+                    }}
+                    placeholder="nama@lembaga.sch.id"
+                    className="w-full rounded-xl border border-slate-300/90 bg-white/95 pl-10 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+                {mode === 'register' && (
+                  <button
+                    type="button"
+                    disabled={otpSending || !email.trim()}
+                    onClick={handleSendRegisterOtp}
+                    className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold transition shrink-0"
+                  >
+                    {otpSending ? 'Mengirim...' : otpSent ? 'Kirim Ulang' : 'Kirim OTP'}
+                  </button>
+                )}
               </div>
             </div>
+
+            {mode === 'register' && (
+              <div className="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5 text-emerald-700" />
+                    Kode OTP Verifikasi Email
+                  </label>
+                  {otpVerified && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Email Terverifikasi
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={otpCode}
+                    disabled={otpVerified}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="Masukkan 6 digit OTP"
+                    className="flex-1 rounded-xl border border-slate-300/90 bg-white px-3.5 py-2 text-sm tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-emerald-600 disabled:bg-slate-100"
+                  />
+                  <button
+                    type="button"
+                    disabled={otpVerifying || otpVerified || otpCode.trim().length !== 6}
+                    onClick={handleVerifyRegisterOtp}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold transition shrink-0"
+                  >
+                    {otpVerified ? 'Terverifikasi' : otpVerifying ? 'Memeriksa...' : 'Verifikasi OTP'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Klik &quot;Kirim OTP&quot;, masukkan kode 6 digit dari email Anda, lalu klik &quot;Verifikasi OTP&quot; untuk mengaktifkan tombol Buat Akun.
+                </p>
+              </div>
+            )}
 
             <PasswordInput
               label="Kata Sandi"
@@ -290,8 +440,8 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold py-3 rounded-2xl transition shadow-sm"
+              disabled={loading || (mode === 'register' && !otpVerified)}
+              className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-2xl transition shadow-sm"
             >
               {mode === 'login' ? (
                 <>
@@ -308,6 +458,72 @@ export default function LoginPage() {
           </form>
         </div>
       </div>
+
+      {duplicateEmailModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-base font-bold text-slate-900">
+                  Alamat Email Sudah Terdaftar
+                </h2>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Email <strong>{duplicateEmailModal.email}</strong> sudah digunakan pada akun lain, sehingga kode OTP pendaftaran tidak dapat dikirimkan.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs text-slate-700 leading-relaxed">
+              {duplicateEmailModal.accountStatus === 'PENDING' ? (
+                <span>
+                  Akun dengan email ini saat ini berstatus <strong>Menunggu Persetujuan Admin</strong>. Silakan tunggu email notifikasi aktivasi dari Admin.
+                </span>
+              ) : duplicateEmailModal.accountStatus === 'DITOLAK' ? (
+                <span>
+                  Pendaftaran akun dengan email ini sebelumnya berstatus <strong>Ditolak</strong>. Silakan hubungi Admin/Operator lembaga atau gunakan alamat email lain.
+                </span>
+              ) : duplicateEmailModal.accountStatus === 'NONAKTIF' ? (
+                <span>
+                  Akun dengan email ini saat ini berstatus <strong>Nonaktif</strong>. Silakan hubungi Admin/Operator lembaga untuk pengaktifan kembali.
+                </span>
+              ) : (
+                <span>
+                  Akun dengan email ini sudah <strong>Aktif</strong>. Anda dapat langsung masuk melalui tab <strong>Masuk</strong>, atau gunakan fitur <strong>Lupa Kata Sandi</strong> jika tidak mengingat kata sandi Anda.
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setDuplicateEmailModal(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+              >
+                Ganti Email
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDuplicateEmailModal(null);
+                  setMode('login');
+                  setPassword('');
+                  setConfirmPassword('');
+                  setOtpCode('');
+                  setOtpSent(false);
+                  setOtpVerified(false);
+                  setMessage(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
+              >
+                Pindah ke Tab Masuk
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
