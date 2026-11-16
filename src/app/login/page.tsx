@@ -3,14 +3,17 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Lock, LogIn, Mail, UserPlus } from 'lucide-react';
+import { ArrowLeft, LogIn, Mail, UserPlus } from 'lucide-react';
 import { createSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { validatePasswordStrength } from '@/lib/auth/password-policy';
+import { PasswordInput } from '@/components/auth/password-strength-input';
 
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
@@ -25,6 +28,24 @@ export default function LoginPage() {
         text: 'Layanan autentikasi sedang tidak tersedia.',
       });
       return;
+    }
+
+    if (mode === 'register') {
+      const policy = validatePasswordStrength(password, fullName);
+      if (!policy.isValid) {
+        setMessage({
+          type: 'error',
+          text: `Kata sandi belum memenuhi syarat: ${policy.errors[0]}`,
+        });
+        return;
+      }
+      if (password !== confirmPassword) {
+        setMessage({
+          type: 'error',
+          text: 'Konfirmasi kata sandi tidak cocok.',
+        });
+        return;
+      }
     }
 
     setLoading(true);
@@ -55,6 +76,8 @@ export default function LoginPage() {
         if (error) {
           setMessage({ type: 'error', text: error.message });
         } else {
+          setPassword('');
+          setConfirmPassword('');
           setMessage({
             type: 'success',
             text: 'Akun berhasil dibuat! Silakan cek email untuk verifikasi atau langsung masuk.',
@@ -95,6 +118,8 @@ export default function LoginPage() {
               type="button"
               onClick={() => {
                 setMode('login');
+                setPassword('');
+                setConfirmPassword('');
                 setMessage(null);
               }}
               className={`py-2 rounded-xl text-xs font-semibold transition ${
@@ -109,6 +134,8 @@ export default function LoginPage() {
               type="button"
               onClick={() => {
                 setMode('register');
+                setPassword('');
+                setConfirmPassword('');
                 setMessage(null);
               }}
               className={`py-2 rounded-xl text-xs font-semibold transition ${
@@ -145,15 +172,13 @@ export default function LoginPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Nama lengkap Anda"
-                  className="w-full rounded-xl border border-slate-300/90 bg-white/90 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  className="w-full rounded-xl border border-slate-300/90 bg-white/95 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                 />
               </div>
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Email
-              </label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Email</label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
@@ -162,28 +187,39 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="nama@lembaga.sch.id"
-                  className="w-full rounded-xl border border-slate-300/90 bg-white/90 pl-10 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  className="w-full rounded-xl border border-slate-300/90 bg-white/95 pl-10 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Kata Sandi
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                <input
-                  required
-                  type="password"
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimal 6 karakter"
-                  className="w-full rounded-xl border border-slate-300/90 bg-white/90 pl-10 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                />
+            <PasswordInput
+              label="Kata Sandi"
+              value={password}
+              onChange={setPassword}
+              placeholder={mode === 'register' ? 'Minimal 8 karakter kuat' : 'Masukkan kata sandi'}
+              showStrength={mode === 'register'}
+              userName={fullName}
+            />
+
+            {mode === 'register' && (
+              <PasswordInput
+                label="Konfirmasi Kata Sandi"
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+                placeholder="Ulangi kata sandi"
+              />
+            )}
+
+            {mode === 'login' && (
+              <div className="flex justify-end">
+                <Link
+                  href="/reset-kata-sandi"
+                  className="text-xs font-semibold text-emerald-700 hover:underline"
+                >
+                  Lupa kata sandi? Reset di sini
+                </Link>
               </div>
-            </div>
+            )}
 
             <button
               type="submit"

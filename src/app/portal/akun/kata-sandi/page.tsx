@@ -12,6 +12,8 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { createSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { validatePasswordStrength } from '@/lib/auth/password-policy';
+import { PasswordInput } from '@/components/auth/password-strength-input';
 
 interface MfaFactor {
   id: string;
@@ -22,9 +24,11 @@ interface MfaFactor {
 export default function GantiKataSandiPage() {
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState<string>('');
+  const [fullName, setFullName] = useState<string>('');
   const [factors, setFactors] = useState<MfaFactor[]>([]);
   const [method, setMethod] = useState<'otp' | 'mfa'>('otp');
 
+  const [currentPassword, setCurrentPassword] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
@@ -44,14 +48,22 @@ export default function GantiKataSandiPage() {
         return;
       }
       try {
-        const supabase = createSupabaseBrowserClient();
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user?.email) setEmail(user.email);
+        const [meRes, mfaResult] = await Promise.all([
+          fetch('/api/auth/me').then((r) => (r.ok ? r.json() : null)),
+          createSupabaseBrowserClient().auth.mfa.listFactors(),
+        ]);
 
-        const { data: mfaData } = await supabase.auth.mfa.listFactors();
-        const verifiedTotp = (mfaData?.totp || []).filter((f) => f.status === 'verified');
+        if (meRes?.user) {
+          setEmail(meRes.user.email || '');
+          setFullName(meRes.user.fullName || '');
+        } else {
+          const {
+            data: { user },
+          } = await createSupabaseBrowserClient().auth.getUser();
+          if (user?.email) setEmail(user.email);
+        }
+
+        const verifiedTotp = (mfaResult.data?.totp || []).filter((f) => f.status === 'verified');
         setFactors(verifiedTotp);
         if (verifiedTotp.length > 0) {
           setSelectedFactorId(verifiedTotp[0].id);
@@ -92,8 +104,17 @@ export default function GantiKataSandiPage() {
     e.preventDefault();
     setFeedback(null);
 
-    if (newPassword.length < 6) {
-      setFeedback({ type: 'error', text: 'Kata sandi baru minimal 6 karakter.' });
+    if (!currentPassword) {
+      setFeedback({ type: 'error', text: 'Masukkan kata sandi saat ini terlebih dahulu.' });
+      return;
+    }
+
+    const policy = validatePasswordStrength(newPassword, fullName);
+    if (!policy.isValid) {
+      setFeedback({
+        type: 'error',
+        text: `Kata sandi baru belum memenuhi syarat: ${policy.errors[0]}`,
+      });
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -113,22 +134,7 @@ export default function GantiKataSandiPage() {
 
     setSubmitting(true);
     try {
-      if (method === 'otp') {
-        const res = await fetch('/api/akun/kata-sandi', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            otpCode: verificationCode.trim(),
-            newPassword,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          setFeedback({ type: 'error', text: data.error || 'Verifikasi OTP gagal.' });
-          return;
-        }
-      } else {
-        const supabase = createSupabaseBrowserClient();
+      if (method === 'mfa') {
         if (!selectedFactorId) {
           setFeedback({
             type: 'error',
@@ -136,6 +142,7 @@ export default function GantiKataSandiPage() {
           });
           return;
         }
+        const supabase = createSupabaseBrowserClient();
         const { error: mfaError } = await supabase.auth.mfa.challengeAndVerify({
           factorId: selectedFactorId,
           code: verificationCode.trim(),
@@ -144,16 +151,25 @@ export default function GantiKataSandiPage() {
           setFeedback({ type: 'error', text: `Verifikasi MFA gagal: ${mfaError.message}` });
           return;
         }
-
-        const { error: updateErr } = await supabase.auth.updateUser({
-          password: newPassword,
-        });
-        if (updateErr) {
-          setFeedback({ type: 'error', text: updateErr.message });
-          return;
-        }
       }
 
+      const res = await fetch('/api/akun/kata-sandi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method,
+          currentPassword,
+          otpCode: verificationCode.trim(),
+          newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFeedback({ type: 'error', text: data.error || 'Gagal memperbarui kata sandi.' });
+        return;
+      }
+
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setVerificationCode('');
@@ -180,8 +196,8 @@ export default function GantiKataSandiPage() {
             <KeyRound className="w-5 h-5 text-emerald-700" /> Ganti Kata Sandi
           </h1>
           <p className="text-xs text-slate-600">
-            Demi keamanan, pilih metode verifikasi wajib menggunakan <strong>OTP Email</strong> atau{' '}
-            <strong>MFA Authenticator</strong> sebelum menyimpan kata sandi baru.
+            Masukkan <strong>Kata Sandi Saat Ini</strong> dan pilih verifikasi via{' '}
+            <strong>OTP Email</strong> atau <strong>MFA Authenticator</strong> sebelum menyimpan kata sandi baru.
           </p>
         </div>
 
@@ -246,6 +262,13 @@ export default function GantiKataSandiPage() {
         )}
 
         <form onSubmit={handleChangePassword} className="space-y-4">
+          <PasswordInput
+            label="Kata Sandi Saat Ini"
+            value={currentPassword}
+            onChange={setCurrentPassword}
+            placeholder="Masukkan kata sandi Anda sekarang"
+          />
+
           {method === 'otp' ? (
             <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -272,7 +295,7 @@ export default function GantiKataSandiPage() {
                   type="text"
                   value={verificationCode}
                   onChange={(e) => setVerificationCode(e.target.value)}
-                  placeholder="Masukkan kode OTP dari email"
+                  placeholder="Masukkan kode OTP 6 digit dari email"
                   className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono"
                 />
               </div>
@@ -322,36 +345,21 @@ export default function GantiKataSandiPage() {
             </div>
           )}
 
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Kata Sandi Baru
-              </label>
-              <input
-                required
-                type="password"
-                minLength={6}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimal 6 karakter"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Konfirmasi Kata Sandi Baru
-              </label>
-              <input
-                required
-                type="password"
-                minLength={6}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Ulangi kata sandi baru"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm"
-              />
-            </div>
-          </div>
+          <PasswordInput
+            label="Kata Sandi Baru"
+            value={newPassword}
+            onChange={setNewPassword}
+            placeholder="Minimal 8 karakter kuat"
+            showStrength={true}
+            userName={fullName}
+          />
+
+          <PasswordInput
+            label="Konfirmasi Kata Sandi Baru"
+            value={confirmPassword}
+            onChange={setConfirmPassword}
+            placeholder="Ulangi kata sandi baru"
+          />
 
           <button
             type="submit"
