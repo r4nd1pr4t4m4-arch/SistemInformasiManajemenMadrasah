@@ -6,18 +6,18 @@ import { IndonesianAddressFields } from '@/components/ppdb/address-fields';
 import { PpdbRegistrationCard, RegistrationCardData } from '@/components/ppdb/registration-card';
 import Link from 'next/link';
 import {
-  ArrowLeft,
   ArrowRightLeft,
+  CalendarCheck,
   CheckCircle2,
-  FileText,
-  Upload,
+  FileUp,
   AlertCircle,
   Loader2,
   ShieldAlert,
   X,
   Info,
   Search,
-  ClipboardCheck,
+  UserPlus,
+  Sparkles,
 } from 'lucide-react';
 
 interface ActivePeriod {
@@ -147,7 +147,7 @@ export default function PpdbMutasiPage() {
   const [activeTab, setActiveTab] = useState<'daftar' | 'cek'>('daftar');
   const [activePeriod, setActivePeriod] = useState<ActivePeriod | null>(null);
   const [gradeLevels, setGradeLevels] = useState<string[]>(['VII', 'VIII', 'IX']);
-  const [periodLoaded, setPeriodLoaded] = useState(false);
+  const [loadingPeriod, setLoadingPeriod] = useState(true);
 
   const [fullName, setFullName] = useState('');
   const [nisn, setNisn] = useState('');
@@ -189,11 +189,11 @@ export default function PpdbMutasiPage() {
         if (Array.isArray(data.gradeLevels) && data.gradeLevels.length > 0) {
           setGradeLevels(data.gradeLevels);
         }
-        setPeriodLoaded(true);
+        setLoadingPeriod(false);
       })
       .catch(() => {
         if (!mounted) return;
-        setPeriodLoaded(true);
+        setLoadingPeriod(false);
       });
     return () => {
       mounted = false;
@@ -343,7 +343,7 @@ export default function PpdbMutasiPage() {
       );
       const data = await res.json();
       if (!res.ok) {
-        setCheckError(data.error || 'Nomor pengajuan mutasi tidak ditemukan.');
+        setCheckError(data.error || 'Nomor pendaftaran tidak ditemukan.');
       } else {
         const reg = data.registration;
         setCheckCard({
@@ -374,242 +374,299 @@ export default function PpdbMutasiPage() {
 
   return (
     <PublicShell>
-      <div className="mx-auto max-w-4xl px-4 py-10 space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <Link
-            href="/ppdb"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-emerald-700"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Kembali ke PPDB Reguler
-          </Link>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 border border-indigo-200">
-            <ArrowRightLeft className="h-3.5 w-3.5" />
-            Layanan Mutasi Masuk Siswa Pindahan
-          </span>
-        </div>
-
-        <div className="glass-card rounded-2xl p-6 sm:p-8 border border-slate-200/80 shadow-sm">
-          <div className="mb-6 border-b border-slate-200/80 pb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
+      <div className="max-w-5xl mx-auto py-10 px-4 space-y-6">
+        <div className="glass-card rounded-3xl overflow-hidden">
+          {/* Header Banner - Konsisten dengan PPDB Reguler */}
+          <div className="bg-gradient-to-r from-emerald-700 to-teal-700 text-white p-7 flex flex-wrap items-center justify-between gap-4 print:hidden">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                PPDB Mutasi Masuk (Siswa Pindahan)
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold text-emerald-50 mb-2 border border-white/20">
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                Layanan Mutasi Masuk Siswa Pindahan
+              </div>
+              <h1 className="text-2xl font-bold">
+                PPDB Khusus Mutasi Masuk
               </h1>
-              <p className="mt-1 text-sm text-slate-600">
-                Ajukan permohonan mutasi masuk atau cek status verifikasi &amp; cetak Kartu Bukti Pendaftaran.
+              <p className="text-emerald-100 text-sm mt-1">
+                Lengkapi biodata siswa pindahan, alasan mutasi, &amp; berkas persyaratan, serta cetak Kartu Bukti Pendaftaran.
               </p>
             </div>
-
-            <div className="inline-flex rounded-xl bg-slate-100 p-1 self-start">
-              <button
-                type="button"
-                onClick={() => setActiveTab('daftar')}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
-                  activeTab === 'daftar'
-                    ? 'bg-white text-emerald-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <ClipboardCheck className="h-3.5 w-3.5" />
-                Ajukan Mutasi
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('cek')}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
-                  activeTab === 'cek'
-                    ? 'bg-white text-emerald-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Search className="h-3.5 w-3.5" />
-                Cek Status &amp; Kartu Bukti
-              </button>
-            </div>
+            <Link
+              href="/ppdb"
+              className="text-xs font-semibold bg-white/15 hover:bg-white/25 border border-white/25 px-4 py-2 rounded-xl transition"
+            >
+              ← PPDB Reguler
+            </Link>
           </div>
 
-          {activeTab === 'daftar' ? (
-            submittedCard ? (
-              <div className="space-y-6">
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-900 print:hidden">
-                  <div className="flex items-center gap-2.5">
-                    <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
-                    <span>
-                      Pengajuan mutasi masuk berhasil dikirim! Simpan atau cetak Kartu Bukti Pendaftaran di bawah ini.
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
+          {/* Tab Bar - Konsisten dengan PPDB Reguler */}
+          <div className="border-b border-slate-200/80 flex bg-white/60 print:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveTab('daftar')}
+              className={`flex-1 py-3.5 text-sm font-semibold flex items-center justify-center gap-2 border-b-2 transition ${
+                activeTab === 'daftar'
+                  ? 'border-emerald-700 text-emerald-700 bg-emerald-50/50'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <UserPlus className="w-4 h-4" /> Formulir Mutasi Masuk
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('cek')}
+              className={`flex-1 py-3.5 text-sm font-semibold flex items-center justify-center gap-2 border-b-2 transition ${
+                activeTab === 'cek'
+                  ? 'border-emerald-700 text-emerald-700 bg-emerald-50/50'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Search className="w-4 h-4" /> Cek Status &amp; Kartu Bukti
+            </button>
+          </div>
+
+          <div className="p-6 md:p-8 space-y-6">
+            {!loadingPeriod && activePeriod && (
+              <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-900 print:hidden">
+                <span className="font-semibold flex items-center gap-2">
+                  <CalendarCheck className="w-4 h-4 text-emerald-700" />
+                  Periode PPDB Aktif: {activePeriod.name}
+                </span>
+                <span>
+                  {activePeriod.open_date} s/d {activePeriod.close_date}
+                </span>
+              </div>
+            )}
+
+            {!loadingPeriod && !activePeriod && activeTab === 'daftar' && (
+              <div className="p-4 rounded-2xl bg-teal-50/80 border border-teal-200/80 text-teal-950 text-xs flex items-start gap-3 print:hidden">
+                <Info className="w-5 h-5 text-teal-700 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-sm">
+                    Layanan Mutasi Masuk Tetap Dibuka Sepanjang Tahun Ajaran
+                  </p>
+                  <p className="leading-relaxed text-teal-900">
+                    Meskipun periode PPDB reguler sedang tidak aktif, pengajuan <strong>PPDB Khusus Mutasi Masuk</strong> tetap dapat diajukan kapan saja sesuai ketersediaan kuota rombongan belajar.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'daftar' ? (
+              submittedCard ? (
+                <div className="space-y-5">
+                  <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex flex-wrap items-center justify-between gap-3 print:hidden">
+                    <div className="flex items-center gap-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" />
+                      <span>
+                        <strong>Pengajuan Mutasi Berhasil!</strong> Berikut adalah Kartu Bukti Pendaftaran resmi Anda. Silakan cetak atau simpan sebagai PDF.
+                      </span>
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
                         setSubmittedCard(null);
                         setErrorMsg('');
                       }}
-                      className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
+                      className="rounded-xl border border-emerald-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 transition"
                     >
                       Buat Pengajuan Baru
                     </button>
                   </div>
+                  <PpdbRegistrationCard data={submittedCard} />
                 </div>
-                <PpdbRegistrationCard data={submittedCard} />
-              </div>
-            ) : (
-              <>
-                {periodLoaded && !activePeriod && (
-                  <div className="mb-6 flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-indigo-950">
-                    <Info className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
-                    <div className="text-sm">
-                      <p className="font-semibold">Layanan Mutasi Masuk Tetap Dibuka</p>
-                      <p className="mt-0.5 text-indigo-800">
-                        Meskipun periode PPDB reguler sedang tidak aktif, pengajuan <strong>PPDB Khusus Mutasi Masuk</strong> tetap dapat diajukan kapan saja sepanjang tahun ajaran sesuai kuota kelas yang tersedia.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {periodLoaded && activePeriod && (
-                  <div className="mb-6 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-900">
-                    <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
-                    <span>
-                      Periode PPDB Aktif: <strong>{activePeriod.name}</strong> ({activePeriod.open_date} s.d. {activePeriod.close_date})
-                    </span>
-                  </div>
-                )}
-
-                {errorMsg && (
-                  <div className="mb-6 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
-                    <span>{errorMsg}</span>
-                  </div>
-                )}
-
+              ) : (
                 <form onSubmit={handleSubmit} className="space-y-6">
-                  {/* Identitas Siswa */}
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Nama Lengkap Siswa <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="Sesuai Akta Kelahiran / Rapor"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                      />
+                  {errorMsg && (
+                    <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                      <span>{errorMsg}</span>
+                    </div>
+                  )}
+
+                  {/* Langkah 1: Biodata Siswa & Orang Tua */}
+                  <div className="space-y-4">
+                    <div>
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+                        <Sparkles className="w-3.5 h-3.5" /> Bagian 1
+                      </span>
+                      <h2 className="text-base font-bold text-slate-900">
+                        Biodata Calon Siswa Pindahan &amp; Orang Tua / Wali
+                      </h2>
                     </div>
 
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-sm font-medium text-slate-700">
-                          NISN <span className="text-rose-500">*</span>
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          Nama Lengkap Siswa <span className="text-rose-600">*</span>
                         </label>
-                        <span className={`text-xs ${nisn.length === 10 ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
-                          {nisn.length}/10 digit
-                        </span>
+                        <input
+                          required
+                          type="text"
+                          value={fullName}
+                          onChange={(e) => setFullName(e.target.value)}
+                          placeholder="Sesuai Akta Kelahiran / Rapor"
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
+                        />
                       </div>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        required
-                        value={nisn}
-                        onChange={(e) => handleDigitsInput(e.target.value, 10, setNisn)}
-                        placeholder="10 digit angka NISN"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                      />
-                    </div>
 
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-sm font-medium text-slate-700">
-                          NIK Siswa <span className="text-rose-500">*</span>
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <label className="text-xs font-semibold text-slate-700">
+                            NISN (10 Digit Angka) <span className="text-rose-600">*</span>
+                          </label>
+                          <span className={`text-[11px] font-mono ${nisn.length === 10 ? 'text-emerald-700 font-semibold' : 'text-slate-400'}`}>
+                            {nisn.length}/10
+                          </span>
+                        </div>
+                        <input
+                          required
+                          type="text"
+                          inputMode="numeric"
+                          minLength={10}
+                          maxLength={10}
+                          value={nisn}
+                          onChange={(e) => handleDigitsInput(e.target.value, 10, setNisn)}
+                          placeholder="10 digit angka NISN"
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <label className="text-xs font-semibold text-slate-700">
+                            NIK Siswa (16 Digit Angka) <span className="text-rose-600">*</span>
+                          </label>
+                          <span className={`text-[11px] font-mono ${nik.length === 16 ? 'text-emerald-700 font-semibold' : 'text-slate-400'}`}>
+                            {nik.length}/16
+                          </span>
+                        </div>
+                        <input
+                          required
+                          type="text"
+                          inputMode="numeric"
+                          minLength={16}
+                          maxLength={16}
+                          value={nik}
+                          onChange={(e) => handleDigitsInput(e.target.value, 16, setNik)}
+                          placeholder="16 digit angka NIK"
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          Jenis Kelamin <span className="text-rose-600">*</span>
                         </label>
-                        <span className={`text-xs ${nik.length === 16 ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
-                          {nik.length}/16 digit
-                        </span>
+                        <select
+                          value={gender}
+                          onChange={(e) => setGender(e.target.value as 'L' | 'P')}
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
+                        >
+                          <option value="L">Laki-laki</option>
+                          <option value="P">Perempuan</option>
+                        </select>
                       </div>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        required
-                        value={nik}
-                        onChange={(e) => handleDigitsInput(e.target.value, 16, setNik)}
-                        placeholder="16 digit angka NIK"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                      />
-                    </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Jenis Kelamin <span className="text-rose-500">*</span>
-                      </label>
-                      <select
-                        value={gender}
-                        onChange={(e) => setGender(e.target.value as 'L' | 'P')}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                      >
-                        <option value="L">Laki-laki</option>
-                        <option value="P">Perempuan</option>
-                      </select>
-                    </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          Tempat Lahir <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          required
+                          type="text"
+                          value={birthPlace}
+                          onChange={(e) => setBirthPlace(e.target.value)}
+                          placeholder="Kota/Kabupaten tempat lahir"
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Tempat Lahir <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={birthPlace}
-                        onChange={(e) => setBirthPlace(e.target.value)}
-                        placeholder="Kota/Kabupaten tempat lahir"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                      />
-                    </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          Tanggal Lahir <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          required
+                          type="date"
+                          value={birthDate}
+                          onChange={(e) => setBirthDate(e.target.value)}
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Tanggal Lahir <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="date"
-                        required
-                        value={birthDate}
-                        onChange={(e) => setBirthDate(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                      />
-                    </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          Sekolah / Madrasah Asal <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          required
+                          type="text"
+                          value={previousSchool}
+                          onChange={(e) => setPreviousSchool(e.target.value)}
+                          placeholder="Nama sekolah/madrasah asal"
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Sekolah / Madrasah Asal <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={previousSchool}
-                        onChange={(e) => setPreviousSchool(e.target.value)}
-                        placeholder="Nama sekolah/madrasah asal"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                      />
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          Nama Orang Tua / Wali <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          required
+                          type="text"
+                          value={parentName}
+                          onChange={(e) => setParentName(e.target.value)}
+                          placeholder="Nama ayah / ibu / wali"
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <div className="flex justify-between mb-1">
+                          <label className="text-xs font-semibold text-slate-700">
+                            No. WhatsApp Orang Tua / Wali (12 Digit Angka) <span className="text-rose-600">*</span>
+                          </label>
+                          <span className={`text-[11px] font-mono ${parentPhone.length === 12 ? 'text-emerald-700 font-semibold' : 'text-slate-400'}`}>
+                            {parentPhone.length}/12
+                          </span>
+                        </div>
+                        <input
+                          required
+                          type="text"
+                          inputMode="numeric"
+                          minLength={12}
+                          maxLength={12}
+                          value={parentPhone}
+                          onChange={(e) => handleDigitsInput(e.target.value, 12, setParentPhone)}
+                          placeholder="08xxxxxxxxxx (12 digit angka)"
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm font-mono"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  {/* Data Mutasi */}
-                  <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 sm:p-5 space-y-4">
-                    <h2 className="text-sm font-semibold text-slate-800">Informasi Kepindahan &amp; Tujuan</h2>
+                  {/* Bagian 2: Informasi Kepindahan & Tujuan */}
+                  <div className="border-t border-slate-200/80 pt-5 space-y-4">
+                    <div>
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+                        <ArrowRightLeft className="w-3.5 h-3.5" /> Bagian 2
+                      </span>
+                      <h2 className="text-base font-bold text-slate-900">
+                        Kelas Tujuan &amp; Alasan Mutasi Masuk
+                      </h2>
+                    </div>
 
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="grid sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                          Kelas / Tingkat Tujuan <span className="text-rose-500">*</span>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          Kelas / Tingkat Tujuan <span className="text-rose-600">*</span>
                         </label>
                         <select
                           required
                           value={targetGrade}
                           onChange={(e) => setTargetGrade(e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
                         >
                           <option value="">-- Pilih Kelas / Tingkat Tujuan --</option>
                           {gradeLevels.map((lvl) => (
@@ -621,14 +678,14 @@ export default function PpdbMutasiPage() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                          Alasan Mutasi / Pindah Sekolah <span className="text-rose-500">*</span>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          Alasan Mutasi / Pindah Sekolah <span className="text-rose-600">*</span>
                         </label>
                         <select
                           required
                           value={mutationReason}
                           onChange={(e) => setMutationReason(e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
                         >
                           <option value="">-- Pilih Alasan Mutasi --</option>
                           {MUTATION_REASON_GROUPS.map((group) => (
@@ -646,8 +703,8 @@ export default function PpdbMutasiPage() {
 
                     {mutationReason === 'Lainnya' && (
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                          Penjelasan Alasan Mutasi Lainnya <span className="text-rose-500">*</span>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          Penjelasan Alasan Mutasi Lainnya <span className="text-rose-600">*</span>
                         </label>
                         <textarea
                           required
@@ -655,168 +712,109 @@ export default function PpdbMutasiPage() {
                           value={otherReason}
                           onChange={(e) => setOtherReason(e.target.value)}
                           placeholder="Jelaskan secara singkat alasan kepindahan siswa..."
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm"
                         />
                       </div>
                     )}
                   </div>
 
-                  {/* Alamat Wilayah Indonesia */}
-                  <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 sm:p-5 space-y-4">
-                    <h2 className="text-sm font-semibold text-slate-800">Alamat Domisili Saat Ini</h2>
-                    <IndonesianAddressFields
-                      onAddressChange={(addr, complete) => {
-                        setFullAddress(addr);
-                        setAddressComplete(complete);
-                      }}
-                    />
-                  </div>
+                  {/* Bagian 3: Alamat Emsifa API */}
+                  <IndonesianAddressFields
+                    onAddressChange={(addr, complete) => {
+                      setFullAddress(addr);
+                      setAddressComplete(complete);
+                    }}
+                  />
 
-                  {/* Orang Tua / Wali */}
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Nama Lengkap Orang Tua / Wali <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={parentName}
-                        onChange={(e) => setParentName(e.target.value)}
-                        placeholder="Nama ayah / ibu / wali"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                      />
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-sm font-medium text-slate-700">
-                          No. WhatsApp Orang Tua / Wali <span className="text-rose-500">*</span>
-                        </label>
-                        <span className={`text-xs ${parentPhone.length === 12 ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
-                          {parentPhone.length}/12 digit
-                        </span>
-                      </div>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        required
-                        value={parentPhone}
-                        onChange={(e) => handleDigitsInput(e.target.value, 12, setParentPhone)}
-                        placeholder="Contoh: 081234567890 (12 digit)"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Dokumen Persyaratan Mutasi */}
-                  <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 sm:p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h2 className="text-sm font-semibold text-slate-800">Dokumen Persyaratan Mutasi Masuk</h2>
-                        <p className="text-xs text-slate-500 mt-0.5">Format PDF/JPG/PNG maksimal 2 MB per berkas.</p>
-                      </div>
-                      <FileText className="h-5 w-5 text-slate-400" />
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {/* Bagian 4: Dokumen Persyaratan Mutasi */}
+                  <div className="border-t border-slate-200/80 pt-5 space-y-3">
+                    <p className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                      <FileUp className="w-4 h-4 text-emerald-700" /> Dokumen Persyaratan Mutasi Masuk
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Unggah scan/foto berkas asli dalam format PDF, JPG, atau PNG (maksimal 2 MB per berkas).
+                    </p>
+                    <div className="grid sm:grid-cols-2 gap-3">
                       {MUTATION_DOCS.map((doc) => {
                         const uploaded = docFiles[doc.key];
                         return (
                           <label
                             key={doc.key}
-                            className={`flex flex-col justify-between rounded-xl border p-3.5 transition cursor-pointer ${
-                              uploaded
-                                ? 'border-emerald-300 bg-emerald-50/60'
-                                : 'border-slate-200 bg-white hover:border-emerald-400'
+                            className={`modular-card rounded-2xl p-3.5 text-xs text-slate-600 block cursor-pointer transition ${
+                              uploaded ? 'border-emerald-300 bg-emerald-50/40' : ''
                             }`}
                           >
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="text-xs font-medium text-slate-700">
-                                {doc.label} {doc.required && <span className="text-rose-500">*</span>}
-                              </span>
-                              <Upload className="h-4 w-4 shrink-0 text-slate-400" />
-                            </div>
-                            <span className="mt-2 truncate text-xs text-slate-500">
-                              {uploaded ? `✓ ${uploaded.fileName}` : 'Pilih berkas...'}
+                            <span className="font-semibold text-slate-800 block mb-1.5">
+                              {doc.label} {doc.required && <span className="text-rose-600">*</span>}
                             </span>
                             <input
                               type="file"
                               accept=".pdf,.jpg,.jpeg,.png"
-                              className="sr-only"
                               onChange={(e) =>
                                 handleFileChange(doc.key, doc.documentType, doc.label, e.target.files?.[0] || null)
                               }
+                              className="w-full text-[11px]"
                             />
+                            {uploaded && (
+                              <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> {uploaded.fileName}
+                              </span>
+                            )}
                           </label>
                         );
                       })}
                     </div>
                   </div>
 
-                  <div className="pt-2">
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
-                    >
-                      {submitting ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Mengirim Pengajuan &amp; Membuat Kartu Bukti...
-                        </>
-                      ) : (
-                        'Kirim Pengajuan Mutasi Masuk & Buat Kartu Bukti'
-                      )}
-                    </button>
-                  </div>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-2xl transition shadow-sm"
+                  >
+                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {submitting
+                      ? 'Menyimpan & Mengunggah Berkas...'
+                      : 'Kirim Pengajuan Mutasi Masuk & Buat Kartu Bukti'}
+                  </button>
                 </form>
-              </>
-            )
-          ) : (
-            <div className="space-y-5">
-              <form onSubmit={handleCheckStatus} className="flex flex-col sm:flex-row gap-2 print:hidden">
-                <input
-                  type="text"
-                  value={checkCode}
-                  onChange={(e) => setCheckCode(e.target.value)}
-                  placeholder="Masukkan Nomor Pendaftaran (contoh: MUTASI-2026-12345)"
-                  className="flex-1 rounded-xl border border-slate-300/90 bg-white px-4 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-                <button
-                  type="submit"
-                  disabled={checking}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  {checking && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Cek Status
-                </button>
-              </form>
+              )
+            ) : (
+              <div className="space-y-5">
+                <form onSubmit={handleCheckStatus} className="flex gap-2 print:hidden">
+                  <input
+                    type="text"
+                    value={checkCode}
+                    onChange={(e) => setCheckCode(e.target.value)}
+                    placeholder="Masukkan Nomor Pendaftaran (contoh: MUTASI-2026-12345)"
+                    className="flex-1 rounded-xl border border-slate-300/90 bg-white px-4 py-2.5 text-sm"
+                  />
+                  <button
+                    type="submit"
+                    disabled={checking}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold inline-flex items-center gap-2"
+                  >
+                    {checking && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Cek Status
+                  </button>
+                </form>
 
-              {checkError && (
-                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm">
-                  {checkError}
-                </div>
-              )}
-
-              {checkCard ? (
-                <PpdbRegistrationCard data={checkCard} />
-              ) : (
-                !checkError && (
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-8 text-center text-sm text-slate-500">
-                    Masukkan nomor pengajuan mutasi (misalnya <strong>MUTASI-2026-XXXXX</strong>) untuk melihat status verifikasi panitia dan mencetak ulang Kartu Bukti Pendaftaran Anda.
+                {checkError && (
+                  <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                    {checkError}
                   </div>
-                )
-              )}
-            </div>
-          )}
+                )}
+
+                {checkCard && <PpdbRegistrationCard data={checkCard} />}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Modal Tolak Mutasi Masuk Kelas Tingkat Terakhir */}
       {finalGradeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-start justify-between gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
                 <ShieldAlert className="h-6 w-6" />
@@ -842,7 +840,7 @@ export default function PpdbMutasiPage() {
                 Berdasarkan peraturan pendidikan dan ketentuan terbaru Kementerian Agama / Kemendikdasmen, madrasah/sekolah{' '}
                 <strong>tidak dapat menerima mutasi masuk siswa pada kelas tingkat akhir</strong>.
               </p>
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
+              <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs text-amber-900">
                 Ketentuan ini berlaku demi menjaga validitas data Dapodik/EMIS, pemenuhan syarat ketuntasan belajar, serta keabsahan peserta asesmen akhir dan penerbitan ijazah.
               </div>
             </div>
@@ -851,7 +849,7 @@ export default function PpdbMutasiPage() {
               <button
                 type="button"
                 onClick={() => setFinalGradeModalOpen(false)}
-                className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition"
               >
                 Mengerti, Ubah Pilihan
               </button>
