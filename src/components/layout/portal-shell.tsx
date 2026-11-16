@@ -29,7 +29,7 @@ const PORTAL_SECTIONS = [
     items: [
       {
         href: '/portal',
-        label: 'Ringkasan & Simulator',
+        label: 'Ringkasan Portal',
         icon: <LayoutDashboard className="w-4 h-4" />,
       },
     ],
@@ -72,7 +72,7 @@ const PORTAL_SECTIONS = [
 ];
 
 const PAGE_TITLES: Record<string, string> = {
-  '/portal': 'Ringkasan Ekosistem & Simulator',
+  '/portal': 'Ringkasan Portal Terpadu',
   '/portal/cms': 'Manajemen Website CMS & PPDB Online',
   '/portal/akademik': 'Portal Akademik (Buku Induk, Jadwal, Presensi GPS & Ujian)',
   '/portal/keuangan': 'Keuangan SPP/Komite, Tabungan Digital & Honorarium Guru',
@@ -238,7 +238,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         {/* Portal Footer */}
         <footer className="border-t border-slate-200/70 bg-white/60 backdrop-blur px-6 py-4 text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-2">
           <span>© 2026 SIMMS — Sistem Informasi Manajemen Madrasah &amp; Sekolah</span>
-          <span>Supabase PostgreSQL • Cloudflare R2 • Next.js</span>
+          <span>Portal Resmi &amp; Sistem Informasi Terpadu</span>
         </footer>
       </div>
     </div>

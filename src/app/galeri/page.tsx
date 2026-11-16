@@ -42,7 +42,7 @@ async function GaleriContent() {
           <ImageIcon className="w-10 h-10 text-emerald-600 mx-auto" />
           <p className="font-bold text-slate-900">Belum Ada Dokumentasi Terunggah</p>
           <p className="text-sm text-slate-600 max-w-md mx-auto">
-            Admin/Humas dapat mengunggah foto kegiatan ke Cloudflare R2 atau menautkan video YouTube melalui Portal CMS.
+            Dokumentasi foto dan video kegiatan akan tampil di sini setelah ditambahkan oleh tim Humas.
           </p>
         </div>
       ) : (

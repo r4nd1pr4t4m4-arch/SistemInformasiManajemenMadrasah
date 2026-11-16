@@ -22,7 +22,7 @@ export default function LoginPage() {
     if (!isSupabaseConfigured()) {
       setMessage({
         type: 'error',
-        text: 'Konfigurasi Supabase di .env.local belum terdeteksi.',
+        text: 'Layanan autentikasi sedang tidak tersedia.',
       });
       return;
     }

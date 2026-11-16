@@ -175,7 +175,7 @@ export default function PpdbPage() {
           <div className="bg-gradient-to-r from-emerald-700 to-teal-700 text-white p-7">
             <h1 className="text-2xl font-bold">Penerimaan Peserta Didik Baru (PPDB)</h1>
             <p className="text-emerald-100 text-sm mt-1">
-              Formulir pendaftaran daring terhubung ke Supabase &amp; Cloudflare R2, serta cek kelulusan mandiri.
+              Formulir pendaftaran daring, unggah berkas persyaratan, dan cek status seleksi mandiri.
             </p>
           </div>
 

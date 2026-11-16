@@ -166,14 +166,10 @@ export default function PortalPage() {
             <div className="space-y-6">
               <div className="bg-white rounded-2xl border border-slate-200 p-6">
                 <h1 className="text-xl font-bold text-slate-900">
-                  Arsitektur &amp; Skema Database SIMMS Siap
+                  Selamat Datang di Portal Terpadu SIMMS
                 </h1>
                 <p className="text-sm text-slate-600 mt-1">
-                  Seluruh 18+ modul dari 3 pilar utama telah dimodelkan di{' '}
-                  <code className="bg-slate-100 px-1.5 py-0.5 rounded text-xs">
-                    supabase/migrations/0001_initial_schema.sql
-                  </code>
-                  . Gunakan menu di sebelah kiri untuk mencoba simulasi fondasi yang sudah aktif.
+                  Kelola website resmi lembaga, proses akademik harian, keuangan, dan layanan pendukung dalam satu tempat.
                 </p>
 
                 <div className="grid sm:grid-cols-3 gap-4 mt-6">
@@ -460,25 +456,26 @@ export default function PortalPage() {
             activeTab === 'perpustakaan' ||
             activeTab === 'bk_wali' ||
             activeTab === 'alumni') && (
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-3">
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
               <div className="flex items-center gap-2 text-emerald-700 font-semibold text-sm">
                 {activeTab === 'keuangan' && <Coins className="w-4 h-4" />}
                 {activeTab === 'perpustakaan' && <FileText className="w-4 h-4" />}
                 {activeTab === 'bk_wali' && <ShieldAlert className="w-4 h-4" />}
                 {activeTab === 'alumni' && <Users className="w-4 h-4" />}
-                <span>Modul Siap Dikembangkan di Tahap Berikutnya</span>
+                <span>Akses Langsung Modul Terpadu</span>
               </div>
               <h2 className="text-lg font-bold text-slate-900">
                 {navItems.find((n) => n.id === activeTab)?.label}
               </h2>
               <p className="text-sm text-slate-600 leading-relaxed">
-                Tabel database PostgreSQL dan tipe TypeScript untuk modul ini sudah tersedia di{' '}
-                <code className="bg-slate-100 px-1.5 py-0.5 rounded text-xs">
-                  supabase/migrations/0001_initial_schema.sql
-                </code>
-                . Setelah Anda menghubungkan Supabase &amp; Cloudflare R2 di{' '}
-                <code className="bg-slate-100 px-1.5 py-0.5 rounded text-xs">.env.local</code>, kita akan melanjutkan pembangunan CRUD penuh per modul secara bertahap.
+                Silakan buka halaman modul terkait untuk mengelola data secara lengkap dan terintegrasi.
               </p>
+              <Link
+                href={activeTab === 'keuangan' ? '/portal/keuangan' : '/portal/layanan'}
+                className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition"
+              >
+                Buka Modul {navItems.find((n) => n.id === activeTab)?.label} →
+              </Link>
             </div>
           )}
         </main>

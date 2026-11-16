@@ -102,7 +102,7 @@ export default function PortalCmsPage() {
         }),
       });
       if (res.ok) {
-        showToast('Pengaturan lembaga berhasil disimpan ke Supabase.');
+        showToast('Pengaturan lembaga berhasil disimpan.');
       } else {
         const d = await res.json();
         showToast(d.error || 'Gagal menyimpan pengaturan.');
@@ -208,7 +208,7 @@ export default function PortalCmsPage() {
 
         {loading ? (
           <div className="glass-card rounded-3xl p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Memuat data dari Supabase...
+            <Loader2 className="w-4 h-4 animate-spin" /> Memuat data CMS &amp; PPDB...
           </div>
         ) : (
           <>
@@ -383,7 +383,7 @@ export default function PortalCmsPage() {
                 <div className="lg:col-span-7 space-y-3">
                   {posts.length === 0 ? (
                     <div className="glass-card rounded-3xl p-6 text-sm text-slate-600">
-                      Belum ada artikel tersimpan di Supabase.
+                      Belum ada artikel yang diterbitkan.
                     </div>
                   ) : (
                     posts.map((p) => (

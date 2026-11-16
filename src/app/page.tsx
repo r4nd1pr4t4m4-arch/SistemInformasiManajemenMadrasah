@@ -336,7 +336,7 @@ async function FooterContent() {
   return (
     <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
       <p>
-        © 2026 {school.name}. Dibangun dengan Next.js, Supabase &amp; Cloudflare R2.
+        © 2026 {school.name}. Seluruh hak cipta dilindungi.
       </p>
       <p>{school.address}</p>
     </div>
@@ -449,7 +449,7 @@ export default function HomePage() {
             Tiga Pilar Ekosistem Digital
           </h2>
           <p className="text-slate-600 text-sm md:text-base">
-            Setiap modul dirancang dalam kartu-kartu terstruktur agar mudah dijelajahi tanpa terasa padat.
+            Mengintegrasikan layanan publik, proses belajar-mengajar, dan administrasi keuangan dalam satu platform terpadu.
           </p>
         </div>
 
