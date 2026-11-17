@@ -12,6 +12,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { verifyGeofence } from '@/lib/domain/geofence';
+import { calculateLateJtm, getWibTodayDateString, isSundayDate } from '@/lib/domain/jtm-late-penalty';
 
 interface TeacherOpt {
   id: string;
@@ -431,7 +432,9 @@ export default function PresensiPage() {
                       ? teacherAttForm.schedule_id
                       : null,
                   delegation_id:
-                    teacherAttForm.attendance_type === 'MENGAJAR' && teacherAttForm.delegation_id
+                    (teacherAttForm.attendance_type === 'MENGAJAR' ||
+                      teacherAttForm.attendance_type === 'PIKET') &&
+                    teacherAttForm.delegation_id
                       ? teacherAttForm.delegation_id
                       : null,
                   exam_supervisor_id:
@@ -550,6 +553,29 @@ export default function PresensiPage() {
               </div>
             )}
 
+            {teacherAttForm.attendance_type === 'PIKET' && (
+              <select
+                value={teacherAttForm.delegation_id}
+                onChange={(e) =>
+                  setTeacherAttForm({
+                    ...teacherAttForm,
+                    delegation_id: e.target.value,
+                  })
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              >
+                <option value="">-- Guru Piket Reguler (atau pilih Tugas Piket Pengganti) --</option>
+                {delegations
+                  .filter((d) => d.delegation_type === 'PIKET')
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.delegation_date}: Piket Pengganti ({d.original?.full_name || 'Guru'} →{' '}
+                      {d.substitute?.full_name || 'Pengganti'}, {d.jtm_transferred} JTM)
+                    </option>
+                  ))}
+              </select>
+            )}
+
             {teacherAttForm.attendance_type === 'PENGAWAS_UJIAN' && (
               <select
                 required
@@ -622,9 +648,17 @@ export default function PresensiPage() {
             </h2>
             <p className="text-xs text-slate-600">
               Setelah presensi mengajar (termasuk guru pengganti), isi Jurnal Pembelajaran agar JTM
-              masuk ke hitungan honorarium.
+              masuk ke hitungan honorarium. Keterlambatan input dihitung H+1 (80%), H+2 (60%), H+3
+              (40%), H+4 (20%), H+5 (10%), Hari Minggu tidak dihitung.
             </p>
           </div>
+
+          {isSundayDate(getWibTodayDateString()) && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+              Hari Minggu tidak ada pengisian Jurnal Pembelajaran. Silakan input pada hari Senin atau
+              hari aktif berikutnya.
+            </div>
+          )}
 
           <form
             onSubmit={async (e) => {
@@ -633,7 +667,7 @@ export default function PresensiPage() {
               if (res) {
                 showToast(
                   'success',
-                  `Jurnal pembelajaran disimpan. ${res.jtmCredited} JTM telah dihitung.`
+                  `Jurnal pembelajaran disimpan (${res.percentage ?? 100}%). +${res.jtmCredited} JTM telah dihitung.`
                 );
                 setJournalForm({
                   attendance_id: '',
@@ -655,16 +689,21 @@ export default function PresensiPage() {
                 -- Pilih Sesi Presensi Mengajar ({pendingJournalAttendances.length} menunggu jurnal)
                 --
               </option>
-              {pendingJournalAttendances.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.attendance_date} • {a.teacher?.full_name || 'Guru'}{' '}
-                  {a.delegation_id
-                    ? '(Guru Pengganti)'
-                    : a.schedule
-                    ? `• ${a.schedule.classroom?.name || ''} ${a.schedule.subject?.name || ''} (${a.schedule.jtm_count} JTM)`
-                    : ''}
-                </option>
-              ))}
+              {pendingJournalAttendances.map((a) => {
+                const base = a.schedule?.jtm_count || 2;
+                const preview = calculateLateJtm(base, a.attendance_date);
+                return (
+                  <option key={a.id} value={a.id}>
+                    {a.attendance_date} • {a.teacher?.full_name || 'Guru'}{' '}
+                    {a.delegation_id
+                      ? '(Guru Pengganti)'
+                      : a.schedule
+                      ? `• ${a.schedule.classroom?.name || ''} ${a.schedule.subject?.name || ''}`
+                      : ''}{' '}
+                    [{preview.delayDays === 0 ? 'Hari Ini 100%' : `H+${preview.delayDays}: ${preview.percentage}%`}]
+                  </option>
+                );
+              })}
             </select>
 
             <input
@@ -687,7 +726,7 @@ export default function PresensiPage() {
 
             <button
               type="submit"
-              disabled={pendingJournalAttendances.length === 0}
+              disabled={pendingJournalAttendances.length === 0 || isSundayDate(getWibTodayDateString())}
               className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition"
             >
               Simpan Jurnal &amp; Hitung JTM
@@ -758,7 +797,14 @@ export default function PresensiPage() {
                         action: 'CONFIRM_ATTENDANCE',
                         attendance_id: a.id,
                       });
-                      if (res) showToast('success', 'Kehadiran berhasil dikonfirmasi Admin.');
+                      if (res) {
+                        showToast(
+                          'success',
+                          a.attendance_type === 'PIKET'
+                            ? `Kehadiran Guru Piket dikonfirmasi Admin (+${res.attendance?.jtm_earned ?? 2} JTM).`
+                            : 'Kehadiran Panitia Ujian berhasil dikonfirmasi Admin.'
+                        );
+                      }
                     }}
                     className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white font-semibold shrink-0 transition"
                   >
@@ -818,7 +864,7 @@ export default function PresensiPage() {
               ))}
             </select>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <input
                 type="date"
                 value={delegationForm.delegation_date}
@@ -828,6 +874,21 @@ export default function PresensiPage() {
                 className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
               />
               <select
+                value={delegationForm.delegation_type}
+                onChange={(e) =>
+                  setDelegationForm({
+                    ...delegationForm,
+                    delegation_type: e.target.value as 'MENGAJAR' | 'PIKET',
+                    schedule_id: '',
+                  })
+                }
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              >
+                <option value="MENGAJAR">Pengganti Mengajar</option>
+                <option value="PIKET">Guru Piket Pengganti</option>
+              </select>
+              <select
+                disabled={delegationForm.delegation_type === 'PIKET'}
                 value={delegationForm.schedule_id}
                 onChange={(e) => {
                   const sched = schedules.find((s) => s.id === e.target.value);
@@ -838,9 +899,9 @@ export default function PresensiPage() {
                     jtm_transferred: sched?.jtm_count || delegationForm.jtm_transferred,
                   });
                 }}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs disabled:bg-slate-100"
               >
-                <option value="">-- Pilih Jadwal Mengajar (Opsional) --</option>
+                <option value="">-- Jadwal Mengajar (Opsional) --</option>
                 {schedules.map((s) => (
                   <option key={s.id} value={s.id}>
                     {DAY_NAMES[s.day_of_week]} {s.start_time.slice(0, 5)} • {s.classroom?.name} •{' '}

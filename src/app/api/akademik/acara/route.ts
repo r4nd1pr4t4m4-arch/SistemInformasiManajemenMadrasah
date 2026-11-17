@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
+import { calculateLateJtm } from '@/lib/domain/jtm-late-penalty';
 
 const CreateEventSchema = z.object({
   action: z.literal('CREATE_EVENT'),
@@ -104,10 +105,24 @@ export async function GET() {
       .maybeSingle(),
   ]);
 
+  const filteredConfirmations =
+    !canManageEvents
+      ? currentTeacher
+        ? (confirmations || []).filter((c) => c.teacher_id === currentTeacher.id)
+        : []
+      : confirmations || [];
+
+  const filteredJournals =
+    !canManageEvents
+      ? currentTeacher
+        ? (journals || []).filter((j) => j.teacher_id === currentTeacher.id)
+        : []
+      : journals || [];
+
   return NextResponse.json({
     events: events || [],
-    confirmations: confirmations || [],
-    journals: journals || [],
+    confirmations: filteredConfirmations,
+    journals: filteredJournals,
     confirmedPicketAttendances: confirmedPicketAttendances || [],
     teachers: teachers || [],
     currentTeacher: currentTeacher || null,
@@ -325,9 +340,50 @@ export async function POST(request: Request) {
 
       if (confErr || !confirmation) {
         return NextResponse.json(
-          { error: 'Konfirmasi kehadiran acara tidak ditemukan.' },
-          { status: 404 }
+          {
+            error:
+              'Kehadiran Anda pada acara ini belum dikonfirmasi oleh Guru Piket atau Admin.',
+          },
+          { status: 403 }
         );
+      }
+
+      if (
+        confirmation.confirmed_by_role !== 'ADMIN' &&
+        confirmation.confirmed_by_role !== 'GURU_PIKET'
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'Kehadiran acara harus dikonfirmasi oleh Guru Piket atau Admin terlebih dahulu.',
+          },
+          { status: 403 }
+        );
+      }
+
+      if (confirmation.confirmed_by_role === 'GURU_PIKET') {
+        const { data: picketAtt } = confirmation.picket_attendance_id
+          ? await supabase
+              .from('teacher_attendances')
+              .select('id, attendance_type, is_within_geofence, admin_confirmed')
+              .eq('id', confirmation.picket_attendance_id)
+              .maybeSingle()
+          : { data: null };
+
+        if (
+          !picketAtt ||
+          picketAtt.attendance_type !== 'PIKET' ||
+          !picketAtt.is_within_geofence ||
+          !picketAtt.admin_confirmed
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                'Konfirmasi Guru Piket tidak valid atau kehadiran Guru Piket belum dikonfirmasi Admin.',
+            },
+            { status: 403 }
+          );
+        }
       }
 
       if (!isAdmin) {
@@ -337,7 +393,17 @@ export async function POST(request: Request) {
           .eq('profile_id', guard.session.userId)
           .maybeSingle();
 
-        if (currentTeacher && currentTeacher.id !== confirmation.teacher_id) {
+        if (!currentTeacher) {
+          return NextResponse.json(
+            {
+              error:
+                'Akun Anda belum terhubung dengan data GTK di Buku Induk. Hubungi Admin untuk menautkan akun.',
+            },
+            { status: 403 }
+          );
+        }
+
+        if (currentTeacher.id !== confirmation.teacher_id) {
           return NextResponse.json(
             { error: 'Anda hanya dapat mengisi Jurnal Acara untuk kehadiran Anda sendiri.' },
             { status: 403 }
@@ -359,7 +425,13 @@ export async function POST(request: Request) {
       }
 
       const eventObj = Array.isArray(confirmation.event) ? confirmation.event[0] : confirmation.event;
-      const jtmCredited = Number(eventObj?.jtm_allocated ?? 2);
+      const baseJtm = Number(eventObj?.jtm_allocated ?? 2);
+      const lateCalc = calculateLateJtm(baseJtm, confirmation.event_date);
+      if (!lateCalc.allowed) {
+        return NextResponse.json({ error: lateCalc.reason }, { status: 400 });
+      }
+
+      const jtmCredited = lateCalc.creditedJtm;
 
       const { data: journal, error: journalErr } = await supabase
         .from('event_journals')
@@ -371,6 +443,8 @@ export async function POST(request: Request) {
           summary: parsed.data.summary.trim(),
           outcomes: parsed.data.outcomes?.trim() || null,
           jtm_credited: jtmCredited,
+          delay_days: lateCalc.delayDays,
+          jtm_percentage: lateCalc.percentage,
           submitted_by: guard.session.userId,
         })
         .select('*')
@@ -383,7 +457,12 @@ export async function POST(request: Request) {
         );
       }
 
-      return NextResponse.json({ journal, jtmCredited });
+      return NextResponse.json({
+        journal,
+        jtmCredited,
+        delayDays: lateCalc.delayDays,
+        percentage: lateCalc.percentage,
+      });
     }
 
     return NextResponse.json({ error: 'Aksi acara tidak dikenal.' }, { status: 400 });

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { CheckCircle2, ClipboardCheck, Loader2, MapPin, UserCheck } from 'lucide-react';
+import { calculateLateJtm, getWibTodayDateString, isSundayDate } from '@/lib/domain/jtm-late-penalty';
 
 interface TeacherOpt {
   id: string;
@@ -30,7 +31,9 @@ interface CommitteeRow {
   teacher_id: string;
   committee_role: string;
   jtm_allocated: number;
+  original_teacher_id?: string | null;
   teacher?: { full_name: string } | null;
+  original_teacher?: { full_name: string } | null;
 }
 
 interface BapRow {
@@ -82,6 +85,12 @@ export default function UjianPage() {
     substitute_teacher_id: '',
     reason: '',
   });
+  const [subCommitteeForm, setSubCommitteeForm] = useState({
+    exam_committee_id: '',
+    substitute_teacher_id: '',
+    reason: '',
+  });
+  const [canManageCommittees, setCanManageCommittees] = useState(false);
 
   const [periodForm, setPeriodForm] = useState({
     name: 'PAS Ganjil 2026/2027',
@@ -123,6 +132,7 @@ export default function UjianPage() {
       setBapReports(uj.bapReports || []);
       setSupervisorAttendances(uj.supervisorAttendances || []);
       setCommitteeAttendances(uj.committeeAttendances || []);
+      setCanManageCommittees(Boolean(uj.canManageCommittees));
     } finally {
       setLoading(false);
     }
@@ -478,7 +488,15 @@ export default function UjianPage() {
                     className="modular-card rounded-xl p-3 flex items-center justify-between gap-2 text-xs"
                   >
                     <div>
-                      <p className="font-bold text-slate-900">{com.teacher?.full_name}</p>
+                      <p className="font-bold text-slate-900">
+                        {com.teacher?.full_name}
+                        {com.original_teacher?.full_name && (
+                          <span className="font-normal text-slate-500">
+                            {' '}
+                            (menggantikan {com.original_teacher.full_name})
+                          </span>
+                        )}
+                      </p>
                       <p className="text-slate-500">
                         {com.committee_role} •{' '}
                         {isConfirmed
@@ -507,8 +525,16 @@ export default function UjianPage() {
               <ClipboardCheck className="w-4 h-4 text-emerald-700" /> Berita Acara Pengawasan (BAP)
             </h2>
             <p className="text-xs text-slate-600">
-              Pengawas ujian wajib melakukan presensi GPS terlebih dahulu lalu mengisi BAP di bawah ini agar JTM pengawasan dihitung untuk honorarium.
+              Pengawas ujian wajib melakukan presensi GPS terlebih dahulu lalu mengisi BAP di bawah
+              ini agar JTM pengawasan dihitung untuk honorarium. Keterlambatan input: H+1 (80%),
+              H+2 (60%), H+3 (40%), H+4 (20%), H+5 (10%), Hari Minggu tidak dihitung.
             </p>
+            {isSundayDate(getWibTodayDateString()) && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                Hari Minggu tidak ada pengisian BAP. Silakan input pada hari Senin atau hari aktif
+                berikutnya.
+              </div>
+            )}
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
@@ -534,11 +560,19 @@ export default function UjianPage() {
                 <option value="">-- Pilih Jadwal Pengawas (Sudah Presensi, Belum BAP) --</option>
                 {supervisors
                   .filter((s) => attendedSupervisorIds.has(s.id) && !bapSupervisorIds.has(s.id))
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.exam_date} • {s.session_name} • {s.teacher?.full_name} ({s.jtm_allocated} JTM)
-                    </option>
-                  ))}
+                  .map((s) => {
+                    const preview = calculateLateJtm(s.jtm_allocated, s.exam_date);
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {s.exam_date} • {s.session_name} • {s.teacher?.full_name} (
+                        {preview.creditedJtm}/{s.jtm_allocated} JTM •{' '}
+                        {preview.delayDays === 0
+                          ? 'Hari Ini 100%'
+                          : `H+${preview.delayDays}: ${preview.percentage}%`}
+                        )
+                      </option>
+                    );
+                  })}
               </select>
               <div className="grid grid-cols-2 gap-2">
                 <input
@@ -571,7 +605,8 @@ export default function UjianPage() {
               />
               <button
                 type="submit"
-                className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2 rounded-xl text-xs"
+                disabled={isSundayDate(getWibTodayDateString())}
+                className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-semibold py-2 rounded-xl text-xs"
               >
                 Simpan BAP &amp; Hitung JTM Pengawas
               </button>
@@ -667,6 +702,83 @@ export default function UjianPage() {
               </button>
             </form>
           </div>
+
+          {/* Penunjukkan Panitia Ujian Pengganti (Admin / Kurikulum / TU) */}
+          {canManageCommittees && (
+            <div className="glass-card rounded-3xl p-6 space-y-3">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-sky-700" /> Penunjukkan Panitia Ujian Pengganti
+              </h2>
+              <p className="text-xs text-slate-600">
+                Jika ada anggota Panitia Ujian berhalangan, Admin/Kurikulum dapat menunjuk Panitia
+                Pengganti. Panitia Pengganti wajib presensi GPS (`PANITIA_UJIAN`) dan dikonfirmasi
+                Admin agar JTM-nya dihitung.
+              </p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  await postUjian(
+                    { action: 'SUBSTITUTE_COMMITTEE', ...subCommitteeForm },
+                    'Panitia Ujian Pengganti berhasil ditunjuk. Wajib presensi GPS & konfirmasi Admin.'
+                  );
+                  setSubCommitteeForm({
+                    exam_committee_id: '',
+                    substitute_teacher_id: '',
+                    reason: '',
+                  });
+                }}
+                className="space-y-2.5"
+              >
+                <select
+                  required
+                  value={subCommitteeForm.exam_committee_id}
+                  onChange={(e) =>
+                    setSubCommitteeForm({ ...subCommitteeForm, exam_committee_id: e.target.value })
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                >
+                  <option value="">-- Pilih Panitia Ujian yang Berhalangan --</option>
+                  {committees.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.committee_role} • {c.teacher?.full_name} ({c.jtm_allocated} JTM)
+                    </option>
+                  ))}
+                </select>
+                <select
+                  required
+                  value={subCommitteeForm.substitute_teacher_id}
+                  onChange={(e) =>
+                    setSubCommitteeForm({
+                      ...subCommitteeForm,
+                      substitute_teacher_id: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                >
+                  <option value="">-- Pilih Guru Panitia Pengganti --</option>
+                  {teachers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.full_name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  placeholder="Alasan penggantian (Sakit/Izin/Dinas)"
+                  value={subCommitteeForm.reason}
+                  onChange={(e) =>
+                    setSubCommitteeForm({ ...subCommitteeForm, reason: e.target.value })
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                />
+                <button
+                  type="submit"
+                  className="w-full bg-sky-700 hover:bg-sky-800 text-white font-semibold py-2 rounded-xl text-xs"
+                >
+                  Tunjuk Panitia Ujian Pengganti
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       </div>
     </div>

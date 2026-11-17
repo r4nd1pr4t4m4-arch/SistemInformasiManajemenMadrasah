@@ -232,6 +232,7 @@ export async function POST(request: Request) {
         { data: bapReports },
         { data: committees },
         { data: confirmedCommitteeAtts },
+        { data: confirmedPicketAtts },
         { data: eventJournals },
         { data: duties },
       ] = await Promise.all([
@@ -256,8 +257,10 @@ export async function POST(request: Request) {
           .lte('exam_date', endDate),
         supabase
           .from('exam_bap_reports')
-          .select('exam_supervisor_id')
-          .eq('teacher_id', teacher_id),
+          .select('exam_supervisor_id, jtm_credited')
+          .eq('teacher_id', teacher_id)
+          .gte('report_date', startDate)
+          .lte('report_date', endDate),
         supabase
           .from('exam_committees')
           .select('id, jtm_allocated')
@@ -267,6 +270,15 @@ export async function POST(request: Request) {
           .select('exam_committee_id')
           .eq('teacher_id', teacher_id)
           .eq('attendance_type', 'PANITIA_UJIAN')
+          .eq('is_within_geofence', true)
+          .eq('admin_confirmed', true)
+          .gte('attendance_date', startDate)
+          .lte('attendance_date', endDate),
+        supabase
+          .from('teacher_attendances')
+          .select('jtm_earned')
+          .eq('teacher_id', teacher_id)
+          .eq('attendance_type', 'PIKET')
           .eq('is_within_geofence', true)
           .eq('admin_confirmed', true)
           .gte('attendance_date', startDate)
@@ -286,27 +298,46 @@ export async function POST(request: Request) {
           .eq('is_active', true),
       ]);
 
-      const teachingJtm = (journals || [])
-        .filter((j) => !j.delegation_id)
-        .reduce((s, r) => s + (r.jtm_credited || 0), 0);
-      const substituteJtm = (journals || [])
-        .filter((j) => Boolean(j.delegation_id))
-        .reduce((s, r) => s + (r.jtm_credited || 0), 0);
-
-      const bapSupervisorIds = new Set(
-        (bapReports || []).map((b) => b.exam_supervisor_id).filter(Boolean)
+      const teachingJtm = Number(
+        (journals || [])
+          .filter((j) => !j.delegation_id)
+          .reduce((s, r) => s + Number(r.jtm_credited || 0), 0)
+          .toFixed(2)
       );
-      const examSupervisorJtm = (supervisors || [])
-        .filter((s) => bapSupervisorIds.has(s.id))
-        .reduce((s, r) => s + (r.jtm_allocated || 0), 0);
+      const substituteJtm = Number(
+        (journals || [])
+          .filter((j) => Boolean(j.delegation_id))
+          .reduce((s, r) => s + Number(r.jtm_credited || 0), 0)
+          .toFixed(2)
+      );
+
+      const supervisorIds = new Set((supervisors || []).map((s) => s.id));
+      const examSupervisorJtm = Number(
+        (bapReports || [])
+          .filter((b) => supervisorIds.has(b.exam_supervisor_id))
+          .reduce((s, b) => s + Number(b.jtm_credited || 0), 0)
+          .toFixed(2)
+      );
 
       const confirmedCommitteeIds = new Set(
         (confirmedCommitteeAtts || []).map((a) => a.exam_committee_id).filter(Boolean)
       );
-      const examCommitteeJtm = (committees || [])
-        .filter((c) => confirmedCommitteeIds.has(c.id))
-        .reduce((s, r) => s + (r.jtm_allocated || 0), 0);
-      const eventJtm = (eventJournals || []).reduce((s, r) => s + (r.jtm_credited || 0), 0);
+      const examCommitteeJtm = Number(
+        (committees || [])
+          .filter((c) => confirmedCommitteeIds.has(c.id))
+          .reduce((s, r) => s + Number(r.jtm_allocated || 0), 0)
+          .toFixed(2)
+      );
+      const eventJtm = Number(
+        (eventJournals || [])
+          .reduce((s, r) => s + Number(r.jtm_credited || 0), 0)
+          .toFixed(2)
+      );
+      const picketJtm = Number(
+        (confirmedPicketAtts || [])
+          .reduce((s, r) => s + Number(r.jtm_earned || 0), 0)
+          .toFixed(2)
+      );
       const ratePerJtm = Number(rateRow?.rate_per_jtm ?? 25000);
 
       const dutyInputs = (duties || [])
@@ -324,7 +355,7 @@ export async function POST(request: Request) {
         .filter((x): x is NonNullable<typeof x> => x !== null);
 
       const calc = calculateTeacherHonorarium(
-        { teachingJtm, substituteJtm, examSupervisorJtm, examCommitteeJtm, eventJtm },
+        { teachingJtm, substituteJtm, examSupervisorJtm, examCommitteeJtm, eventJtm, picketJtm },
         ratePerJtm,
         dutyInputs
       );
@@ -341,6 +372,7 @@ export async function POST(request: Request) {
             exam_supervisor_jtm: examSupervisorJtm,
             exam_committee_jtm: examCommitteeJtm,
             event_jtm: eventJtm,
+            picket_jtm: picketJtm,
             total_jtm: calc.totalJtm,
             rate_per_jtm: calc.ratePerJtm,
             jtm_honorarium_amount: calc.jtmHonorariumAmount,

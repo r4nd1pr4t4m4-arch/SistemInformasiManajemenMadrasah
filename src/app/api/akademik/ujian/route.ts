@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { hasAnyRole } from '@/lib/auth/session';
+import { calculateLateJtm } from '@/lib/domain/jtm-late-penalty';
 
 async function getActiveAcademicYearId(
   supabase: ReturnType<typeof createSupabaseAdminClient>
@@ -83,6 +85,13 @@ const SubstituteSupervisorSchema = z.object({
   reason: z.string().optional().nullable(),
 });
 
+const SubstituteCommitteeSchema = z.object({
+  action: z.literal('SUBSTITUTE_COMMITTEE'),
+  exam_committee_id: z.string().uuid(),
+  substitute_teacher_id: z.string().uuid(),
+  reason: z.string().optional().nullable(),
+});
+
 export async function GET() {
   const guard = await requireApiRoles(ROLE_GROUPS.AKADEMIK);
   if (guard.errorResponse) return guard.errorResponse;
@@ -121,7 +130,9 @@ export async function GET() {
       .order('exam_date', { ascending: false }),
     supabase
       .from('exam_committees')
-      .select('*, teacher:teachers_staff(full_name), period:exam_periods(name)'),
+      .select(
+        '*, teacher:teachers_staff!exam_committees_teacher_id_fkey(full_name), original_teacher:teachers_staff!exam_committees_original_teacher_id_fkey(full_name), period:exam_periods(name)'
+      ),
     supabase
       .from('exam_student_attendances')
       .select('*, student:students(full_name), room:exam_rooms(room_name)')
@@ -157,6 +168,7 @@ export async function GET() {
     bapReports: bapReports || [],
     supervisorAttendances: supervisorAttendances || [],
     committeeAttendances: committeeAttendances || [],
+    canManageCommittees: hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM),
   });
 }
 
@@ -299,6 +311,13 @@ export async function POST(request: Request) {
         );
       }
 
+      const lateCalc = calculateLateJtm(supervisor.jtm_allocated, supervisor.exam_date);
+      if (!lateCalc.allowed) {
+        return NextResponse.json({ error: lateCalc.reason }, { status: 400 });
+      }
+
+      const jtmCredited = lateCalc.creditedJtm;
+
       const { data: bap, error: bapErr } = await supabase
         .from('exam_bap_reports')
         .insert({
@@ -309,6 +328,9 @@ export async function POST(request: Request) {
           present_students_count: parsed.data.present_students_count,
           absent_students_count: parsed.data.absent_students_count,
           incidents: parsed.data.incidents?.trim() || null,
+          jtm_credited: jtmCredited,
+          delay_days: lateCalc.delayDays,
+          jtm_percentage: lateCalc.percentage,
           submitted_by: guard.session.userId,
         })
         .select('*')
@@ -320,10 +342,15 @@ export async function POST(request: Request) {
 
       await supabase
         .from('teacher_attendances')
-        .update({ jtm_earned: supervisor.jtm_allocated })
+        .update({ jtm_earned: jtmCredited })
         .eq('id', supAtt.id);
 
-      return NextResponse.json({ bap, jtmCredited: supervisor.jtm_allocated });
+      return NextResponse.json({
+        bap,
+        jtmCredited,
+        delayDays: lateCalc.delayDays,
+        percentage: lateCalc.percentage,
+      });
     }
 
     if (body.action === 'SUBSTITUTE_SUPERVISOR') {
@@ -386,6 +413,53 @@ export async function POST(request: Request) {
 
       if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
       return NextResponse.json({ supervisor: updated });
+    }
+
+    if (body.action === 'SUBSTITUTE_COMMITTEE') {
+      if (!hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM)) {
+        return NextResponse.json(
+          { error: 'Hanya Admin / Kurikulum / Kesiswaan / TU yang dapat menunjuk Panitia Ujian Pengganti.' },
+          { status: 403 }
+        );
+      }
+
+      const parsed = SubstituteCommitteeSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Data panitia pengganti tidak valid.' }, { status: 400 });
+      }
+
+      const { data: committee, error: comErr } = await supabase
+        .from('exam_committees')
+        .select('id, teacher_id, original_teacher_id')
+        .eq('id', parsed.data.exam_committee_id)
+        .single();
+
+      if (comErr || !committee) {
+        return NextResponse.json({ error: 'Data panitia ujian tidak ditemukan.' }, { status: 404 });
+      }
+
+      if (committee.teacher_id === parsed.data.substitute_teacher_id) {
+        return NextResponse.json(
+          { error: 'Panitia pengganti tidak boleh sama dengan panitia saat ini.' },
+          { status: 400 }
+        );
+      }
+
+      const { data: updated, error: updErr } = await supabase
+        .from('exam_committees')
+        .update({
+          original_teacher_id: committee.original_teacher_id || committee.teacher_id,
+          teacher_id: parsed.data.substitute_teacher_id,
+          substituted_by_profile_id: guard.session.userId,
+          substitution_reason: parsed.data.reason?.trim() || null,
+          substituted_at: new Date().toISOString(),
+        })
+        .eq('id', committee.id)
+        .select('*')
+        .single();
+
+      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      return NextResponse.json({ committee: updated });
     }
 
     return NextResponse.json({ error: 'Aksi ujian tidak dikenal.' }, { status: 400 });

@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Loader2,
 } from 'lucide-react';
+import { calculateLateJtm, getWibTodayDateString, isSundayDate } from '@/lib/domain/jtm-late-penalty';
 
 interface ConfirmationOpt {
   id: string;
@@ -86,8 +87,9 @@ export default function JurnalAcaraPage() {
     [journals]
   );
 
-  // Tampilkan konfirmasi acara yang belum diisi jurnalnya (filter milik guru login jika bukan admin)
+  // Tampilkan hanya konfirmasi acara milik guru login (yang sudah dikonfirmasi Guru Piket / Admin) dan belum diisi jurnalnya
   const pendingConfirmations = useMemo(() => {
+    if (!canManageEvents && !currentTeacher) return [];
     return confirmations.filter((c) => {
       if (journaledConfirmationIds.has(c.id)) return false;
       if (!canManageEvents && currentTeacher) {
@@ -98,6 +100,7 @@ export default function JurnalAcaraPage() {
   }, [confirmations, journaledConfirmationIds, canManageEvents, currentTeacher]);
 
   const visibleJournals = useMemo(() => {
+    if (!canManageEvents && !currentTeacher) return [];
     if (!canManageEvents && currentTeacher) {
       return journals.filter((j) => j.teacher_id === currentTeacher.id);
     }
@@ -123,7 +126,7 @@ export default function JurnalAcaraPage() {
       }
       showToast(
         'success',
-        `Jurnal Acara berhasil disimpan! +${data.jtmCredited} JTM telah dihitung.`
+        `Jurnal Acara berhasil disimpan (${data.percentage ?? 100}%)! +${data.jtmCredited} JTM telah dihitung.`
       );
       setForm({ confirmation_id: '', summary: '', outcomes: '' });
       await loadData();
@@ -185,7 +188,20 @@ export default function JurnalAcaraPage() {
         <div className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-4">
           <h2 className="text-base font-bold text-slate-900">Form Input Jurnal Acara</h2>
 
-          {pendingConfirmations.length === 0 ? (
+          {isSundayDate(getWibTodayDateString()) && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+              Hari Minggu tidak ada pengisian Jurnal Acara. Silakan input pada hari Senin atau hari
+              aktif berikutnya.
+            </div>
+          )}
+
+          {!canManageEvents && !currentTeacher ? (
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs leading-relaxed">
+              Akun Anda belum terhubung dengan data GTK di <strong>Buku Induk</strong>, sehingga
+              Anda belum dapat mengisi Jurnal Acara. Silakan hubungi Admin/Operator untuk menautkan
+              akun Anda.
+            </div>
+          ) : pendingConfirmations.length === 0 ? (
             <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs leading-relaxed">
               Belum ada jadwal acara yang dikonfirmasi kehadirannya untuk diisi jurnalnya. Pastikan
               kehadiran Anda pada acara telah dikonfirmasi oleh <strong>Guru Piket hari itu</strong>{' '}
@@ -206,13 +222,20 @@ export default function JurnalAcaraPage() {
                   <option value="">
                     -- Pilih Acara Terkonfirmasi ({pendingConfirmations.length} tersedia) --
                   </option>
-                  {pendingConfirmations.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.event_date} • {c.event?.title} ({c.teacher?.full_name}) •{' '}
-                      {c.event?.jtm_allocated ?? 0} JTM [Konfirmasi:{' '}
-                      {c.confirmed_by_role === 'GURU_PIKET' ? 'Guru Piket' : 'Admin'}]
-                    </option>
-                  ))}
+                  {pendingConfirmations.map((c) => {
+                    const base = c.event?.jtm_allocated ?? 0;
+                    const preview = calculateLateJtm(base, c.event_date);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.event_date} • {c.event?.title} ({c.teacher?.full_name}) •{' '}
+                        {preview.creditedJtm}/{base} JTM [
+                        {preview.delayDays === 0
+                          ? 'Hari Ini 100%'
+                          : `H+${preview.delayDays}: ${preview.percentage}%`}
+                        ]
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -245,7 +268,7 @@ export default function JurnalAcaraPage() {
 
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || isSundayDate(getWibTodayDateString())}
                 className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition"
               >
                 {submitting ? 'Menyimpan...' : 'Simpan Jurnal Acara & Hitung JTM'}

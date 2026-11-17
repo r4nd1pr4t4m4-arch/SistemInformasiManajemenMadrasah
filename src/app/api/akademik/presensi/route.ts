@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { verifyGeofence } from '@/lib/domain/geofence';
+import { calculateLateJtm } from '@/lib/domain/jtm-late-penalty';
 import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 
@@ -39,6 +40,7 @@ const SubmitJournalSchema = z.object({
 const ConfirmAttendanceSchema = z.object({
   action: z.literal('CONFIRM_ATTENDANCE'),
   attendance_id: z.string().uuid(),
+  picket_jtm: z.number().min(0).max(24).optional(),
 });
 
 const DelegationSchema = z.object({
@@ -310,7 +312,7 @@ export async function POST(request: Request) {
         );
       }
 
-      let jtmCredited = parsed.data.jtm_fallback;
+      let baseJtm = parsed.data.jtm_fallback;
       if (att.delegation_id) {
         const { data: delRow } = await supabase
           .from('teacher_delegations')
@@ -318,7 +320,7 @@ export async function POST(request: Request) {
           .eq('id', att.delegation_id)
           .maybeSingle();
         if (delRow?.jtm_transferred) {
-          jtmCredited = delRow.jtm_transferred;
+          baseJtm = delRow.jtm_transferred;
         }
       } else if (att.schedule_id) {
         const { data: schedRow } = await supabase
@@ -327,9 +329,16 @@ export async function POST(request: Request) {
           .eq('id', att.schedule_id)
           .maybeSingle();
         if (schedRow?.jtm_count) {
-          jtmCredited = schedRow.jtm_count;
+          baseJtm = schedRow.jtm_count;
         }
       }
+
+      const lateCalc = calculateLateJtm(baseJtm, att.attendance_date);
+      if (!lateCalc.allowed) {
+        return NextResponse.json({ error: lateCalc.reason }, { status: 400 });
+      }
+
+      const jtmCredited = lateCalc.creditedJtm;
 
       const { data: journal, error: journalErr } = await supabase
         .from('teaching_journals')
@@ -342,6 +351,8 @@ export async function POST(request: Request) {
           topic: parsed.data.topic.trim(),
           learning_activities: parsed.data.learning_activities?.trim() || null,
           jtm_credited: jtmCredited,
+          delay_days: lateCalc.delayDays,
+          jtm_percentage: lateCalc.percentage,
           created_by: guard.session.userId,
         })
         .select('*')
@@ -359,7 +370,12 @@ export async function POST(request: Request) {
         .update({ jtm_earned: jtmCredited })
         .eq('id', att.id);
 
-      return NextResponse.json({ journal, jtmCredited });
+      return NextResponse.json({
+        journal,
+        jtmCredited,
+        delayDays: lateCalc.delayDays,
+        percentage: lateCalc.percentage,
+      });
     }
 
     if (body.action === 'CONFIRM_ATTENDANCE') {
@@ -377,7 +393,7 @@ export async function POST(request: Request) {
 
       const { data: att } = await supabase
         .from('teacher_attendances')
-        .select('id, attendance_type, is_within_geofence')
+        .select('id, attendance_type, is_within_geofence, delegation_id, picket_schedule_id')
         .eq('id', parsed.data.attendance_id)
         .single();
 
@@ -397,13 +413,39 @@ export async function POST(request: Request) {
         );
       }
 
+      const updateFields: Record<string, unknown> = {
+        admin_confirmed: true,
+        confirmed_by: guard.session.userId,
+        confirmed_at: new Date().toISOString(),
+      };
+
+      if (att.attendance_type === 'PIKET') {
+        let picketJtm = parsed.data.picket_jtm ?? 2;
+        if (att.delegation_id) {
+          const { data: delRow } = await supabase
+            .from('teacher_delegations')
+            .select('jtm_transferred')
+            .eq('id', att.delegation_id)
+            .maybeSingle();
+          if (delRow?.jtm_transferred != null) {
+            picketJtm = Number(delRow.jtm_transferred);
+          }
+        } else if (att.picket_schedule_id) {
+          const { data: psRow } = await supabase
+            .from('picket_schedules')
+            .select('jtm_allocated')
+            .eq('id', att.picket_schedule_id)
+            .maybeSingle();
+          if (psRow?.jtm_allocated != null) {
+            picketJtm = Number(psRow.jtm_allocated);
+          }
+        }
+        updateFields.jtm_earned = picketJtm;
+      }
+
       const { data: updated, error: updErr } = await supabase
         .from('teacher_attendances')
-        .update({
-          admin_confirmed: true,
-          confirmed_by: guard.session.userId,
-          confirmed_at: new Date().toISOString(),
-        })
+        .update(updateFields)
         .eq('id', att.id)
         .select('*')
         .single();
