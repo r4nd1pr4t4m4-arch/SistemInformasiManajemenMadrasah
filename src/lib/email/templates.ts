@@ -497,3 +497,70 @@ export function buildRegistrationOtpEmail(params: {
     text,
   };
 }
+
+export function buildPaidHolidayJtmEmail(params: {
+  institutionName: string;
+  institutionAddress?: string | null;
+  institutionEmail?: string | null;
+  recipientName: string;
+  holidayDate: string;
+  holidayTitle: string;
+  teachingJtm: number;
+  picketJtm: number;
+  totalJtm: number;
+  details: string;
+  processedAtWib: string;
+}) {
+  const safeName = escapeHtml(params.recipientName);
+  const safeTitle = escapeHtml(params.holidayTitle);
+  const safeDate = escapeHtml(params.holidayDate);
+  const safeDetails = escapeHtml(params.details);
+  const safeTime = escapeHtml(params.processedAtWib);
+
+  const html = wrapEmailLayout({
+    institutionName: params.institutionName,
+    institutionAddress: params.institutionAddress,
+    institutionEmail: params.institutionEmail,
+    preheader: `Otomatis +${params.totalJtm} JTM pada Libur Berbayar (${params.holidayTitle}).`,
+    badgeText: 'JTM Otomatis Libur Berbayar',
+    title: `Penambahan JTM Otomatis: ${safeTitle}`,
+    bodyHtml: `
+      <p style="margin:0 0 14px;font-size:14px;line-height:1.65;color:#334155;">
+        Assalamu'alaikum / Salam sejahtera, <strong>${safeName}</strong>,
+      </p>
+      <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#475569;">
+        Berdasarkan Kalender Pendidikan <strong>${escapeHtml(params.institutionName)}</strong>, tanggal <strong>${safeDate}</strong> ditetapkan sebagai <strong>Hari Libur Berbayar (${safeTitle})</strong>. Oleh karena itu, JTM jadwal Anda hari ini telah ditambahkan secara otomatis ke perhitungan honorarium <strong>tanpa perlu mengisi Jurnal Pembelajaran maupun Laporan Harian Piket</strong>.
+      </p>
+
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;margin-bottom:20px;">
+        <tr>
+          <td style="padding:14px 16px;font-size:12px;color:#065f46;line-height:1.75;">
+            <div><strong>Tanggal Libur Berbayar:</strong> ${safeDate}</div>
+            <div><strong>Agenda:</strong> ${safeTitle}</div>
+            <div><strong>JTM Jadwal Mengajar:</strong> ${params.teachingJtm} JTM</div>
+            <div><strong>JTM Jadwal Piket:</strong> ${params.picketJtm} JTM</div>
+            <div><strong>Total JTM Ditambahkan:</strong> <strong>+${params.totalJtm} JTM</strong></div>
+            <div><strong>Rincian Jadwal:</strong> ${safeDetails}</div>
+            <div><strong>Diproses Otomatis:</strong> ${safeTime}</div>
+          </td>
+        </tr>
+      </table>
+    `,
+  });
+
+  const text = [
+    `Halo ${params.recipientName},`,
+    `Tanggal ${params.holidayDate} (${params.holidayTitle}) adalah Hari Libur Berbayar di ${params.institutionName}.`,
+    `JTM Anda otomatis ditambahkan tanpa perlu input Jurnal Pembelajaran/Laporan Harian Piket:`,
+    `- JTM Mengajar: ${params.teachingJtm} JTM`,
+    `- JTM Piket: ${params.picketJtm} JTM`,
+    `- Total: +${params.totalJtm} JTM (${params.details})`,
+    `Diproses pada ${params.processedAtWib}.`,
+  ].join('\n');
+
+  return {
+    subject: `[${params.institutionName}] JTM Otomatis Libur Berbayar (+${params.totalJtm} JTM) — ${params.holidayDate}`,
+    html,
+    text,
+  };
+}

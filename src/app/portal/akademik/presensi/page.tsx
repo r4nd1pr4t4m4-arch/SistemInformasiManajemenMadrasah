@@ -55,6 +55,8 @@ interface TeacherAttendanceRow {
   id: string;
   teacher_id: string;
   attendance_date: string;
+  check_in_time?: string;
+  check_out_time?: string | null;
   attendance_type: 'HARIAN' | 'MENGAJAR' | 'PIKET' | 'PENGAWAS_UJIAN' | 'PANITIA_UJIAN';
   schedule_id: string | null;
   delegation_id: string | null;
@@ -191,6 +193,18 @@ export default function PresensiPage() {
       teacher?: { full_name: string } | null;
     }[]
   >([]);
+  const [shortLeaves, setShortLeaves] = useState<
+    {
+      id: string;
+      leave_date: string;
+      leave_start_time: string;
+      leave_end_time: string;
+      duration_minutes: number;
+      reason: string | null;
+      recorded_by_role: string;
+      teacher?: { full_name: string } | null;
+    }[]
+  >([]);
   const [sessionConfirmations, setSessionConfirmations] = useState<SessionConfirmationRow[]>([]);
   const [todayDate, setTodayDate] = useState('');
   const [canAdminConfirm, setCanAdminConfirm] = useState(false);
@@ -289,6 +303,21 @@ export default function PresensiPage() {
     incidents: '',
   });
 
+  const [manualTimeForm, setManualTimeForm] = useState({
+    attendance_id: '',
+    check_in_hhmm: '07:30',
+    check_out_hhmm: '12:30',
+    actor_ref: '', // '' = Admin, 'picket:<id>', 'committee:<id>'
+  });
+
+  const [shortLeaveForm, setShortLeaveForm] = useState({
+    attendance_id: '',
+    leave_start_time: '09:30',
+    leave_end_time: '10:30',
+    reason: '',
+    actor_ref: '',
+  });
+
   const showToast = useCallback((type: 'success' | 'error', text: string) => {
     setToast({ type, text });
     setTimeout(() => setToast(null), 5000);
@@ -313,6 +342,7 @@ export default function PresensiPage() {
       setDelegations(pr.delegations || []);
       setJournals(pr.journals || []);
       setPicketReports(pr.picketReports || []);
+      setShortLeaves(pr.shortLeaves || []);
       setSessionConfirmations(pr.sessionConfirmations || []);
       if (pr.todayDate) setTodayDate(pr.todayDate);
       setCanAdminConfirm(Boolean(pr.canAdminConfirm));
@@ -498,6 +528,14 @@ export default function PresensiPage() {
     () =>
       teacherAttendances.filter(
         (a) => a.attendance_type === 'PIKET' && a.is_within_geofence && a.admin_confirmed
+      ),
+    [teacherAttendances]
+  );
+
+  const confirmedCommitteeAttendances = useMemo(
+    () =>
+      teacherAttendances.filter(
+        (a) => a.attendance_type === 'PANITIA_UJIAN' && a.is_within_geofence && a.admin_confirmed
       ),
     [teacherAttendances]
   );
@@ -1592,6 +1630,259 @@ export default function PresensiPage() {
               ))
             )}
           </div>
+        </div>
+      </div>
+
+      {/* 6. Input Manual Jam Masuk & Pulang + Izin Keluar Sebentar */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="glass-card rounded-3xl p-6 space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-slate-900">
+              Input Manual Jam Masuk &amp; Jam Pulang
+            </h2>
+            <p className="text-xs text-slate-600">
+              Diisi manual oleh <strong>Admin</strong>, <strong>Guru Piket/Pengganti</strong>, atau{' '}
+              <strong>Panitia Ujian/Pengganti</strong> (khusus jam masuk &amp; pulang Guru Piket
+              dan Panitia Ujian wajib diisi manual oleh Admin).
+            </p>
+          </div>
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const [kind, refId] = manualTimeForm.actor_ref.split(':');
+              const res = await postPresensi({
+                action: 'SET_ATTENDANCE_TIMES',
+                attendance_id: manualTimeForm.attendance_id,
+                check_in_hhmm: manualTimeForm.check_in_hhmm,
+                check_out_hhmm: manualTimeForm.check_out_hhmm,
+                picket_attendance_id: kind === 'picket' ? refId : null,
+                committee_attendance_id: kind === 'committee' ? refId : null,
+              });
+              if (res) {
+                showToast('success', 'Jam masuk & jam pulang berhasil disimpan.');
+              }
+            }}
+            className="space-y-2.5"
+          >
+            <select
+              required
+              value={manualTimeForm.attendance_id}
+              onChange={(e) =>
+                setManualTimeForm({ ...manualTimeForm, attendance_id: e.target.value })
+              }
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            >
+              <option value="">-- Pilih Presensi Guru / Pengawas / Piket / Panitia --</option>
+              {teacherAttendances
+                .filter((a) => a.is_within_geofence)
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.attendance_date} • {a.teacher?.full_name} ({a.attendance_type})
+                    {a.check_out_time ? ' [Sudah ada jam pulang]' : ' [Belum ada jam pulang]'}
+                  </option>
+                ))}
+            </select>
+
+            <select
+              value={manualTimeForm.actor_ref}
+              onChange={(e) =>
+                setManualTimeForm({ ...manualTimeForm, actor_ref: e.target.value })
+              }
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            >
+              <option value="">
+                {canAdminConfirm
+                  ? '-- Input sebagai Admin --'
+                  : '-- Pilih Peran Anda (Guru Piket / Panitia Terkonfirmasi) --'}
+              </option>
+              {confirmedPicketAttendances.map((p) => (
+                <option key={`p:${p.id}`} value={`picket:${p.id}`}>
+                  Guru Piket: {p.teacher?.full_name} ({p.attendance_date})
+                </option>
+              ))}
+              {confirmedCommitteeAttendances.map((c) => (
+                <option key={`c:${c.id}`} value={`committee:${c.id}`}>
+                  Panitia Ujian: {c.teacher?.full_name} ({c.attendance_date})
+                </option>
+              ))}
+            </select>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">Jam Masuk (WIB)</label>
+                <input
+                  type="time"
+                  required
+                  value={manualTimeForm.check_in_hhmm}
+                  onChange={(e) =>
+                    setManualTimeForm({ ...manualTimeForm, check_in_hhmm: e.target.value })
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">Jam Pulang (WIB)</label>
+                <input
+                  type="time"
+                  required
+                  value={manualTimeForm.check_out_hhmm}
+                  onChange={(e) =>
+                    setManualTimeForm({ ...manualTimeForm, check_out_hhmm: e.target.value })
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-slate-900 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+            >
+              Simpan Jam Masuk &amp; Jam Pulang
+            </button>
+          </form>
+        </div>
+
+        <div className="glass-card rounded-3xl p-6 space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-slate-900">
+              Izin Keluar Sebentar ({shortLeaves.length})
+            </h2>
+            <p className="text-xs text-slate-600">
+              Diinput oleh <strong>Admin</strong>, <strong>Guru Piket/Pengganti</strong>, atau{' '}
+              <strong>Panitia Ujian/Pengganti</strong>. Durasi izin keluar sebentar otomatis
+              mengurangi persentase kehadiran untuk Tunjangan Transportasi.
+            </p>
+          </div>
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const [kind, refId] = shortLeaveForm.actor_ref.split(':');
+              const res = await postPresensi({
+                action: 'CREATE_SHORT_LEAVE',
+                attendance_id: shortLeaveForm.attendance_id,
+                leave_start_time: shortLeaveForm.leave_start_time,
+                leave_end_time: shortLeaveForm.leave_end_time,
+                reason: shortLeaveForm.reason,
+                picket_attendance_id: kind === 'picket' ? refId : null,
+                committee_attendance_id: kind === 'committee' ? refId : null,
+              });
+              if (res) {
+                showToast('success', 'Izin keluar sebentar berhasil dicatat.');
+                setShortLeaveForm((prev) => ({ ...prev, reason: '' }));
+              }
+            }}
+            className="space-y-2.5"
+          >
+            <select
+              required
+              value={shortLeaveForm.attendance_id}
+              onChange={(e) =>
+                setShortLeaveForm({ ...shortLeaveForm, attendance_id: e.target.value })
+              }
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            >
+              <option value="">-- Pilih Presensi Guru / Pengawas Hadir Hari Ini --</option>
+              {teacherAttendances
+                .filter((a) => a.is_within_geofence)
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.attendance_date} • {a.teacher?.full_name} ({a.attendance_type})
+                  </option>
+                ))}
+            </select>
+
+            <select
+              value={shortLeaveForm.actor_ref}
+              onChange={(e) =>
+                setShortLeaveForm({ ...shortLeaveForm, actor_ref: e.target.value })
+              }
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            >
+              <option value="">
+                {canAdminConfirm
+                  ? '-- Catat sebagai Admin --'
+                  : '-- Pilih Peran Anda (Guru Piket / Panitia Terkonfirmasi) --'}
+              </option>
+              {confirmedPicketAttendances.map((p) => (
+                <option key={`p:${p.id}`} value={`picket:${p.id}`}>
+                  Guru Piket: {p.teacher?.full_name} ({p.attendance_date})
+                </option>
+              ))}
+              {confirmedCommitteeAttendances.map((c) => (
+                <option key={`c:${c.id}`} value={`committee:${c.id}`}>
+                  Panitia Ujian: {c.teacher?.full_name} ({c.attendance_date})
+                </option>
+              ))}
+            </select>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">Jam Keluar</label>
+                <input
+                  type="time"
+                  required
+                  value={shortLeaveForm.leave_start_time}
+                  onChange={(e) =>
+                    setShortLeaveForm({ ...shortLeaveForm, leave_start_time: e.target.value })
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">Jam Kembali</label>
+                <input
+                  type="time"
+                  required
+                  value={shortLeaveForm.leave_end_time}
+                  onChange={(e) =>
+                    setShortLeaveForm({ ...shortLeaveForm, leave_end_time: e.target.value })
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            <input
+              placeholder="Alasan izin keluar sebentar (mis. Urusan keluarga / ke bank)"
+              value={shortLeaveForm.reason}
+              onChange={(e) => setShortLeaveForm({ ...shortLeaveForm, reason: e.target.value })}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            />
+
+            <button
+              type="submit"
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+            >
+              Catat Izin Keluar Sebentar
+            </button>
+          </form>
+
+          {shortLeaves.length > 0 && (
+            <div className="space-y-1.5 max-h-36 overflow-y-auto pt-2 border-t border-slate-200/70">
+              {shortLeaves.slice(0, 10).map((lv) => (
+                <div
+                  key={lv.id}
+                  className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 flex items-center justify-between text-xs"
+                >
+                  <div>
+                    <p className="font-bold text-slate-900">
+                      {lv.leave_date} • {lv.teacher?.full_name}
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      {lv.leave_start_time.slice(0, 5)}–{lv.leave_end_time.slice(0, 5)}
+                      {lv.reason ? ` • ${lv.reason}` : ''}
+                    </p>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold shrink-0">
+                    -{lv.duration_minutes} menit
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

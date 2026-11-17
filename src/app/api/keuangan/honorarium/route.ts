@@ -1,13 +1,55 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { calculateTeacherHonorarium } from '@/lib/domain/honorarium';
+import {
+  calculateDailyTransportAllowance,
+  calculateTeacherHonorarium,
+} from '@/lib/domain/honorarium';
 import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 
 const UpdateRateSchema = z.object({
   action: z.literal('UPDATE_RATE'),
   rate_per_jtm: z.number().min(0),
+  transport_rate_per_km: z.number().min(0).optional(),
+  school_start_time: z.string().optional(),
+  school_end_time: z.string().optional(),
 });
+
+const UpdateTeacherDistanceSchema = z.object({
+  action: z.literal('UPDATE_TEACHER_DISTANCE'),
+  teacher_id: z.string().uuid(),
+  home_distance_km: z.number().min(0).max(500),
+});
+
+const UpdateDailyHoursSchema = z.object({
+  action: z.literal('UPDATE_DAILY_HOURS'),
+  daily_hours: z.array(
+    z.object({
+      day_of_week: z.number().min(1).max(7),
+      is_active: z.boolean(),
+      start_time: z.string().min(4),
+      end_time: z.string().min(4),
+    })
+  ),
+});
+
+function getDefaultDailyHours(fallbackStart = '07:30', fallbackEnd = '12:30') {
+  return [
+    { day_of_week: 1, is_active: true, start_time: fallbackStart, end_time: fallbackEnd },
+    { day_of_week: 2, is_active: true, start_time: fallbackStart, end_time: fallbackEnd },
+    { day_of_week: 3, is_active: true, start_time: fallbackStart, end_time: fallbackEnd },
+    { day_of_week: 4, is_active: true, start_time: fallbackStart, end_time: fallbackEnd },
+    { day_of_week: 5, is_active: true, start_time: fallbackStart, end_time: '11:30' },
+    { day_of_week: 6, is_active: true, start_time: fallbackStart, end_time: '12:00' },
+    { day_of_week: 7, is_active: false, start_time: fallbackStart, end_time: '12:00' },
+  ];
+}
+
+function getIsoDayOfWeek(dateStr: string): number {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  const day = d.getUTCDay();
+  return day === 0 ? 7 : day;
+}
 
 const UpdateDutyAllowanceSchema = z.object({
   action: z.literal('UPDATE_DUTY_ALLOWANCE'),
@@ -42,6 +84,10 @@ export async function GET() {
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({
       ratePerJtm: 25000,
+      transportRatePerKm: 2000,
+      schoolStartTime: '07:30',
+      schoolEndTime: '12:30',
+      dailyHours: getDefaultDailyHours(),
       dutyTypes: [],
       teacherDuties: [],
       honorariums: [],
@@ -51,17 +97,19 @@ export async function GET() {
   const supabase = createSupabaseAdminClient();
   const [
     { data: rateRow },
+    { data: dailyHoursRows },
     { data: dutyTypes },
     { data: teacherDuties },
     { data: honorariums },
   ] = await Promise.all([
     supabase
       .from('honorarium_settings')
-      .select('rate_per_jtm')
+      .select('rate_per_jtm, transport_rate_per_km, school_start_time, school_end_time')
       .eq('is_active', true)
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase.from('school_daily_hours').select('*').order('day_of_week'),
     supabase.from('additional_duty_types').select('*').order('name'),
     supabase
       .from('teacher_additional_duties')
@@ -77,8 +125,24 @@ export async function GET() {
       .limit(100),
   ]);
 
+  const fallbackStart = String(rateRow?.school_start_time ?? '07:30').slice(0, 5);
+  const fallbackEnd = String(rateRow?.school_end_time ?? '12:30').slice(0, 5);
+  const dailyHours =
+    dailyHoursRows && dailyHoursRows.length > 0
+      ? dailyHoursRows.map((d) => ({
+          day_of_week: d.day_of_week,
+          is_active: Boolean(d.is_active),
+          start_time: String(d.start_time).slice(0, 5),
+          end_time: String(d.end_time).slice(0, 5),
+        }))
+      : getDefaultDailyHours(fallbackStart, fallbackEnd);
+
   return NextResponse.json({
     ratePerJtm: Number(rateRow?.rate_per_jtm ?? 25000),
+    transportRatePerKm: Number(rateRow?.transport_rate_per_km ?? 2000),
+    schoolStartTime: fallbackStart,
+    schoolEndTime: fallbackEnd,
+    dailyHours,
     dutyTypes: dutyTypes || [],
     teacherDuties: teacherDuties || [],
     honorariums: honorariums || [],
@@ -100,8 +164,16 @@ export async function PATCH(request: Request) {
     if (body.action === 'UPDATE_RATE') {
       const parsed = UpdateRateSchema.safeParse(body);
       if (!parsed.success) {
-        return NextResponse.json({ error: 'Tarif per JTM tidak valid.' }, { status: 400 });
+        return NextResponse.json({ error: 'Tarif per JTM / Transport tidak valid.' }, { status: 400 });
       }
+      const { data: prevSetting } = await supabase
+        .from('honorarium_settings')
+        .select('transport_rate_per_km, school_start_time, school_end_time')
+        .eq('is_active', true)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
       await supabase
         .from('honorarium_settings')
         .update({ is_active: false })
@@ -109,11 +181,55 @@ export async function PATCH(request: Request) {
 
       const { data, error } = await supabase
         .from('honorarium_settings')
-        .insert({ rate_per_jtm: parsed.data.rate_per_jtm, is_active: true })
+        .insert({
+          rate_per_jtm: parsed.data.rate_per_jtm,
+          transport_rate_per_km:
+            parsed.data.transport_rate_per_km ?? Number(prevSetting?.transport_rate_per_km ?? 2000),
+          school_start_time:
+            parsed.data.school_start_time ?? String(prevSetting?.school_start_time ?? '07:30'),
+          school_end_time:
+            parsed.data.school_end_time ?? String(prevSetting?.school_end_time ?? '12:30'),
+          is_active: true,
+        })
         .select('*')
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ setting: data });
+    }
+
+    if (body.action === 'UPDATE_TEACHER_DISTANCE') {
+      const parsed = UpdateTeacherDistanceSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Jarak rumah guru tidak valid.' }, { status: 400 });
+      }
+      const { data, error } = await supabase
+        .from('teachers_staff')
+        .update({ home_distance_km: parsed.data.home_distance_km })
+        .eq('id', parsed.data.teacher_id)
+        .select('id, full_name, home_distance_km')
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ teacher: data });
+    }
+
+    if (body.action === 'UPDATE_DAILY_HOURS') {
+      const parsed = UpdateDailyHoursSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Data jam sekolah per hari tidak valid.' }, { status: 400 });
+      }
+      const nowIso = new Date().toISOString();
+      const { error } = await supabase.from('school_daily_hours').upsert(
+        parsed.data.daily_hours.map((d) => ({
+          day_of_week: d.day_of_week,
+          is_active: d.is_active,
+          start_time: d.start_time,
+          end_time: d.end_time,
+          updated_at: nowIso,
+        })),
+        { onConflict: 'day_of_week' }
+      );
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
     }
 
     if (body.action === 'UPDATE_DUTY_ALLOWANCE') {
@@ -227,6 +343,10 @@ export async function POST(request: Request) {
 
       const [
         { data: rateRow },
+        { data: dailyHoursRows },
+        { data: teacherRow },
+        { data: attendanceLogs },
+        { data: shortLeaveLogs },
         { data: journals },
         { data: supervisors },
         { data: bapReports },
@@ -234,15 +354,36 @@ export async function POST(request: Request) {
         { data: picketReports },
         { data: eventJournals },
         { data: ceremonies },
+        { data: paidHolidayLogs },
         { data: duties },
       ] = await Promise.all([
         supabase
           .from('honorarium_settings')
-          .select('rate_per_jtm')
+          .select('rate_per_jtm, transport_rate_per_km, school_start_time, school_end_time')
           .eq('is_active', true)
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
+        supabase.from('school_daily_hours').select('*'),
+        supabase
+          .from('teachers_staff')
+          .select('home_distance_km')
+          .eq('id', teacher_id)
+          .maybeSingle(),
+        supabase
+          .from('teacher_attendances')
+          .select('attendance_date, check_in_time, check_out_time')
+          .eq('teacher_id', teacher_id)
+          .eq('is_within_geofence', true)
+          .not('check_out_time', 'is', null)
+          .gte('attendance_date', startDate)
+          .lte('attendance_date', endDate),
+        supabase
+          .from('teacher_short_leaves')
+          .select('leave_date, leave_start_time, leave_end_time')
+          .eq('teacher_id', teacher_id)
+          .gte('leave_date', startDate)
+          .lte('leave_date', endDate),
         supabase
           .from('teaching_journals')
           .select('jtm_credited, delegation_id')
@@ -286,6 +427,12 @@ export async function POST(request: Request) {
           .eq('status', 'TERLAKSANA')
           .gte('ceremony_date', startDate)
           .lte('ceremony_date', endDate),
+        supabase
+          .from('paid_holiday_jtm_logs')
+          .select('total_jtm')
+          .eq('teacher_id', teacher_id)
+          .gte('holiday_date', startDate)
+          .lte('holiday_date', endDate),
         supabase
           .from('teacher_additional_duties')
           .select(
@@ -336,7 +483,73 @@ export async function POST(request: Request) {
           .reduce((s, r) => s + Number(r.jtm_allocated || 0), 0)
           .toFixed(2)
       );
+      const paidHolidayJtm = Number(
+        (paidHolidayLogs || [])
+          .reduce((s, r) => s + Number(r.total_jtm || 0), 0)
+          .toFixed(2)
+      );
       const ratePerJtm = Number(rateRow?.rate_per_jtm ?? 25000);
+      const transportRatePerKm = Number(rateRow?.transport_rate_per_km ?? 2000);
+      const schoolStartTime = String(rateRow?.school_start_time ?? '07:30').slice(0, 5);
+      const schoolEndTime = String(rateRow?.school_end_time ?? '12:30').slice(0, 5);
+      const homeDistanceKm = Number(teacherRow?.home_distance_km ?? 0);
+
+      // Hitung Tunjangan Transportasi per hari: (% durasi kehadiran di madrasah) x jarak KM x tarif per KM
+      const dailyIntervals = new Map<string, { checkIn: string; checkOut: string }>();
+      for (const att of attendanceLogs || []) {
+        if (!att.check_in_time || !att.check_out_time) continue;
+        const cur = dailyIntervals.get(att.attendance_date);
+        if (!cur) {
+          dailyIntervals.set(att.attendance_date, {
+            checkIn: att.check_in_time,
+            checkOut: att.check_out_time,
+          });
+        } else {
+          if (att.check_in_time < cur.checkIn) cur.checkIn = att.check_in_time;
+          if (att.check_out_time > cur.checkOut) cur.checkOut = att.check_out_time;
+        }
+      }
+
+      const dailyHoursMap = new Map<
+        number,
+        { isActive: boolean; startTime: string; endTime: string }
+      >();
+      for (const dh of dailyHoursRows || []) {
+        dailyHoursMap.set(dh.day_of_week, {
+          isActive: Boolean(dh.is_active),
+          startTime: String(dh.start_time).slice(0, 5),
+          endTime: String(dh.end_time).slice(0, 5),
+        });
+      }
+
+      const shortLeavesByDate = new Map<string, { startTime: string; endTime: string }[]>();
+      for (const lv of shortLeaveLogs || []) {
+        const list = shortLeavesByDate.get(lv.leave_date) || [];
+        list.push({
+          startTime: String(lv.leave_start_time).slice(0, 5),
+          endTime: String(lv.leave_end_time).slice(0, 5),
+        });
+        shortLeavesByDate.set(lv.leave_date, list);
+      }
+
+      let transportAllowance = 0;
+      for (const [attDate, interval] of dailyIntervals.entries()) {
+        const dayOfWeek = getIsoDayOfWeek(attDate);
+        const dayCfg = dailyHoursMap.get(dayOfWeek);
+        if (dayCfg && !dayCfg.isActive) continue;
+
+        const res = calculateDailyTransportAllowance({
+          checkInTime: interval.checkIn,
+          checkOutTime: interval.checkOut,
+          schoolStartTime: dayCfg?.startTime || schoolStartTime,
+          schoolEndTime: dayCfg?.endTime || schoolEndTime,
+          homeDistanceKm,
+          transportRatePerKm,
+          shortLeaves: shortLeavesByDate.get(attDate) || [],
+        });
+        transportAllowance += res.amount;
+      }
+      transportAllowance = Number(transportAllowance.toFixed(2));
 
       const dutyInputs = (duties || [])
         .map((d) => {
@@ -361,9 +574,11 @@ export async function POST(request: Request) {
           eventJtm,
           picketJtm,
           ceremonyJtm,
+          paidHolidayJtm,
         },
         ratePerJtm,
-        dutyInputs
+        dutyInputs,
+        transportAllowance
       );
 
       const { data: saved, error: saveErr } = await supabase
@@ -380,10 +595,12 @@ export async function POST(request: Request) {
             event_jtm: eventJtm,
             picket_jtm: picketJtm,
             ceremony_jtm: ceremonyJtm,
+            paid_holiday_jtm: paidHolidayJtm,
             total_jtm: calc.totalJtm,
             rate_per_jtm: calc.ratePerJtm,
             jtm_honorarium_amount: calc.jtmHonorariumAmount,
             additional_duty_allowance: calc.additionalDutyAllowance,
+            transport_allowance: calc.transportAllowance,
             total_amount: calc.totalAmount,
             status: 'DRAFT',
           },

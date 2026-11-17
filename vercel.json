@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/paid-holiday-jtm",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}

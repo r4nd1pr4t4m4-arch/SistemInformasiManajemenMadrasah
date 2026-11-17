@@ -77,6 +77,25 @@ const SubmitPicketReportSchema = z.object({
   incidents: z.string().optional().nullable(),
 });
 
+const SetAttendanceTimesSchema = z.object({
+  action: z.literal('SET_ATTENDANCE_TIMES'),
+  attendance_id: z.string().uuid(),
+  check_in_hhmm: z.string().regex(/^\d{2}:\d{2}$/, 'Format jam masuk harus HH:MM.'),
+  check_out_hhmm: z.string().regex(/^\d{2}:\d{2}$/, 'Format jam pulang harus HH:MM.'),
+  picket_attendance_id: z.string().uuid().optional().nullable(),
+  committee_attendance_id: z.string().uuid().optional().nullable(),
+});
+
+const CreateShortLeaveSchema = z.object({
+  action: z.literal('CREATE_SHORT_LEAVE'),
+  attendance_id: z.string().uuid(),
+  leave_start_time: z.string().regex(/^\d{2}:\d{2}$/, 'Format jam mulai izin harus HH:MM.'),
+  leave_end_time: z.string().regex(/^\d{2}:\d{2}$/, 'Format jam selesai izin harus HH:MM.'),
+  reason: z.string().optional().nullable(),
+  picket_attendance_id: z.string().uuid().optional().nullable(),
+  committee_attendance_id: z.string().uuid().optional().nullable(),
+});
+
 const DelegationSchema = z.object({
   action: z.literal('CREATE_DELEGATION'),
   picket_attendance_id: z.string().uuid(),
@@ -102,6 +121,7 @@ export async function GET() {
       delegations: [],
       journals: [],
       picketReports: [],
+      shortLeaves: [],
       sessionConfirmations: [],
       schedules: [],
       students: [],
@@ -121,6 +141,7 @@ export async function GET() {
     { data: delegations },
     { data: journals },
     { data: picketReports },
+    { data: shortLeaves },
     { data: sessionConfirmations },
     { data: schedules },
     { data: students },
@@ -161,6 +182,11 @@ export async function GET() {
       .order('created_at', { ascending: false })
       .limit(50),
     supabase
+      .from('teacher_short_leaves')
+      .select('*, teacher:teachers_staff(full_name)')
+      .order('created_at', { ascending: false })
+      .limit(50),
+    supabase
       .from('schedule_session_confirmations')
       .select(
         '*, teacher:teachers_staff(full_name), schedule:schedules(day_of_week, start_time, end_time, jtm_count, classroom:classrooms(name), subject:subjects(name)), delegation:teacher_delegations(jtm_transferred, reason, original:teachers_staff!teacher_delegations_original_teacher_id_fkey(full_name)), exam_supervisor:exam_supervisors(exam_date, session_name, jtm_allocated)'
@@ -196,6 +222,7 @@ export async function GET() {
     delegations: delegations || [],
     journals: journals || [],
     picketReports: picketReports || [],
+    shortLeaves: shortLeaves || [],
     sessionConfirmations: sessionConfirmations || [],
     schedules: schedules || [],
     students: students || [],
@@ -1015,6 +1042,239 @@ export async function POST(request: Request) {
         .eq('id', att.id);
 
       return NextResponse.json({ report, jtmCredited });
+    }
+
+    if (body.action === 'SET_ATTENDANCE_TIMES') {
+      const parsed = SetAttendanceTimesSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data jam masuk/pulang tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const d = parsed.data;
+      if (d.check_out_hhmm <= d.check_in_hhmm) {
+        return NextResponse.json(
+          { error: 'Jam pulang harus lebih akhir daripada jam masuk.' },
+          { status: 400 }
+        );
+      }
+
+      const { data: att } = await supabase
+        .from('teacher_attendances')
+        .select('id, teacher_id, attendance_type, attendance_date, is_within_geofence')
+        .eq('id', d.attendance_id)
+        .single();
+
+      if (!att || !att.is_within_geofence) {
+        return NextResponse.json(
+          { error: 'Data presensi yang valid tidak ditemukan.' },
+          { status: 404 }
+        );
+      }
+
+      const isAdmin = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
+      let actorRole: 'ADMIN' | 'GURU_PIKET' | 'PANITIA_UJIAN' = 'ADMIN';
+
+      // Khusus jam masuk & pulang Guru Piket / Panitia Ujian wajib diisi manual oleh Admin
+      if (att.attendance_type === 'PIKET' || att.attendance_type === 'PANITIA_UJIAN') {
+        if (!isAdmin) {
+          return NextResponse.json(
+            {
+              error:
+                'Jam masuk dan jam pulang Guru Piket atau Panitia Ujian hanya dapat diisi manual oleh Admin.',
+            },
+            { status: 403 }
+          );
+        }
+      } else {
+        if (d.picket_attendance_id) {
+          const { data: picketAtt } = await supabase
+            .from('teacher_attendances')
+            .select('id, attendance_type, attendance_date, is_within_geofence, admin_confirmed')
+            .eq('id', d.picket_attendance_id)
+            .maybeSingle();
+
+          if (
+            !picketAtt ||
+            picketAtt.attendance_type !== 'PIKET' ||
+            !picketAtt.is_within_geofence ||
+            !picketAtt.admin_confirmed ||
+            picketAtt.attendance_date !== att.attendance_date
+          ) {
+            return NextResponse.json(
+              { error: 'Presensi Guru Piket belum dikonfirmasi Admin pada tanggal tersebut.' },
+              { status: 403 }
+            );
+          }
+          actorRole = 'GURU_PIKET';
+        } else if (d.committee_attendance_id) {
+          const { data: comAtt } = await supabase
+            .from('teacher_attendances')
+            .select('id, attendance_type, is_within_geofence, admin_confirmed')
+            .eq('id', d.committee_attendance_id)
+            .maybeSingle();
+
+          if (
+            !comAtt ||
+            comAtt.attendance_type !== 'PANITIA_UJIAN' ||
+            !comAtt.is_within_geofence ||
+            !comAtt.admin_confirmed
+          ) {
+            return NextResponse.json(
+              { error: 'Presensi Panitia Ujian belum dikonfirmasi Admin.' },
+              { status: 403 }
+            );
+          }
+          actorRole = 'PANITIA_UJIAN';
+        } else if (!isAdmin) {
+          return NextResponse.json(
+            {
+              error:
+                'Hanya Admin, Guru Piket/Piket Pengganti, atau Panitia Ujian/Panitia Pengganti yang dapat menginput jam masuk dan jam pulang.',
+            },
+            { status: 403 }
+          );
+        }
+      }
+
+      const checkInIso = new Date(`${att.attendance_date}T${d.check_in_hhmm}:00+07:00`).toISOString();
+      const checkOutIso = new Date(`${att.attendance_date}T${d.check_out_hhmm}:00+07:00`).toISOString();
+
+      const { data: updated, error: updErr } = await supabase
+        .from('teacher_attendances')
+        .update({
+          check_in_time: checkInIso,
+          check_out_time: checkOutIso,
+          time_updated_by_role: actorRole,
+          time_updated_by_profile_id: guard.session.userId,
+        })
+        .eq('id', att.id)
+        .select('*')
+        .single();
+
+      if (updErr || !updated) {
+        return NextResponse.json(
+          { error: updErr?.message || 'Gagal menyimpan jam masuk & pulang.' },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({ attendance: updated });
+    }
+
+    if (body.action === 'CREATE_SHORT_LEAVE') {
+      const parsed = CreateShortLeaveSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data izin keluar sebentar tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const d = parsed.data;
+      const [sh, sm] = d.leave_start_time.split(':').map(Number);
+      const [eh, em] = d.leave_end_time.split(':').map(Number);
+      const durationMinutes = eh * 60 + em - (sh * 60 + sm);
+      if (durationMinutes <= 0) {
+        return NextResponse.json(
+          { error: 'Jam selesai izin keluar harus lebih akhir daripada jam mulai izin.' },
+          { status: 400 }
+        );
+      }
+
+      const { data: att } = await supabase
+        .from('teacher_attendances')
+        .select('id, teacher_id, attendance_date, is_within_geofence')
+        .eq('id', d.attendance_id)
+        .single();
+
+      if (!att || !att.is_within_geofence) {
+        return NextResponse.json(
+          { error: 'Guru/pengawas belum memiliki presensi hadir yang valid pada hari tersebut.' },
+          { status: 404 }
+        );
+      }
+
+      const isAdmin = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
+      let recordedByRole: 'ADMIN' | 'GURU_PIKET' | 'PANITIA_UJIAN' = 'ADMIN';
+      let recordedByAttendanceId: string | null = null;
+
+      if (d.picket_attendance_id) {
+        const { data: picketAtt } = await supabase
+          .from('teacher_attendances')
+          .select('id, attendance_type, attendance_date, is_within_geofence, admin_confirmed')
+          .eq('id', d.picket_attendance_id)
+          .maybeSingle();
+
+        if (
+          !picketAtt ||
+          picketAtt.attendance_type !== 'PIKET' ||
+          !picketAtt.is_within_geofence ||
+          !picketAtt.admin_confirmed ||
+          picketAtt.attendance_date !== att.attendance_date
+        ) {
+          return NextResponse.json(
+            { error: 'Presensi Guru Piket belum dikonfirmasi Admin pada tanggal tersebut.' },
+            { status: 403 }
+          );
+        }
+        recordedByRole = 'GURU_PIKET';
+        recordedByAttendanceId = picketAtt.id;
+      } else if (d.committee_attendance_id) {
+        const { data: comAtt } = await supabase
+          .from('teacher_attendances')
+          .select('id, attendance_type, is_within_geofence, admin_confirmed')
+          .eq('id', d.committee_attendance_id)
+          .maybeSingle();
+
+        if (
+          !comAtt ||
+          comAtt.attendance_type !== 'PANITIA_UJIAN' ||
+          !comAtt.is_within_geofence ||
+          !comAtt.admin_confirmed
+        ) {
+          return NextResponse.json(
+            { error: 'Presensi Panitia Ujian belum dikonfirmasi Admin.' },
+            { status: 403 }
+          );
+        }
+        recordedByRole = 'PANITIA_UJIAN';
+        recordedByAttendanceId = comAtt.id;
+      } else if (!isAdmin) {
+        return NextResponse.json(
+          {
+            error:
+              'Hanya Admin, Guru Piket/Piket Pengganti, atau Panitia Ujian/Panitia Pengganti yang dapat menginput izin keluar sebentar.',
+          },
+          { status: 403 }
+        );
+      }
+
+      const { data: leave, error: lvErr } = await supabase
+        .from('teacher_short_leaves')
+        .insert({
+          attendance_id: att.id,
+          teacher_id: att.teacher_id,
+          leave_date: att.attendance_date,
+          leave_start_time: d.leave_start_time,
+          leave_end_time: d.leave_end_time,
+          duration_minutes: durationMinutes,
+          reason: d.reason?.trim() || null,
+          recorded_by_role: recordedByRole,
+          recorded_by_attendance_id: recordedByAttendanceId,
+          recorded_by_profile_id: guard.session.userId,
+        })
+        .select('*')
+        .single();
+
+      if (lvErr || !leave) {
+        return NextResponse.json(
+          { error: lvErr?.message || 'Gagal mencatat izin keluar sebentar.' },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({ shortLeave: leave });
     }
 
     if (body.action === 'CONFIRM_SCHEDULE_SESSION') {

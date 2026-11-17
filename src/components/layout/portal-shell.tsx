@@ -198,6 +198,94 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'GURU_BK',
         ],
       },
+      {
+        href: '/portal/akademik/kalender',
+        path: '/portal/akademik/kalender',
+        label: 'Kalender Pendidikan',
+        icon: <Calendar className="w-3.5 h-3.5" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'WAKA_KURIKULUM',
+          'WAKA_KESISWAAN',
+          'KEPALA_TU',
+          'STAF_TU',
+          'GURU',
+          'WALI_KELAS',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'sdm',
+    label: 'SDM',
+    icon: <Users className="w-4 h-4" />,
+    items: [
+      {
+        label: 'Manajemen GTK',
+        href: '/portal/sdm/gtk',
+        path: '/portal/sdm/gtk',
+        icon: <User className="w-3.5 h-3.5" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'KEPALA_TU',
+          'STAF_TU',
+          'WAKA_KURIKULUM',
+          'WAKA_KESISWAAN',
+          'WAKA_HUMAS',
+        ],
+      },
+      {
+        label: 'Manajemen Siswa',
+        href: '/portal/sdm/siswa',
+        path: '/portal/sdm/siswa',
+        icon: <Users className="w-3.5 h-3.5" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'KEPALA_TU',
+          'STAF_TU',
+          'WAKA_KURIKULUM',
+          'WAKA_KESISWAAN',
+          'WAKA_HUMAS',
+        ],
+      },
+      {
+        label: 'Manajemen Orang Tua/Wali Siswa',
+        href: '/portal/sdm/orang-tua',
+        path: '/portal/sdm/orang-tua',
+        icon: <HeartHandshake className="w-3.5 h-3.5" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'KEPALA_TU',
+          'STAF_TU',
+          'WAKA_KURIKULUM',
+          'WAKA_KESISWAAN',
+          'WAKA_HUMAS',
+        ],
+      },
+      {
+        label: 'Manajemen Alumni',
+        href: '/portal/sdm/alumni',
+        path: '/portal/sdm/alumni',
+        icon: <GraduationCap className="w-3.5 h-3.5" />,
+        allowedRoles: [
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'KEPALA_TU',
+          'STAF_TU',
+          'WAKA_KURIKULUM',
+          'WAKA_KESISWAAN',
+          'WAKA_HUMAS',
+        ],
+      },
     ],
   },
   {
@@ -324,6 +412,11 @@ const PAGE_TITLES: Record<string, string> = {
   '/portal/akademik/ujian': 'Periode Ujian (Pengawas & Panitia JTM)',
   '/portal/akademik/acara': 'Manajemen Acara & Kegiatan Lembaga',
   '/portal/akademik/jurnal-acara': 'Input Jurnal Acara Guru',
+  '/portal/akademik/kalender': 'Kalender Pendidikan & Libur Berbayar',
+  '/portal/sdm/gtk': 'Manajemen GTK',
+  '/portal/sdm/siswa': 'Manajemen Siswa',
+  '/portal/sdm/orang-tua': 'Manajemen Orang Tua / Wali Siswa',
+  '/portal/sdm/alumni': 'Manajemen Alumni',
   '/portal/keuangan/spp': 'Keuangan SPP & Iuran Komite',
   '/portal/keuangan/tabungan': 'Tabungan Digital Warga & Umum',
   '/portal/keuangan/honorarium': 'Manajemen Honorarium Guru',
@@ -385,7 +478,8 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
   })).filter((g) => g.items.length > 0);
 
   const currentTab = searchParams.get('tab');
-  const pageTitle = PAGE_TITLES[pathname] || 'Portal Terpadu';
+  const normalizedPath = pathname.replace(/\/$/, '') || '/portal';
+  const pageTitle = PAGE_TITLES[normalizedPath] || 'Portal Terpadu';
 
   const SidebarContent = (
     <div className="flex flex-col h-full">

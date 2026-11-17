@@ -8,6 +8,7 @@ import type { AdditionalDutyType } from '@/types/database';
 interface TeacherOption {
   id: string;
   full_name: string;
+  home_distance_km?: number;
 }
 
 interface HonorariumRow {
@@ -17,16 +18,31 @@ interface HonorariumRow {
   total_jtm: number;
   jtm_honorarium_amount: number;
   additional_duty_allowance: number;
+  transport_allowance?: number;
   total_amount: number;
   status: string;
   teacher?: { full_name: string } | null;
 }
+
+interface DailyHourRow {
+  day_of_week: number;
+  is_active: boolean;
+  start_time: string;
+  end_time: string;
+}
+
+const DAY_LABELS = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 
 export default function HonorariumPage() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [teachers, setTeachers] = useState<TeacherOption[]>([]);
   const [ratePerJtm, setRatePerJtm] = useState(25000);
+  const [transportRatePerKm, setTransportRatePerKm] = useState(2000);
+  const [schoolStartTime, setSchoolStartTime] = useState('07:30');
+  const [schoolEndTime, setSchoolEndTime] = useState('12:30');
+  const [dailyHours, setDailyHours] = useState<DailyHourRow[]>([]);
+  const [distanceForm, setDistanceForm] = useState({ teacher_id: '', home_distance_km: 0 });
   const [dutyTypes, setDutyTypes] = useState<AdditionalDutyType[]>([]);
   const [honorariums, setHonorariums] = useState<HonorariumRow[]>([]);
 
@@ -49,6 +65,10 @@ export default function HonorariumPage() {
       const hon = await honRes.json();
       setTeachers(bi.teachers || []);
       setRatePerJtm(hon.ratePerJtm ?? 25000);
+      setTransportRatePerKm(hon.transportRatePerKm ?? 2000);
+      setSchoolStartTime(hon.schoolStartTime || '07:30');
+      setSchoolEndTime(hon.schoolEndTime || '12:30');
+      setDailyHours(hon.dailyHours || []);
       setDutyTypes(hon.dutyTypes || []);
       setHonorariums(hon.honorariums || []);
     } finally {
@@ -96,29 +116,213 @@ export default function HonorariumPage() {
         <div className="lg:col-span-5 space-y-5">
           <div className="glass-card rounded-3xl p-6 space-y-3">
             <h1 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Settings2 className="w-4 h-4 text-emerald-700" /> Atur Tarif per JTM
+              <Settings2 className="w-4 h-4 text-emerald-700" /> Tarif JTM, Jam Sekolah &amp;
+              Transport per KM
             </h1>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">Tarif per JTM</label>
+                <input
+                  type="number"
+                  value={ratePerJtm}
+                  onChange={(e) => setRatePerJtm(Number(e.target.value) || 0)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">
+                  Tarif Transport / KM
+                </label>
+                <input
+                  type="number"
+                  value={transportRatePerKm}
+                  onChange={(e) => setTransportRatePerKm(Number(e.target.value) || 0)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">
+                  Jam Masuk Sekolah
+                </label>
+                <input
+                  type="time"
+                  value={schoolStartTime}
+                  onChange={(e) => setSchoolStartTime(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">
+                  Jam Pulang Sekolah
+                </label>
+                <input
+                  type="time"
+                  value={schoolEndTime}
+                  onChange={(e) => setSchoolEndTime(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono"
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                callHonorApi(
+                  'PATCH',
+                  {
+                    action: 'UPDATE_RATE',
+                    rate_per_jtm: ratePerJtm,
+                    transport_rate_per_km: transportRatePerKm,
+                    school_start_time: schoolStartTime,
+                    school_end_time: schoolEndTime,
+                  },
+                  'Tarif JTM, jam sekolah & tarif transport diperbarui.'
+                )
+              }
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-xl text-xs"
+            >
+              Simpan Pengaturan Tarif &amp; Jam Sekolah Default
+            </button>
+          </div>
+
+          <div className="glass-card rounded-3xl p-6 space-y-3">
+            <h2 className="text-sm font-bold text-slate-900">
+              Jam Sekolah Per Hari (Senin – Minggu)
+            </h2>
+            <p className="text-[11px] text-slate-500">
+              Atur jam masuk &amp; jam pulang masing-masing hari untuk menghitung persentase durasi
+              kehadiran tunjangan transportasi.
+            </p>
+            <div className="space-y-2">
+              {dailyHours.map((dh) => (
+                <div
+                  key={dh.day_of_week}
+                  className="p-2 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-2 text-xs"
+                >
+                  <label className="inline-flex items-center gap-1.5 w-20 shrink-0 font-semibold text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={dh.is_active}
+                      onChange={(e) =>
+                        setDailyHours((prev) =>
+                          prev.map((x) =>
+                            x.day_of_week === dh.day_of_week
+                              ? { ...x, is_active: e.target.checked }
+                              : x
+                          )
+                        )
+                      }
+                      className="accent-emerald-600"
+                    />
+                    {DAY_LABELS[dh.day_of_week]}
+                  </label>
+                  <input
+                    type="time"
+                    disabled={!dh.is_active}
+                    value={dh.start_time}
+                    onChange={(e) =>
+                      setDailyHours((prev) =>
+                        prev.map((x) =>
+                          x.day_of_week === dh.day_of_week
+                            ? { ...x, start_time: e.target.value }
+                            : x
+                        )
+                      )
+                    }
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-mono disabled:bg-slate-100"
+                  />
+                  <span className="text-slate-400">–</span>
+                  <input
+                    type="time"
+                    disabled={!dh.is_active}
+                    value={dh.end_time}
+                    onChange={(e) =>
+                      setDailyHours((prev) =>
+                        prev.map((x) =>
+                          x.day_of_week === dh.day_of_week
+                            ? { ...x, end_time: e.target.value }
+                            : x
+                        )
+                      )
+                    }
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-mono disabled:bg-slate-100"
+                  />
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                callHonorApi(
+                  'PATCH',
+                  { action: 'UPDATE_DAILY_HOURS', daily_hours: dailyHours },
+                  'Jam sekolah per hari berhasil diperbarui.'
+                )
+              }
+              className="w-full bg-slate-900 hover:bg-emerald-700 text-white font-semibold py-2 rounded-xl text-xs"
+            >
+              Simpan Jam Sekolah Per Hari
+            </button>
+          </div>
+
+          <div className="glass-card rounded-3xl p-6 space-y-3">
+            <h2 className="text-sm font-bold text-slate-900">
+              Jarak Rumah Guru ke Madrasah / Sekolah (KM)
+            </h2>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await callHonorApi(
+                  'PATCH',
+                  {
+                    action: 'UPDATE_TEACHER_DISTANCE',
+                    teacher_id: distanceForm.teacher_id,
+                    home_distance_km: distanceForm.home_distance_km,
+                  },
+                  'Jarak rumah guru (KM) berhasil diperbarui.'
+                );
+              }}
+              className="flex gap-2"
+            >
+              <select
+                required
+                value={distanceForm.teacher_id}
+                onChange={(e) => {
+                  const found = teachers.find((t) => t.id === e.target.value);
+                  setDistanceForm({
+                    teacher_id: e.target.value,
+                    home_distance_km: Number(found?.home_distance_km ?? 0),
+                  });
+                }}
+                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              >
+                <option value="">-- Pilih Guru --</option>
+                {teachers.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.full_name} ({t.home_distance_km ?? 0} KM)
+                  </option>
+                ))}
+              </select>
               <input
                 type="number"
-                value={ratePerJtm}
-                onChange={(e) => setRatePerJtm(Number(e.target.value) || 0)}
-                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-mono"
+                step="0.1"
+                min={0}
+                value={distanceForm.home_distance_km}
+                onChange={(e) =>
+                  setDistanceForm({
+                    ...distanceForm,
+                    home_distance_km: Number(e.target.value) || 0,
+                  })
+                }
+                placeholder="KM"
+                className="w-20 rounded-xl border border-slate-300 bg-white px-2.5 py-2 text-xs font-mono"
               />
               <button
-                type="button"
-                onClick={() =>
-                  callHonorApi(
-                    'PATCH',
-                    { action: 'UPDATE_RATE', rate_per_jtm: ratePerJtm },
-                    'Tarif per JTM diperbarui.'
-                  )
-                }
-                className="bg-emerald-600 text-white font-semibold px-4 rounded-xl text-xs"
+                type="submit"
+                className="bg-slate-900 hover:bg-emerald-700 text-white font-semibold px-3 rounded-xl text-xs shrink-0"
               >
-                Simpan Tarif
+                Simpan
               </button>
-            </div>
+            </form>
           </div>
 
           <div className="glass-card rounded-3xl p-6 space-y-3">
@@ -291,7 +495,8 @@ export default function HonorariumPage() {
                     </p>
                     <p className="text-slate-500">
                       {h.total_jtm} JTM ({formatRupiah(Number(h.jtm_honorarium_amount))}) + Tunjangan
-                      ({formatRupiah(Number(h.additional_duty_allowance))})
+                      ({formatRupiah(Number(h.additional_duty_allowance))}) + Transport (
+                      {formatRupiah(Number(h.transport_allowance ?? 0))})
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
