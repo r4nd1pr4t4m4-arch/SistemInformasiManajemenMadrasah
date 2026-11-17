@@ -32,6 +32,40 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  if (request.nextUrl.pathname === '/login' && user) {
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('is_active, account_status')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const fallbackProfile = profileError
+      ? (
+          await supabase
+            .from('profiles')
+            .select('is_active')
+            .eq('id', user.id)
+            .maybeSingle()
+        ).data
+      : profile;
+
+    const accountStatus = (profile as { account_status?: string } | null)?.account_status;
+    const isAllowed =
+      Boolean(fallbackProfile?.is_active) && (!accountStatus || accountStatus === 'AKTIF');
+
+    if (isAllowed) {
+      const rawNext = request.nextUrl.searchParams.get('next');
+      const targetPath =
+        rawNext && rawNext.startsWith('/') && !rawNext.startsWith('/login')
+          ? rawNext
+          : '/portal';
+      const portalUrl = request.nextUrl.clone();
+      portalUrl.pathname = targetPath;
+      portalUrl.search = '';
+      return NextResponse.redirect(portalUrl);
+    }
+  }
+
   if (request.nextUrl.pathname.startsWith('/portal')) {
     if (!user) {
       const loginUrl = request.nextUrl.clone();

@@ -2,14 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, CheckCircle2, KeyRound, LogIn, Mail, UserPlus } from 'lucide-react';
 import { createSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { validatePasswordStrength } from '@/lib/auth/password-policy';
 import { PasswordInput } from '@/components/auth/password-strength-input';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -211,9 +209,13 @@ export default function LoginPage() {
             }
           } else {
             const params = new URLSearchParams(window.location.search);
-            const nextUrl = params.get('next') || '/portal';
-            router.push(nextUrl.startsWith('/') ? nextUrl : '/portal');
-            router.refresh();
+            const rawNext = params.get('next');
+            const safeNext =
+              rawNext && rawNext.startsWith('/') && !rawNext.startsWith('/login')
+                ? rawNext
+                : '/portal';
+            window.location.assign(safeNext);
+            return;
           }
         }
       } else {
