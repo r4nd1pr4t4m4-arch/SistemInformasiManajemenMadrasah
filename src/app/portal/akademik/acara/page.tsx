@@ -47,6 +47,19 @@ interface ConfirmationRow {
   teacher?: { full_name: string } | null;
 }
 
+interface CeremonyRow {
+  id: string;
+  ceremony_date: string;
+  teacher_id: string;
+  original_teacher_id: string | null;
+  jtm_allocated: number;
+  status: 'TERJADWAL' | 'TERLAKSANA' | 'DIBATALKAN';
+  substitution_reason: string | null;
+  substituted_by_role: string | null;
+  teacher?: { full_name: string } | null;
+  original_teacher?: { full_name: string } | null;
+}
+
 const DAY_NAMES = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 
 export default function ManajemenAcaraPage() {
@@ -56,8 +69,22 @@ export default function ManajemenAcaraPage() {
   const [events, setEvents] = useState<SchoolEvent[]>([]);
   const [teachers, setTeachers] = useState<TeacherOpt[]>([]);
   const [confirmations, setConfirmations] = useState<ConfirmationRow[]>([]);
+  const [ceremonies, setCeremonies] = useState<CeremonyRow[]>([]);
   const [confirmedPickets, setConfirmedPickets] = useState<PicketAttOpt[]>([]);
   const [canManageEvents, setCanManageEvents] = useState(false);
+
+  const [ceremonyForm, setCeremonyForm] = useState({
+    ceremony_date: '',
+    teacher_id: '',
+    jtm_allocated: 2,
+    notes: '',
+  });
+  const [subCeremonyForm, setSubCeremonyForm] = useState({
+    ceremony_id: '',
+    substitute_teacher_id: '',
+    picket_attendance_id: '',
+    reason: '',
+  });
 
   const [eventForm, setEventForm] = useState({
     title: '',
@@ -92,6 +119,7 @@ export default function ManajemenAcaraPage() {
       setEvents(data.events || []);
       setTeachers(data.teachers || []);
       setConfirmations(data.confirmations || []);
+      setCeremonies(data.ceremonies || []);
       setConfirmedPickets(data.confirmedPicketAttendances || []);
       setCanManageEvents(Boolean(data.canManageEvents));
     } finally {
@@ -523,6 +551,272 @@ export default function ManajemenAcaraPage() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Upacara Bendera Hari Senin (Pembina & Pengganti) */}
+      <div className="glass-card rounded-3xl p-6 space-y-5">
+        <div className="space-y-1">
+          <h2 className="text-base font-bold text-slate-900">
+            Upacara Bendera Hari Senin — Pembina Upacara &amp; Pengganti ({ceremonies.length})
+          </h2>
+          <p className="text-xs text-slate-600">
+            Guru yang bertugas sebagai <strong>Pembina Upacara Bendera Hari Senin</strong> (atau{' '}
+            <strong>Pembina Pengganti</strong> yang ditunjuk Admin / Guru Piket terkonfirmasi Admin)
+            mendapatkan JTM setelah pelaksanaan upacara dikonfirmasi.
+          </p>
+        </div>
+
+        <div className="grid lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-5 space-y-4">
+            {canManageEvents && (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const ok = await postAcara(
+                    { action: 'CREATE_CEREMONY', ...ceremonyForm },
+                    'Jadwal Pembina Upacara Hari Senin berhasil disimpan.'
+                  );
+                  if (ok) {
+                    setCeremonyForm({
+                      ceremony_date: '',
+                      teacher_id: '',
+                      jtm_allocated: 2,
+                      notes: '',
+                    });
+                  }
+                }}
+                className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5"
+              >
+                <p className="text-xs font-bold text-slate-800">
+                  Jadwalkan Pembina Upacara (Hari Senin)
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    required
+                    value={ceremonyForm.ceremony_date}
+                    onChange={(e) =>
+                      setCeremonyForm({ ...ceremonyForm, ceremony_date: e.target.value })
+                    }
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={ceremonyForm.jtm_allocated}
+                    onChange={(e) =>
+                      setCeremonyForm({
+                        ...ceremonyForm,
+                        jtm_allocated: Number(e.target.value),
+                      })
+                    }
+                    placeholder="JTM"
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  />
+                </div>
+                <select
+                  required
+                  value={ceremonyForm.teacher_id}
+                  onChange={(e) =>
+                    setCeremonyForm({ ...ceremonyForm, teacher_id: e.target.value })
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                >
+                  <option value="">-- Pilih Guru Pembina Upacara --</option>
+                  {teachers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.full_name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  placeholder="Catatan (opsional)"
+                  value={ceremonyForm.notes}
+                  onChange={(e) => setCeremonyForm({ ...ceremonyForm, notes: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                />
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2 rounded-xl text-xs"
+                >
+                  Simpan Jadwal Pembina Upacara
+                </button>
+              </form>
+            )}
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const ok = await postAcara(
+                  {
+                    action: 'SUBSTITUTE_CEREMONY_LEADER',
+                    ...subCeremonyForm,
+                    picket_attendance_id: subCeremonyForm.picket_attendance_id || null,
+                  },
+                  'Pembina Upacara Pengganti berhasil ditunjuk.'
+                );
+                if (ok) {
+                  setSubCeremonyForm({
+                    ceremony_id: '',
+                    substitute_teacher_id: '',
+                    picket_attendance_id: '',
+                    reason: '',
+                  });
+                }
+              }}
+              className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5"
+            >
+              <p className="text-xs font-bold text-slate-800">
+                Tunjuk Pembina Upacara Pengganti (Admin / Guru Piket Terkonfirmasi)
+              </p>
+              <select
+                required
+                value={subCeremonyForm.ceremony_id}
+                onChange={(e) =>
+                  setSubCeremonyForm({ ...subCeremonyForm, ceremony_id: e.target.value })
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              >
+                <option value="">-- Pilih Jadwal Upacara Senin (Terjadwal) --</option>
+                {ceremonies
+                  .filter((c) => c.status === 'TERJADWAL')
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.ceremony_date} • Pembina: {c.teacher?.full_name} ({c.jtm_allocated} JTM)
+                    </option>
+                  ))}
+              </select>
+              <select
+                required
+                value={subCeremonyForm.substitute_teacher_id}
+                onChange={(e) =>
+                  setSubCeremonyForm({
+                    ...subCeremonyForm,
+                    substitute_teacher_id: e.target.value,
+                  })
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              >
+                <option value="">-- Pilih Guru Pembina Pengganti --</option>
+                {teachers.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.full_name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={subCeremonyForm.picket_attendance_id}
+                onChange={(e) =>
+                  setSubCeremonyForm({
+                    ...subCeremonyForm,
+                    picket_attendance_id: e.target.value,
+                  })
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              >
+                <option value="">
+                  {canManageEvents
+                    ? '-- Sebagai Admin (atau pilih Guru Piket Terkonfirmasi) --'
+                    : '-- Pilih Presensi Guru Piket / Pengganti Terkonfirmasi Admin --'}
+                </option>
+                {confirmedPickets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.attendance_date} • {p.teacher?.full_name}
+                  </option>
+                ))}
+              </select>
+              <input
+                placeholder="Alasan penggantian (Sakit/Izin/Dinas)"
+                value={subCeremonyForm.reason}
+                onChange={(e) =>
+                  setSubCeremonyForm({ ...subCeremonyForm, reason: e.target.value })
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              />
+              <button
+                type="submit"
+                className="w-full bg-slate-900 hover:bg-emerald-700 text-white font-semibold py-2 rounded-xl text-xs"
+              >
+                Tunjuk Pembina Pengganti
+              </button>
+            </form>
+          </div>
+
+          <div className="lg:col-span-7 space-y-2 max-h-96 overflow-y-auto">
+            {ceremonies.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-10">
+                Belum ada jadwal Pembina Upacara Bendera Hari Senin.
+              </p>
+            ) : (
+              ceremonies.map((c) => {
+                const matchingPicket = confirmedPickets.find(
+                  (p) => p.attendance_date === c.ceremony_date
+                );
+                return (
+                  <div
+                    key={c.id}
+                    className="modular-card rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-slate-900">
+                        Senin, {c.ceremony_date} • {c.teacher?.full_name}
+                        {c.original_teacher?.full_name && (
+                          <span className="font-normal text-slate-500">
+                            {' '}
+                            (menggantikan {c.original_teacher.full_name})
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-slate-500">
+                        Status:{' '}
+                        <strong
+                          className={
+                            c.status === 'TERLAKSANA' ? 'text-emerald-700' : 'text-amber-700'
+                          }
+                        >
+                          {c.status}
+                        </strong>
+                        {c.substitution_reason ? ` • Alasan: ${c.substitution_reason}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full font-bold ${
+                          c.status === 'TERLAKSANA'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {c.status === 'TERLAKSANA' ? `+${c.jtm_allocated} JTM` : `0/${c.jtm_allocated} JTM`}
+                      </span>
+                      {c.status === 'TERJADWAL' && (canManageEvents || matchingPicket) && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            postAcara(
+                              {
+                                action: 'CONFIRM_CEREMONY',
+                                ceremony_id: c.id,
+                                picket_attendance_id: !canManageEvents
+                                  ? matchingPicket?.id || null
+                                  : null,
+                              },
+                              `Upacara ${c.ceremony_date} dikonfirmasi terlaksana (+${c.jtm_allocated} JTM).`
+                            )
+                          }
+                          className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold transition"
+                        >
+                          Konfirmasi Terlaksana
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

@@ -51,6 +51,7 @@ export interface InstitutionSettings {
   email: string | null;
   website_url: string | null;
   google_maps_embed_url: string | null;
+  geofence_enabled?: boolean;
   geofence_lat: number | null;
   geofence_lng: number | null;
   geofence_radius_meters: number;

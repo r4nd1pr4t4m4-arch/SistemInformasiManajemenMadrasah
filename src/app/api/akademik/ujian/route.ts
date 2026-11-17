@@ -61,6 +61,7 @@ const CommitteeSchema = z.object({
 
 const ExamStudentAttendanceSchema = z.object({
   action: z.literal('EXAM_STUDENT_ATTENDANCE'),
+  committee_attendance_id: z.string().uuid(),
   exam_period_id: z.string().uuid(),
   exam_room_id: z.string().uuid().optional().nullable(),
   student_id: z.string().uuid(),
@@ -75,6 +76,14 @@ const SubmitBapSchema = z.object({
   present_students_count: z.number().min(0).default(0),
   absent_students_count: z.number().min(0).default(0),
   incidents: z.string().optional().nullable(),
+});
+
+const SubmitCommitteeReportSchema = z.object({
+  action: z.literal('SUBMIT_COMMITTEE_REPORT'),
+  attendance_id: z.string().uuid(),
+  activities_summary: z.string().min(5, 'Ringkasan pertanggungjawaban minimal 5 karakter.'),
+  logistics_notes: z.string().optional().nullable(),
+  issues_and_solutions: z.string().optional().nullable(),
 });
 
 const SubstituteSupervisorSchema = z.object({
@@ -104,8 +113,13 @@ export async function GET() {
       committees: [],
       studentAttendances: [],
       bapReports: [],
+      committeeDailyReports: [],
       supervisorAttendances: [],
       committeeAttendances: [],
+      dailyGeofenceAttendances: [],
+      supervisorSessionConfirmations: [],
+      students: [],
+      canManageCommittees: false,
     });
   }
 
@@ -117,8 +131,12 @@ export async function GET() {
     { data: committees },
     { data: studentAttendances },
     { data: bapReports },
+    { data: committeeDailyReports },
     { data: supervisorAttendances },
     { data: committeeAttendances },
+    { data: dailyGeofenceAttendances },
+    { data: supervisorSessionConfirmations },
+    { data: students },
   ] = await Promise.all([
     supabase.from('exam_periods').select('*').order('start_date', { ascending: false }),
     supabase.from('exam_rooms').select('*, period:exam_periods(name)'),
@@ -144,19 +162,37 @@ export async function GET() {
       .order('created_at', { ascending: false })
       .limit(100),
     supabase
+      .from('exam_committee_daily_reports')
+      .select('*, teacher:teachers_staff(full_name), committee:exam_committees(committee_role)')
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
       .from('teacher_attendances')
-      .select('id, teacher_id, exam_supervisor_id, attendance_date, is_within_geofence, teacher:teachers_staff(full_name)')
+      .select('id, teacher_id, exam_supervisor_id, attendance_date, is_within_geofence, admin_confirmed, approved_jtm, teacher:teachers_staff(full_name), exam_supervisor:exam_supervisors(jtm_allocated, exam_date, session_name)')
       .eq('attendance_type', 'PENGAWAS_UJIAN')
       .eq('is_within_geofence', true)
       .order('created_at', { ascending: false })
       .limit(100),
     supabase
       .from('teacher_attendances')
-      .select('id, teacher_id, exam_committee_id, attendance_date, is_within_geofence, admin_confirmed, teacher:teachers_staff(full_name)')
+      .select('id, teacher_id, exam_committee_id, attendance_date, is_within_geofence, admin_confirmed, approved_jtm, teacher:teachers_staff(full_name)')
       .eq('attendance_type', 'PANITIA_UJIAN')
       .eq('is_within_geofence', true)
       .order('created_at', { ascending: false })
       .limit(100),
+    supabase
+      .from('teacher_attendances')
+      .select('id, teacher_id, attendance_date, is_within_geofence')
+      .eq('is_within_geofence', true)
+      .order('attendance_date', { ascending: false })
+      .limit(200),
+    supabase
+      .from('schedule_session_confirmations')
+      .select('*')
+      .eq('session_type', 'PENGAWAS_UJIAN')
+      .order('created_at', { ascending: false })
+      .limit(150),
+    supabase.from('students').select('id, full_name, nis').eq('status', 'AKTIF').order('full_name').limit(300),
   ]);
 
   return NextResponse.json({
@@ -166,8 +202,12 @@ export async function GET() {
     committees: committees || [],
     studentAttendances: studentAttendances || [],
     bapReports: bapReports || [],
+    committeeDailyReports: committeeDailyReports || [],
     supervisorAttendances: supervisorAttendances || [],
     committeeAttendances: committeeAttendances || [],
+    dailyGeofenceAttendances: dailyGeofenceAttendances || [],
+    supervisorSessionConfirmations: supervisorSessionConfirmations || [],
+    students: students || [],
     canManageCommittees: hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM),
   });
 }
@@ -248,12 +288,57 @@ export async function POST(request: Request) {
     if (body.action === 'EXAM_STUDENT_ATTENDANCE') {
       const parsed = ExamStudentAttendanceSchema.safeParse(body);
       if (!parsed.success) {
-        return NextResponse.json({ error: 'Data presensi ujian siswa tidak valid.' }, { status: 400 });
+        return NextResponse.json(
+          {
+            error:
+              'Data presensi ujian siswa tidak valid. Pilih presensi Panitia Ujian / Pengganti terkonfirmasi Admin.',
+          },
+          { status: 400 }
+        );
       }
-      const { action: _, ...payload } = parsed.data;
+
+      const {
+        committee_attendance_id,
+        exam_period_id,
+        exam_room_id,
+        student_id,
+        exam_date,
+        session_name,
+        status,
+      } = parsed.data;
+
+      const { data: comAtt } = await supabase
+        .from('teacher_attendances')
+        .select('id, attendance_type, is_within_geofence, admin_confirmed')
+        .eq('id', committee_attendance_id)
+        .maybeSingle();
+
+      if (
+        !comAtt ||
+        comAtt.attendance_type !== 'PANITIA_UJIAN' ||
+        !comAtt.is_within_geofence ||
+        !comAtt.admin_confirmed
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'Hanya Panitia Ujian / Panitia Pengganti yang kehadirannya sudah dikonfirmasi Admin yang dapat melakukan absensi siswa ujian.',
+          },
+          { status: 403 }
+        );
+      }
+
       const { data, error } = await supabase
         .from('exam_student_attendances')
-        .insert({ ...payload, exam_room_id: payload.exam_room_id || null })
+        .insert({
+          exam_period_id,
+          exam_room_id: exam_room_id || null,
+          student_id,
+          exam_date,
+          session_name,
+          status,
+          recorded_by: guard.session.userId,
+        })
         .select('*')
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -268,7 +353,7 @@ export async function POST(request: Request) {
 
       const { data: supervisor, error: supErr } = await supabase
         .from('exam_supervisors')
-        .select('id, teacher_id, exam_date, jtm_allocated')
+        .select('id, exam_period_id, exam_room_id, session_name, teacher_id, exam_date, jtm_allocated')
         .eq('id', parsed.data.exam_supervisor_id)
         .single();
 
@@ -276,25 +361,45 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Jadwal pengawas ujian tidak ditemukan.' }, { status: 404 });
       }
 
-      // Wajib sudah melakukan presensi GPS geofencing sebagai PENGAWAS_UJIAN
-      const { data: supAtt } = await supabase
-        .from('teacher_attendances')
-        .select('id, teacher_id, is_within_geofence')
+      // Cek konfirmasi per jadwal di schedule_session_confirmations (atau fallback ke teacher_attendances)
+      const { data: sessionConf } = await supabase
+        .from('schedule_session_confirmations')
+        .select('id, daily_attendance_id, approved_jtm')
         .eq('exam_supervisor_id', supervisor.id)
         .eq('teacher_id', supervisor.teacher_id)
-        .eq('attendance_type', 'PENGAWAS_UJIAN')
-        .eq('is_within_geofence', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
+        .eq('session_type', 'PENGAWAS_UJIAN')
         .maybeSingle();
 
-      if (!supAtt) {
+      const { data: supAtt } = !sessionConf
+        ? await supabase
+            .from('teacher_attendances')
+            .select('id, teacher_id, is_within_geofence, admin_confirmed, approved_jtm')
+            .eq('exam_supervisor_id', supervisor.id)
+            .eq('teacher_id', supervisor.teacher_id)
+            .eq('attendance_type', 'PENGAWAS_UJIAN')
+            .eq('is_within_geofence', true)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : { data: null };
+
+      if (!sessionConf && !supAtt) {
         return NextResponse.json(
           {
             error:
-              'Pengawas ujian wajib melakukan presensi GPS geofencing terlebih dahulu sebelum mengisi Berita Acara Pengawasan (BAP).',
+              'Pengawas ujian wajib melakukan presensi geofencing (1x/hari) dan dikonfirmasi kehadirannya pada jadwal ini sebelum mengisi BAP.',
           },
           { status: 400 }
+        );
+      }
+
+      if (!sessionConf && supAtt && !supAtt.admin_confirmed) {
+        return NextResponse.json(
+          {
+            error:
+              'Kehadiran Pengawas Ujian belum dikonfirmasi oleh Admin atau Panitia Ujian/Panitia Pengganti. BAP hanya dapat diisi setelah kehadiran dikonfirmasi.',
+          },
+          { status: 403 }
         );
       }
 
@@ -311,18 +416,24 @@ export async function POST(request: Request) {
         );
       }
 
-      const lateCalc = calculateLateJtm(supervisor.jtm_allocated, supervisor.exam_date);
+      const baseSupervisorJtm = sessionConf
+        ? Number(sessionConf.approved_jtm)
+        : supAtt?.approved_jtm != null
+        ? Number(supAtt.approved_jtm)
+        : supervisor.jtm_allocated;
+      const lateCalc = calculateLateJtm(baseSupervisorJtm, supervisor.exam_date);
       if (!lateCalc.allowed) {
         return NextResponse.json({ error: lateCalc.reason }, { status: 400 });
       }
 
       const jtmCredited = lateCalc.creditedJtm;
+      const resolvedAttId = sessionConf?.daily_attendance_id || supAtt!.id;
 
       const { data: bap, error: bapErr } = await supabase
         .from('exam_bap_reports')
         .insert({
           exam_supervisor_id: supervisor.id,
-          attendance_id: supAtt.id,
+          attendance_id: resolvedAttId,
           teacher_id: supervisor.teacher_id,
           report_date: supervisor.exam_date,
           present_students_count: parsed.data.present_students_count,
@@ -340,10 +451,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: bapErr?.message || 'Gagal menyimpan BAP.' }, { status: 500 });
       }
 
-      await supabase
-        .from('teacher_attendances')
-        .update({ jtm_earned: jtmCredited })
-        .eq('id', supAtt.id);
+      if (!sessionConf && supAtt) {
+        await supabase
+          .from('teacher_attendances')
+          .update({ jtm_earned: jtmCredited })
+          .eq('id', supAtt.id);
+      }
 
       return NextResponse.json({
         bap,
@@ -460,6 +573,91 @@ export async function POST(request: Request) {
 
       if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
       return NextResponse.json({ committee: updated });
+    }
+
+    if (body.action === 'SUBMIT_COMMITTEE_REPORT') {
+      const parsed = SubmitCommitteeReportSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data LPJ Harian Panitia tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const { data: att, error: attErr } = await supabase
+        .from('teacher_attendances')
+        .select('*')
+        .eq('id', parsed.data.attendance_id)
+        .single();
+
+      if (attErr || !att || att.attendance_type !== 'PANITIA_UJIAN' || !att.exam_committee_id) {
+        return NextResponse.json(
+          { error: 'Data presensi Panitia Ujian tidak ditemukan.' },
+          { status: 404 }
+        );
+      }
+      if (!att.is_within_geofence || !att.admin_confirmed) {
+        return NextResponse.json(
+          {
+            error:
+              'Kehadiran Panitia Ujian / Panitia Pengganti harus dikonfirmasi Admin terlebih dahulu sebelum mengisi LPJ Harian.',
+          },
+          { status: 403 }
+        );
+      }
+
+      const { data: existingReport } = await supabase
+        .from('exam_committee_daily_reports')
+        .select('id')
+        .eq('attendance_id', att.id)
+        .maybeSingle();
+
+      if (existingReport) {
+        return NextResponse.json(
+          { error: 'Laporan Pertanggungjawaban Harian untuk presensi ini sudah pernah diisi.' },
+          { status: 400 }
+        );
+      }
+
+      let jtmCredited = att.approved_jtm != null ? Number(att.approved_jtm) : 0;
+      if (att.approved_jtm == null) {
+        const { data: comRow } = await supabase
+          .from('exam_committees')
+          .select('jtm_allocated')
+          .eq('id', att.exam_committee_id)
+          .maybeSingle();
+        jtmCredited = Number(comRow?.jtm_allocated ?? 4);
+      }
+
+      const { data: report, error: repErr } = await supabase
+        .from('exam_committee_daily_reports')
+        .insert({
+          attendance_id: att.id,
+          exam_committee_id: att.exam_committee_id,
+          teacher_id: att.teacher_id,
+          report_date: att.attendance_date,
+          activities_summary: parsed.data.activities_summary.trim(),
+          logistics_notes: parsed.data.logistics_notes?.trim() || null,
+          issues_and_solutions: parsed.data.issues_and_solutions?.trim() || null,
+          jtm_credited: jtmCredited,
+          submitted_by: guard.session.userId,
+        })
+        .select('*')
+        .single();
+
+      if (repErr || !report) {
+        return NextResponse.json(
+          { error: repErr?.message || 'Gagal menyimpan LPJ Harian Panitia Ujian.' },
+          { status: 500 }
+        );
+      }
+
+      await supabase
+        .from('teacher_attendances')
+        .update({ jtm_earned: jtmCredited })
+        .eq('id', att.id);
+
+      return NextResponse.json({ report, jtmCredited });
     }
 
     return NextResponse.json({ error: 'Aksi ujian tidak dikenal.' }, { status: 400 });

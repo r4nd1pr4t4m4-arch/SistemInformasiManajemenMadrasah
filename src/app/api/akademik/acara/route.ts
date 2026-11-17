@@ -41,6 +41,28 @@ const SubmitEventJournalSchema = z.object({
   outcomes: z.string().optional().nullable(),
 });
 
+const CreateCeremonySchema = z.object({
+  action: z.literal('CREATE_CEREMONY'),
+  ceremony_date: z.string(),
+  teacher_id: z.string().uuid(),
+  jtm_allocated: z.number().min(1).max(12).default(2),
+  notes: z.string().optional().nullable(),
+});
+
+const SubstituteCeremonyLeaderSchema = z.object({
+  action: z.literal('SUBSTITUTE_CEREMONY_LEADER'),
+  ceremony_id: z.string().uuid(),
+  substitute_teacher_id: z.string().uuid(),
+  picket_attendance_id: z.string().uuid().optional().nullable(),
+  reason: z.string().optional().nullable(),
+});
+
+const ConfirmCeremonySchema = z.object({
+  action: z.literal('CONFIRM_CEREMONY'),
+  ceremony_id: z.string().uuid(),
+  picket_attendance_id: z.string().uuid().optional().nullable(),
+});
+
 function getIsoDayOfWeek(dateStr: string): number {
   const d = new Date(`${dateStr}T00:00:00Z`);
   const day = d.getUTCDay(); // 0=Minggu .. 6=Sabtu
@@ -58,6 +80,7 @@ export async function GET() {
       events: [],
       confirmations: [],
       journals: [],
+      ceremonies: [],
       confirmedPicketAttendances: [],
       teachers: [],
       currentTeacher: null,
@@ -71,6 +94,7 @@ export async function GET() {
     { data: confirmations },
     { data: journals },
     { data: confirmedPicketAttendances },
+    { data: ceremonies },
     { data: teachers },
     { data: currentTeacher },
   ] = await Promise.all([
@@ -97,6 +121,13 @@ export async function GET() {
       .eq('admin_confirmed', true)
       .order('attendance_date', { ascending: false })
       .limit(50),
+    supabase
+      .from('ceremony_schedules')
+      .select(
+        '*, teacher:teachers_staff!ceremony_schedules_teacher_id_fkey(full_name), original_teacher:teachers_staff!ceremony_schedules_original_teacher_id_fkey(full_name)'
+      )
+      .order('ceremony_date', { ascending: false })
+      .limit(60),
     supabase.from('teachers_staff').select('id, full_name, profile_id').order('full_name').limit(200),
     supabase
       .from('teachers_staff')
@@ -123,6 +154,7 @@ export async function GET() {
     events: events || [],
     confirmations: filteredConfirmations,
     journals: filteredJournals,
+    ceremonies: ceremonies || [],
     confirmedPicketAttendances: confirmedPicketAttendances || [],
     teachers: teachers || [],
     currentTeacher: currentTeacher || null,
@@ -463,6 +495,194 @@ export async function POST(request: Request) {
         delayDays: lateCalc.delayDays,
         percentage: lateCalc.percentage,
       });
+    }
+
+    if (body.action === 'CREATE_CEREMONY') {
+      if (!isAdmin) {
+        return NextResponse.json(
+          { error: 'Hanya Admin / Kurikulum / Kesiswaan / TU yang dapat menjadwalkan Pembina Upacara.' },
+          { status: 403 }
+        );
+      }
+      const parsed = CreateCeremonySchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Data jadwal upacara tidak valid.' }, { status: 400 });
+      }
+      if (getIsoDayOfWeek(parsed.data.ceremony_date) !== 1) {
+        return NextResponse.json(
+          { error: 'Jadwal Upacara Bendera harus pada hari Senin.' },
+          { status: 400 }
+        );
+      }
+
+      const { data, error } = await supabase
+        .from('ceremony_schedules')
+        .insert({
+          ceremony_date: parsed.data.ceremony_date,
+          teacher_id: parsed.data.teacher_id,
+          jtm_allocated: parsed.data.jtm_allocated,
+          notes: parsed.data.notes?.trim() || null,
+          status: 'TERJADWAL',
+          created_by: guard.session.userId,
+        })
+        .select('*')
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          return NextResponse.json(
+            { error: 'Jadwal upacara untuk tanggal Senin tersebut sudah ada.' },
+            { status: 400 }
+          );
+        }
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ ceremony: data });
+    }
+
+    if (body.action === 'SUBSTITUTE_CEREMONY_LEADER') {
+      const parsed = SubstituteCeremonyLeaderSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Data pembina upacara pengganti tidak valid.' }, { status: 400 });
+      }
+
+      const { data: ceremony, error: cerErr } = await supabase
+        .from('ceremony_schedules')
+        .select('*')
+        .eq('id', parsed.data.ceremony_id)
+        .single();
+
+      if (cerErr || !ceremony) {
+        return NextResponse.json({ error: 'Jadwal upacara tidak ditemukan.' }, { status: 404 });
+      }
+      if (ceremony.status !== 'TERJADWAL') {
+        return NextResponse.json(
+          { error: 'Pembina pengganti hanya dapat ditunjuk untuk jadwal yang belum terlaksana.' },
+          { status: 400 }
+        );
+      }
+      if (ceremony.teacher_id === parsed.data.substitute_teacher_id) {
+        return NextResponse.json(
+          { error: 'Pembina pengganti tidak boleh sama dengan pembina saat ini.' },
+          { status: 400 }
+        );
+      }
+
+      let substitutedByRole: 'ADMIN' | 'GURU_PIKET' = 'ADMIN';
+      if (parsed.data.picket_attendance_id) {
+        const { data: picketAtt } = await supabase
+          .from('teacher_attendances')
+          .select('id, attendance_type, attendance_date, is_within_geofence, admin_confirmed')
+          .eq('id', parsed.data.picket_attendance_id)
+          .maybeSingle();
+
+        if (
+          !picketAtt ||
+          picketAtt.attendance_type !== 'PIKET' ||
+          !picketAtt.is_within_geofence ||
+          !picketAtt.admin_confirmed
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                'Guru Piket / Piket Pengganti wajib presensi geofencing dan dikonfirmasi Admin terlebih dahulu.',
+            },
+            { status: 403 }
+          );
+        }
+        if (picketAtt.attendance_date !== ceremony.ceremony_date) {
+          return NextResponse.json(
+            {
+              error: `Guru Piket hanya dapat menunjuk pembina pengganti pada tanggal piketnya (${ceremony.ceremony_date}).`,
+            },
+            { status: 400 }
+          );
+        }
+        substitutedByRole = 'GURU_PIKET';
+      } else if (!isAdmin) {
+        return NextResponse.json(
+          {
+            error:
+              'Hanya Admin atau Guru Piket/Piket Pengganti terkonfirmasi Admin yang dapat menunjuk Pembina Upacara Pengganti.',
+          },
+          { status: 403 }
+        );
+      }
+
+      const { data: updated, error: updErr } = await supabase
+        .from('ceremony_schedules')
+        .update({
+          original_teacher_id: ceremony.original_teacher_id || ceremony.teacher_id,
+          teacher_id: parsed.data.substitute_teacher_id,
+          substituted_by_role: substitutedByRole,
+          substituted_by_profile_id: guard.session.userId,
+          picket_attendance_id: parsed.data.picket_attendance_id || null,
+          substitution_reason: parsed.data.reason?.trim() || null,
+          substituted_at: new Date().toISOString(),
+        })
+        .eq('id', ceremony.id)
+        .select('*')
+        .single();
+
+      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      return NextResponse.json({ ceremony: updated });
+    }
+
+    if (body.action === 'CONFIRM_CEREMONY') {
+      const parsed = ConfirmCeremonySchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Data konfirmasi upacara tidak valid.' }, { status: 400 });
+      }
+
+      const { data: ceremony } = await supabase
+        .from('ceremony_schedules')
+        .select('*')
+        .eq('id', parsed.data.ceremony_id)
+        .single();
+
+      if (!ceremony) {
+        return NextResponse.json({ error: 'Jadwal upacara tidak ditemukan.' }, { status: 404 });
+      }
+
+      if (parsed.data.picket_attendance_id) {
+        const { data: picketAtt } = await supabase
+          .from('teacher_attendances')
+          .select('id, attendance_type, attendance_date, is_within_geofence, admin_confirmed')
+          .eq('id', parsed.data.picket_attendance_id)
+          .maybeSingle();
+
+        if (
+          !picketAtt ||
+          picketAtt.attendance_type !== 'PIKET' ||
+          !picketAtt.is_within_geofence ||
+          !picketAtt.admin_confirmed ||
+          picketAtt.attendance_date !== ceremony.ceremony_date
+        ) {
+          return NextResponse.json(
+            { error: 'Presensi Guru Piket pada tanggal upacara belum valid/terkonfirmasi Admin.' },
+            { status: 403 }
+          );
+        }
+      } else if (!isAdmin) {
+        return NextResponse.json(
+          { error: 'Hanya Admin atau Guru Piket terkonfirmasi Admin yang dapat mengonfirmasi pelaksanaan upacara.' },
+          { status: 403 }
+        );
+      }
+
+      const { data: updated, error: updErr } = await supabase
+        .from('ceremony_schedules')
+        .update({
+          status: 'TERLAKSANA',
+          confirmed_by_profile_id: guard.session.userId,
+          confirmed_at: new Date().toISOString(),
+        })
+        .eq('id', ceremony.id)
+        .select('*')
+        .single();
+
+      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      return NextResponse.json({ ceremony: updated });
     }
 
     return NextResponse.json({ error: 'Aksi acara tidak dikenal.' }, { status: 400 });

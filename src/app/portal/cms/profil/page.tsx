@@ -50,6 +50,7 @@ export default function CmsProfilPage() {
           address: settings.address,
           phone: settings.phone,
           email: settings.email,
+          geofence_enabled: settings.geofence_enabled ?? true,
           geofence_lat: settings.geofence_lat,
           geofence_lng: settings.geofence_lng,
           geofence_radius_meters: settings.geofence_radius_meters,
@@ -196,6 +197,30 @@ export default function CmsProfilPage() {
                 <option value="Baik" />
                 <option value="Belum Terakreditasi" />
               </datalist>
+            </div>
+            <div className="sm:col-span-2 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold text-slate-900">
+                  Aktifkan Presensi Geofencing (GPS)
+                </p>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  Jika dinonaktifkan, guru dapat melakukan presensi tanpa verifikasi izin lokasi
+                  dan radius GPS sekolah.
+                </p>
+              </div>
+              <label className="inline-flex items-center gap-2 cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={settings.geofence_enabled ?? true}
+                  onChange={(e) =>
+                    setSettings({ ...settings, geofence_enabled: e.target.checked })
+                  }
+                  className="w-4 h-4 accent-emerald-600 rounded"
+                />
+                <span className="text-xs font-semibold text-slate-700">
+                  {settings.geofence_enabled ?? true ? 'Aktif' : 'Nonaktif'}
+                </span>
+              </label>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">

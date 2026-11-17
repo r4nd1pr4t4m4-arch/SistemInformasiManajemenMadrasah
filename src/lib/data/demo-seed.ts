@@ -37,6 +37,7 @@ export const DEFAULT_INSTITUTION_SETTINGS: InstitutionSettings = {
   email: 'info@man1nusantara.sch.id',
   website_url: 'https://man1nusantara.sch.id',
   google_maps_embed_url: null,
+  geofence_enabled: true,
   geofence_lat: -6.2,
   geofence_lng: 106.816666,
   geofence_radius_meters: 100,

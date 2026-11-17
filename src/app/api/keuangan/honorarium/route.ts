@@ -230,10 +230,10 @@ export async function POST(request: Request) {
         { data: journals },
         { data: supervisors },
         { data: bapReports },
-        { data: committees },
-        { data: confirmedCommitteeAtts },
-        { data: confirmedPicketAtts },
+        { data: committeeReports },
+        { data: picketReports },
         { data: eventJournals },
+        { data: ceremonies },
         { data: duties },
       ] = await Promise.all([
         supabase
@@ -262,33 +262,30 @@ export async function POST(request: Request) {
           .gte('report_date', startDate)
           .lte('report_date', endDate),
         supabase
-          .from('exam_committees')
-          .select('id, jtm_allocated')
-          .eq('teacher_id', teacher_id),
-        supabase
-          .from('teacher_attendances')
-          .select('exam_committee_id')
+          .from('exam_committee_daily_reports')
+          .select('jtm_credited')
           .eq('teacher_id', teacher_id)
-          .eq('attendance_type', 'PANITIA_UJIAN')
-          .eq('is_within_geofence', true)
-          .eq('admin_confirmed', true)
-          .gte('attendance_date', startDate)
-          .lte('attendance_date', endDate),
+          .gte('report_date', startDate)
+          .lte('report_date', endDate),
         supabase
-          .from('teacher_attendances')
-          .select('jtm_earned')
+          .from('picket_daily_reports')
+          .select('jtm_credited')
           .eq('teacher_id', teacher_id)
-          .eq('attendance_type', 'PIKET')
-          .eq('is_within_geofence', true)
-          .eq('admin_confirmed', true)
-          .gte('attendance_date', startDate)
-          .lte('attendance_date', endDate),
+          .gte('report_date', startDate)
+          .lte('report_date', endDate),
         supabase
           .from('event_journals')
           .select('jtm_credited')
           .eq('teacher_id', teacher_id)
           .gte('journal_date', startDate)
           .lte('journal_date', endDate),
+        supabase
+          .from('ceremony_schedules')
+          .select('jtm_allocated')
+          .eq('teacher_id', teacher_id)
+          .eq('status', 'TERLAKSANA')
+          .gte('ceremony_date', startDate)
+          .lte('ceremony_date', endDate),
         supabase
           .from('teacher_additional_duties')
           .select(
@@ -319,13 +316,9 @@ export async function POST(request: Request) {
           .toFixed(2)
       );
 
-      const confirmedCommitteeIds = new Set(
-        (confirmedCommitteeAtts || []).map((a) => a.exam_committee_id).filter(Boolean)
-      );
       const examCommitteeJtm = Number(
-        (committees || [])
-          .filter((c) => confirmedCommitteeIds.has(c.id))
-          .reduce((s, r) => s + Number(r.jtm_allocated || 0), 0)
+        (committeeReports || [])
+          .reduce((s, r) => s + Number(r.jtm_credited || 0), 0)
           .toFixed(2)
       );
       const eventJtm = Number(
@@ -334,8 +327,13 @@ export async function POST(request: Request) {
           .toFixed(2)
       );
       const picketJtm = Number(
-        (confirmedPicketAtts || [])
-          .reduce((s, r) => s + Number(r.jtm_earned || 0), 0)
+        (picketReports || [])
+          .reduce((s, r) => s + Number(r.jtm_credited || 0), 0)
+          .toFixed(2)
+      );
+      const ceremonyJtm = Number(
+        (ceremonies || [])
+          .reduce((s, r) => s + Number(r.jtm_allocated || 0), 0)
           .toFixed(2)
       );
       const ratePerJtm = Number(rateRow?.rate_per_jtm ?? 25000);
@@ -355,7 +353,15 @@ export async function POST(request: Request) {
         .filter((x): x is NonNullable<typeof x> => x !== null);
 
       const calc = calculateTeacherHonorarium(
-        { teachingJtm, substituteJtm, examSupervisorJtm, examCommitteeJtm, eventJtm, picketJtm },
+        {
+          teachingJtm,
+          substituteJtm,
+          examSupervisorJtm,
+          examCommitteeJtm,
+          eventJtm,
+          picketJtm,
+          ceremonyJtm,
+        },
         ratePerJtm,
         dutyInputs
       );
@@ -373,6 +379,7 @@ export async function POST(request: Request) {
             exam_committee_jtm: examCommitteeJtm,
             event_jtm: eventJtm,
             picket_jtm: picketJtm,
+            ceremony_jtm: ceremonyJtm,
             total_jtm: calc.totalJtm,
             rate_per_jtm: calc.ratePerJtm,
             jtm_honorarium_amount: calc.jtmHonorariumAmount,

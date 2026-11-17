@@ -22,6 +22,7 @@ const SettingsUpdateSchema = z.object({
   address: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
   email: z.string().optional().nullable(),
+  geofence_enabled: z.boolean().optional().default(true),
   geofence_lat: z.number().optional().nullable(),
   geofence_lng: z.number().optional().nullable(),
   geofence_radius_meters: z.number().min(20).max(5000),
