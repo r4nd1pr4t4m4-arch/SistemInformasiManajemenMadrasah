@@ -3,6 +3,7 @@ export interface JtmBreakdown {
   substituteJtm: number;
   examSupervisorJtm: number;
   examCommitteeJtm: number;
+  eventJtm?: number;
 }
 
 export interface DutyAllowanceInput {
@@ -41,7 +42,8 @@ export function calculateTeacherHonorarium(
     Math.max(0, jtm.teachingJtm) +
     Math.max(0, jtm.substituteJtm) +
     Math.max(0, jtm.examSupervisorJtm) +
-    Math.max(0, jtm.examCommitteeJtm);
+    Math.max(0, jtm.examCommitteeJtm) +
+    Math.max(0, jtm.eventJtm ?? 0);
 
   const safeRate = Math.max(0, ratePerJtm);
   const jtmHonorariumAmount = totalJtm * safeRate;

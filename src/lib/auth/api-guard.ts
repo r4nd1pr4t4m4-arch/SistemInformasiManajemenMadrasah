@@ -102,6 +102,15 @@ export const ROLE_GROUPS = {
     'KEPALA_LEMBAGA',
     'KEPALA_TU',
   ] as AppRole[],
+  ADMIN_CONFIRM: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+  ] as AppRole[],
 };
 
 export async function requireApiRoles(allowedRoles: AppRole[]): Promise<

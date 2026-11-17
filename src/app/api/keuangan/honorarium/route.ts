@@ -227,10 +227,12 @@ export async function POST(request: Request) {
 
       const [
         { data: rateRow },
-        { data: attendances },
-        { data: delegations },
+        { data: journals },
         { data: supervisors },
+        { data: bapReports },
         { data: committees },
+        { data: confirmedCommitteeAtts },
+        { data: eventJournals },
         { data: duties },
       ] = await Promise.all([
         supabase
@@ -241,29 +243,40 @@ export async function POST(request: Request) {
           .limit(1)
           .maybeSingle(),
         supabase
-          .from('teacher_attendances')
-          .select('jtm_earned')
+          .from('teaching_journals')
+          .select('jtm_credited, delegation_id')
           .eq('teacher_id', teacher_id)
-          .eq('is_within_geofence', true)
-          .gte('attendance_date', startDate)
-          .lte('attendance_date', endDate),
-        supabase
-          .from('teacher_delegations')
-          .select('jtm_transferred')
-          .eq('substitute_teacher_id', teacher_id)
-          .eq('status', 'APPROVED')
-          .gte('delegation_date', startDate)
-          .lte('delegation_date', endDate),
+          .gte('journal_date', startDate)
+          .lte('journal_date', endDate),
         supabase
           .from('exam_supervisors')
-          .select('jtm_allocated')
+          .select('id, jtm_allocated')
           .eq('teacher_id', teacher_id)
           .gte('exam_date', startDate)
           .lte('exam_date', endDate),
         supabase
-          .from('exam_committees')
-          .select('jtm_allocated')
+          .from('exam_bap_reports')
+          .select('exam_supervisor_id')
           .eq('teacher_id', teacher_id),
+        supabase
+          .from('exam_committees')
+          .select('id, jtm_allocated')
+          .eq('teacher_id', teacher_id),
+        supabase
+          .from('teacher_attendances')
+          .select('exam_committee_id')
+          .eq('teacher_id', teacher_id)
+          .eq('attendance_type', 'PANITIA_UJIAN')
+          .eq('is_within_geofence', true)
+          .eq('admin_confirmed', true)
+          .gte('attendance_date', startDate)
+          .lte('attendance_date', endDate),
+        supabase
+          .from('event_journals')
+          .select('jtm_credited')
+          .eq('teacher_id', teacher_id)
+          .gte('journal_date', startDate)
+          .lte('journal_date', endDate),
         supabase
           .from('teacher_additional_duties')
           .select(
@@ -273,16 +286,27 @@ export async function POST(request: Request) {
           .eq('is_active', true),
       ]);
 
-      const teachingJtm = (attendances || []).reduce((s, r) => s + (r.jtm_earned || 0), 0);
-      const substituteJtm = (delegations || []).reduce((s, r) => s + (r.jtm_transferred || 0), 0);
-      const examSupervisorJtm = (supervisors || []).reduce(
-        (s, r) => s + (r.jtm_allocated || 0),
-        0
+      const teachingJtm = (journals || [])
+        .filter((j) => !j.delegation_id)
+        .reduce((s, r) => s + (r.jtm_credited || 0), 0);
+      const substituteJtm = (journals || [])
+        .filter((j) => Boolean(j.delegation_id))
+        .reduce((s, r) => s + (r.jtm_credited || 0), 0);
+
+      const bapSupervisorIds = new Set(
+        (bapReports || []).map((b) => b.exam_supervisor_id).filter(Boolean)
       );
-      const examCommitteeJtm = (committees || []).reduce(
-        (s, r) => s + (r.jtm_allocated || 0),
-        0
+      const examSupervisorJtm = (supervisors || [])
+        .filter((s) => bapSupervisorIds.has(s.id))
+        .reduce((s, r) => s + (r.jtm_allocated || 0), 0);
+
+      const confirmedCommitteeIds = new Set(
+        (confirmedCommitteeAtts || []).map((a) => a.exam_committee_id).filter(Boolean)
       );
+      const examCommitteeJtm = (committees || [])
+        .filter((c) => confirmedCommitteeIds.has(c.id))
+        .reduce((s, r) => s + (r.jtm_allocated || 0), 0);
+      const eventJtm = (eventJournals || []).reduce((s, r) => s + (r.jtm_credited || 0), 0);
       const ratePerJtm = Number(rateRow?.rate_per_jtm ?? 25000);
 
       const dutyInputs = (duties || [])
@@ -300,7 +324,7 @@ export async function POST(request: Request) {
         .filter((x): x is NonNullable<typeof x> => x !== null);
 
       const calc = calculateTeacherHonorarium(
-        { teachingJtm, substituteJtm, examSupervisorJtm, examCommitteeJtm },
+        { teachingJtm, substituteJtm, examSupervisorJtm, examCommitteeJtm, eventJtm },
         ratePerJtm,
         dutyInputs
       );
@@ -316,6 +340,7 @@ export async function POST(request: Request) {
             substitute_jtm: substituteJtm,
             exam_supervisor_jtm: examSupervisorJtm,
             exam_committee_jtm: examCommitteeJtm,
+            event_jtm: eventJtm,
             total_jtm: calc.totalJtm,
             rate_per_jtm: calc.ratePerJtm,
             jtm_honorarium_amount: calc.jtmHonorariumAmount,
