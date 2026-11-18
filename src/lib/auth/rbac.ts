@@ -1,5 +1,52 @@
 import type { AppRole } from '@/types/database';
 
+export const DUTY_CODE_TO_APP_ROLE: Record<string, AppRole> = {
+  KEPALA_MADRASAH: 'KEPALA_LEMBAGA',
+  KEPALA_SEKOLAH: 'KEPALA_LEMBAGA',
+  KEPALA_LEMBAGA: 'KEPALA_LEMBAGA',
+  WAKA_KURIKULUM: 'WAKA_KURIKULUM',
+  WAKA_KESISWAAN: 'WAKA_KESISWAAN',
+  WAKA_HUMAS: 'WAKA_HUMAS',
+  WAKA_SARPRAS: 'WAKA_SARPRAS',
+  KEPALA_TU: 'KEPALA_TU',
+  STAF_TU: 'STAF_TU',
+  OPERATOR: 'OPERATOR',
+  BENDAHARA: 'BENDAHARA',
+  BENDAHARA_KOMITE: 'BENDAHARA_KOMITE',
+  PENGELOLA_TABUNGAN: 'PENGELOLA_TABUNGAN',
+  WALI_KELAS: 'WALI_KELAS',
+  GURU_WALI: 'GURU_WALI',
+  GURU_BK: 'GURU_BK',
+  PUSTAKAWAN: 'PUSTAKAWAN',
+  KEPALA_PERPUSTAKAAN: 'PUSTAKAWAN',
+  PEMBINA_OSIM: 'PEMBINA_OSIM',
+  PEMBINA_EKSTRAKURIKULER: 'PEMBINA_EKSTRAKURIKULER',
+};
+
+export function mapDutyCodeToRole(codeOrName?: string | null): AppRole | null {
+  if (!codeOrName) return null;
+  const normalized = codeOrName.trim().toUpperCase().replace(/[\s/-]+/g, '_');
+  if (DUTY_CODE_TO_APP_ROLE[normalized]) {
+    return DUTY_CODE_TO_APP_ROLE[normalized];
+  }
+  if (normalized.includes('KURIKULUM')) return 'WAKA_KURIKULUM';
+  if (normalized.includes('KESISWAAN')) return 'WAKA_KESISWAAN';
+  if (normalized.includes('HUMAS')) return 'WAKA_HUMAS';
+  if (normalized.includes('SARPRAS') || normalized.includes('SARANA')) return 'WAKA_SARPRAS';
+  if (normalized.includes('BENDAHARA_KOMITE') || normalized.includes('KOMITE')) return 'BENDAHARA_KOMITE';
+  if (normalized.includes('TABUNGAN')) return 'PENGELOLA_TABUNGAN';
+  if (normalized.includes('BENDAHARA')) return 'BENDAHARA';
+  if (normalized.includes('PERPUSTAKAAN') || normalized.includes('PUSTAKAWAN')) return 'PUSTAKAWAN';
+  if (normalized.includes('BIMBINGAN') || normalized.includes('GURU_BK') || normalized === 'BK') return 'GURU_BK';
+  if (normalized.includes('GURU_WALI')) return 'GURU_WALI';
+  if (normalized.includes('WALI_KELAS')) return 'WALI_KELAS';
+  if (normalized.includes('OSIM') || normalized.includes('OSIS')) return 'PEMBINA_OSIM';
+  if (normalized.includes('EKSTRAKURIKULER') || normalized.includes('EKSKUL')) return 'PEMBINA_EKSTRAKURIKULER';
+  if (normalized.includes('KEPALA_TU') || normalized.includes('TATA_USAHA')) return 'KEPALA_TU';
+  if (normalized.includes('OPERATOR')) return 'OPERATOR';
+  return null;
+}
+
 export const PERMISSIONS = {
   // CMS & Publikasi
   CMS_VIEW: [
@@ -39,7 +86,6 @@ export const PERMISSIONS = {
     'OPERATOR',
     'KEPALA_LEMBAGA',
     'WAKA_SARPRAS',
-    'WAKA_HUMAS',
     'KEPALA_TU',
     'STAF_TU',
   ] as AppRole[],
@@ -47,7 +93,6 @@ export const PERMISSIONS = {
     'SUPERADMIN',
     'OPERATOR',
     'WAKA_SARPRAS',
-    'WAKA_HUMAS',
     'KEPALA_TU',
     'STAF_TU',
   ] as AppRole[],
@@ -59,6 +104,23 @@ export const PERMISSIONS = {
     'KEPALA_LEMBAGA',
     'WAKA_KURIKULUM',
     'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+  ] as AppRole[],
+  BUKU_INDUK_SISWA_VIEW: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+  ] as AppRole[],
+  BUKU_INDUK_GTK_VIEW: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
     'KEPALA_TU',
     'STAF_TU',
   ] as AppRole[],
@@ -161,6 +223,8 @@ export const PERMISSIONS = {
     'WAKA_KESISWAAN',
     'KEPALA_TU',
     'STAF_TU',
+    'PEMBINA_OSIM',
+    'PEMBINA_EKSTRAKURIKULER',
     'GURU',
     'WALI_KELAS',
   ] as AppRole[],
@@ -171,12 +235,17 @@ export const PERMISSIONS = {
     'WAKA_KESISWAAN',
     'KEPALA_TU',
     'STAF_TU',
+    'PEMBINA_OSIM',
+    'PEMBINA_EKSTRAKURIKULER',
   ] as AppRole[],
   JURNAL_ACARA_VIEW: [
     'SUPERADMIN',
     'OPERATOR',
     'KEPALA_LEMBAGA',
     'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'PEMBINA_OSIM',
+    'PEMBINA_EKSTRAKURIKULER',
     'GURU',
     'WALI_KELAS',
     'GURU_WALI',
@@ -186,6 +255,9 @@ export const PERMISSIONS = {
     'SUPERADMIN',
     'OPERATOR',
     'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'PEMBINA_OSIM',
+    'PEMBINA_EKSTRAKURIKULER',
     'GURU',
     'WALI_KELAS',
     'GURU_WALI',
@@ -232,6 +304,42 @@ export const PERMISSIONS = {
     'KEPALA_TU',
     'STAF_TU',
     'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'WAKA_HUMAS',
+  ] as AppRole[],
+  SDM_GTK_VIEW: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'KEPALA_TU',
+    'STAF_TU',
+    'WAKA_KURIKULUM',
+    'WAKA_HUMAS',
+  ] as AppRole[],
+  SDM_SISWA_VIEW: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'KEPALA_TU',
+    'STAF_TU',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+  ] as AppRole[],
+  SDM_ORTU_VIEW: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'KEPALA_TU',
+    'STAF_TU',
+    'WAKA_KESISWAAN',
+    'WAKA_HUMAS',
+  ] as AppRole[],
+  SDM_ALUMNI_VIEW: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'KEPALA_TU',
+    'STAF_TU',
     'WAKA_KESISWAAN',
     'WAKA_HUMAS',
   ] as AppRole[],
@@ -351,9 +459,10 @@ export const PERMISSIONS = {
     'OPERATOR',
     'KEPALA_LEMBAGA',
     'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
     'GURU_WALI',
     'WALI_KELAS',
-    'GURU',
   ] as AppRole[],
   GURU_WALI_ASSIGN: [
     'SUPERADMIN',
@@ -366,8 +475,6 @@ export const PERMISSIONS = {
     'SUPERADMIN',
     'OPERATOR',
     'GURU_WALI',
-    'WALI_KELAS',
-    'GURU',
   ] as AppRole[],
   ALUMNI_VIEW: [
     'SUPERADMIN',
@@ -430,12 +537,21 @@ export function hasRolePermission(
 }
 
 const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
+  '/portal/akademik/buku-induk/siswa': PERMISSIONS.BUKU_INDUK_SISWA_VIEW,
+  '/portal/akademik/buku-induk/gtk': PERMISSIONS.BUKU_INDUK_GTK_VIEW,
   '/portal/akademik/buku-induk/penempatan-akun': PERMISSIONS.BUKU_INDUK_MANAGE,
+  '/portal/sdm/gtk': PERMISSIONS.SDM_GTK_VIEW,
+  '/portal/sdm/siswa': PERMISSIONS.SDM_SISWA_VIEW,
+  '/portal/sdm/orang-tua': PERMISSIONS.SDM_ORTU_VIEW,
+  '/portal/sdm/alumni': PERMISSIONS.SDM_ALUMNI_VIEW,
+  '/portal/sdm/alumni/lulusan': PERMISSIONS.SDM_ALUMNI_VIEW,
+  '/portal/sdm/alumni/tracer': PERMISSIONS.SDM_ALUMNI_VIEW,
   '/portal/keuangan/spp/terbitkan': PERMISSIONS.SPP_MANAGE,
   '/portal/keuangan/tabungan/buka-rekening': PERMISSIONS.TABUNGAN_MANAGE,
   '/portal/keuangan/tabungan/transaksi': PERMISSIONS.TABUNGAN_MANAGE,
   '/portal/layanan/perpustakaan/anggota': PERMISSIONS.PERPUSTAKAAN_ANGGOTA_VIEW,
   '/portal/cms/ppdb': PERMISSIONS.CMS_PPDB_VIEW,
+  '/portal/cms/manajemen-ppdb': PERMISSIONS.CMS_PPDB_VIEW,
   '/portal/cms/sarana-prasarana': PERMISSIONS.CMS_SARPRAS_VIEW,
   '/portal/akun/manajemen-pengguna': PERMISSIONS.USER_MANAGEMENT_VIEW,
 };

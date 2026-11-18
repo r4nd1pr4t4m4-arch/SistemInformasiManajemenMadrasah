@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { hasAnyRole } from '@/lib/auth/session';
 
 export async function GET(request: NextRequest) {
-  const guard = await requireApiRoles(ROLE_GROUPS.SDM);
+  const guard = await requireApiRoles(PERMISSIONS.SDM_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -14,6 +15,20 @@ export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get('id');
   if (!scope || !id) {
     return NextResponse.json({ error: 'Parameter scope dan id wajib diisi.' }, { status: 400 });
+  }
+
+  const scopeRoleMap: Record<string, typeof PERMISSIONS.SDM_VIEW> = {
+    gtk: PERMISSIONS.SDM_GTK_VIEW,
+    siswa: PERMISSIONS.SDM_SISWA_VIEW,
+    'orang-tua': PERMISSIONS.SDM_ORTU_VIEW,
+    alumni: PERMISSIONS.SDM_ALUMNI_VIEW,
+  };
+  const requiredScopeRoles = scopeRoleMap[scope];
+  if (requiredScopeRoles && !hasAnyRole(guard.session, requiredScopeRoles)) {
+    return NextResponse.json(
+      { error: 'Peran atau tugas tambahan Anda tidak memiliki akses untuk detail SDM ini.' },
+      { status: 403 }
+    );
   }
 
   const supabase = createSupabaseAdminClient();

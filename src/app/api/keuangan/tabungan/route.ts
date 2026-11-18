@@ -27,22 +27,91 @@ export async function GET() {
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
-    return NextResponse.json({ accounts: [], transactions: [] });
+    return NextResponse.json({
+      accounts: [],
+      transactions: [],
+      students: [],
+      teachers: [],
+      tuStaff: [],
+      publicUsers: [],
+    });
   }
 
   const supabase = createSupabaseAdminClient();
-  const [{ data: accounts }, { data: transactions }] = await Promise.all([
+  const [
+    { data: accounts },
+    { data: transactions },
+    { data: students },
+    { data: gtkRows },
+    { data: publicProfiles },
+    { data: publicLibMembers },
+  ] = await Promise.all([
     supabase.from('savings_accounts').select('*').order('created_at', { ascending: false }),
     supabase
       .from('savings_transactions')
       .select('*, account:savings_accounts(account_number, owner_name, owner_type)')
       .order('transaction_date', { ascending: false })
       .limit(100),
+    supabase
+      .from('students')
+      .select('id, full_name, nis, nisn, phone, status')
+      .eq('status', 'AKTIF')
+      .order('full_name'),
+    supabase
+      .from('teachers_staff')
+      .select('id, full_name, nip, phone, staff_type, is_active')
+      .eq('is_active', true)
+      .order('full_name'),
+    supabase
+      .from('profiles')
+      .select('id, full_name, phone, email, primary_role, is_active, account_status')
+      .eq('primary_role', 'UMUM')
+      .eq('is_active', true)
+      .order('full_name'),
+    supabase
+      .from('library_members')
+      .select('id, full_name, phone, email, member_code, member_type')
+      .eq('member_type', 'UMUM')
+      .order('full_name'),
   ]);
+
+  const teachers = (gtkRows || []).filter((g) => g.staff_type === 'GURU');
+  const tuStaff = (gtkRows || []).filter((g) => g.staff_type !== 'GURU');
+
+  // Gabungkan pengguna UMUM dari profiles aktif dan anggota umum E-Library tanpa duplikasi nama
+  const publicUsersMap = new Map<
+    string,
+    { id: string; full_name: string; phone: string | null; label: string }
+  >();
+  for (const p of publicProfiles || []) {
+    if (p.account_status && p.account_status !== 'AKTIF') continue;
+    const key = p.full_name.trim().toLowerCase();
+    publicUsersMap.set(key, {
+      id: `profile:${p.id}`,
+      full_name: p.full_name,
+      phone: p.phone || null,
+      label: `${p.full_name}${p.email ? ` (${p.email})` : ' (Akun Umum)'}`,
+    });
+  }
+  for (const m of publicLibMembers || []) {
+    const key = m.full_name.trim().toLowerCase();
+    if (!publicUsersMap.has(key)) {
+      publicUsersMap.set(key, {
+        id: `lib:${m.id}`,
+        full_name: m.full_name,
+        phone: m.phone || null,
+        label: `${m.full_name} (${m.member_code})`,
+      });
+    }
+  }
 
   return NextResponse.json({
     accounts: accounts || [],
     transactions: transactions || [],
+    students: students || [],
+    teachers,
+    tuStaff,
+    publicUsers: Array.from(publicUsersMap.values()),
   });
 }
 

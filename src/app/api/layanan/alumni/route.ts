@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 
 const AlumniSchema = z.object({
   full_name: z.string().min(2),
@@ -35,6 +36,29 @@ export async function GET() {
     .limit(100);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const session = await getCurrentUserWithRoles();
+  const isStaffAlumniViewer = hasAnyRole(session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_HUMAS',
+    'GURU_BK',
+    'KEPALA_TU',
+    'STAF_TU',
+  ]);
+
+  if (session && !isStaffAlumniViewer && session.roles.includes('ALUMNI')) {
+    const emailLower = (session.email || '').trim().toLowerCase();
+    const nameLower = (session.fullName || '').trim().toLowerCase();
+    const scoped = (data || []).filter(
+      (a) =>
+        (emailLower && String(a.email || '').toLowerCase() === emailLower) ||
+        (nameLower && String(a.full_name || '').toLowerCase() === nameLower)
+    );
+    return NextResponse.json({ alumni: scoped });
+  }
+
   return NextResponse.json({ alumni: data || [] });
 }
 

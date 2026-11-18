@@ -58,9 +58,25 @@ export async function GET() {
       .limit(150),
   ]);
 
+  const isGlobalLogsViewer = hasAnyRole(guard.session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+    'BENDAHARA',
+  ]);
+  const myTeacherId = guard.session.teacherAssignments?.teacherId;
+  const scopedLogs =
+    !isGlobalLogsViewer && myTeacherId
+      ? (logs || []).filter((l) => l.teacher_id === myTeacherId)
+      : logs || [];
+
   return NextResponse.json({
     events: events || [],
-    logs: logs || [],
+    logs: scopedLogs,
     todayDate: getWibTodayDateString(),
     canManageCalendar,
   });

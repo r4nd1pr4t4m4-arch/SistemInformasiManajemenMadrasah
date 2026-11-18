@@ -4,12 +4,20 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, CreditCard, Loader2 } from 'lucide-react';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { DigitalStudentCard } from '@/components/portal/cards/digital-card-viewer';
 
 interface StudentOpt {
   id: string;
   full_name: string;
   nis: string | null;
   nisn: string | null;
+  gender?: string | null;
+  birth_place?: string | null;
+  birth_date?: string | null;
+  address?: string | null;
+  entry_year?: number | null;
+  status?: string | null;
+  photo_url?: string | null;
   qr_token?: string | null;
 }
 
@@ -191,20 +199,7 @@ export default function PersuratanPage() {
                 </option>
               ))}
             </select>
-            {cardStudent && (
-              <div className="rounded-2xl bg-gradient-to-br from-emerald-800 to-teal-900 text-white p-5 space-y-2 shadow-md">
-                <p className="text-[10px] uppercase tracking-widest text-emerald-200">
-                  Kartu Pelajar Digital Resmi
-                </p>
-                <p className="font-bold text-base">{cardStudent.full_name}</p>
-                <p className="text-xs text-emerald-100">
-                  NIS: {cardStudent.nis || '-'} • NISN: {cardStudent.nisn || '-'}
-                </p>
-                <p className="font-mono text-[10px] text-emerald-300 pt-1">
-                  QR Token: {cardStudent.qr_token || 'AUTO'}
-                </p>
-              </div>
-            )}
+            {cardStudent && <DigitalStudentCard student={cardStudent} />}
           </div>
         </div>
 

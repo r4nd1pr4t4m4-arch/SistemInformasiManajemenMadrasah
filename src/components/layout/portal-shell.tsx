@@ -38,13 +38,32 @@ import type { AppRole } from '@/types/database';
 import { PERMISSIONS, canAccessPortalPath, hasRolePermission } from '@/lib/auth/rbac';
 import { clearPortalSessionCache } from '@/lib/hooks/use-portal-session';
 
+interface TeacherOperationalAssignments {
+  teacherId: string;
+  dutyCodes: string[];
+  dutyNames: string[];
+  isHomeroomTeacher: boolean;
+  isGuruWali: boolean;
+  isPicketTeacher: boolean;
+  isExamSupervisor: boolean;
+  isExamCommittee: boolean;
+}
+
 interface UserInfo {
   fullName: string;
   email: string | null;
   avatarUrl?: string | null;
   primaryRole: AppRole;
   roles?: AppRole[];
+  teacherAssignments?: TeacherOperationalAssignments | null;
 }
+
+type TeacherDutyRequirement =
+  | 'PICKET'
+  | 'EXAM_SUPERVISOR'
+  | 'EXAM_COMMITTEE'
+  | 'PICKET_OR_COMMITTEE'
+  | 'SUPERVISOR_OR_COMMITTEE';
 
 interface NavItem {
   id?: string;
@@ -54,6 +73,7 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   allowedRoles?: AppRole[];
+  requireTeacherDuty?: TeacherDutyRequirement;
   children?: NavItem[];
 }
 
@@ -96,7 +116,7 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         path: '/portal/cms/manajemen-ppdb',
         label: 'Manajemen PPDB',
         icon: <CalendarRange className="w-3.5 h-3.5" />,
-        allowedRoles: PERMISSIONS.CMS_VIEW,
+        allowedRoles: PERMISSIONS.CMS_PPDB_VIEW,
       },
       {
         href: '/portal/cms/sarana-prasarana',
@@ -116,27 +136,21 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         id: 'akademik-buku-induk',
         label: 'Buku Induk Digital',
         icon: <Users className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'WAKA_KURIKULUM',
-          'WAKA_KESISWAAN',
-          'KEPALA_TU',
-          'STAF_TU',
-        ],
+        allowedRoles: PERMISSIONS.BUKU_INDUK_PAGE_VIEW,
         children: [
           {
             href: '/portal/akademik/buku-induk/siswa',
             path: '/portal/akademik/buku-induk/siswa',
             label: 'Daftar Siswa',
             icon: <Users className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.BUKU_INDUK_SISWA_VIEW,
           },
           {
             href: '/portal/akademik/buku-induk/gtk',
             path: '/portal/akademik/buku-induk/gtk',
             label: 'Daftar GTK',
             icon: <User className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.BUKU_INDUK_GTK_VIEW,
           },
           {
             href: '/portal/akademik/buku-induk/penempatan-akun',
@@ -210,36 +224,97 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
             path: '/portal/akademik/presensi/konfirmasi',
             label: 'Konfirmasi Kehadiran',
             icon: <ShieldCheck className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+            ],
+            requireTeacherDuty: 'PICKET',
           },
           {
             href: '/portal/akademik/presensi/pengganti',
             path: '/portal/akademik/presensi/pengganti',
             label: 'Guru Pengganti',
             icon: <Users className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+            ],
+            requireTeacherDuty: 'PICKET',
           },
           {
             href: '/portal/akademik/presensi/absensi-siswa',
             path: '/portal/akademik/presensi/absensi-siswa',
             label: 'Absensi Siswa Reguler',
             icon: <ClipboardCheck className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+              'WALI_KELAS',
+            ],
+            requireTeacherDuty: 'PICKET',
           },
           {
             href: '/portal/akademik/presensi/laporan-piket',
             path: '/portal/akademik/presensi/laporan-piket',
             label: 'Laporan Harian Piket',
             icon: <FileText className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+            ],
+            requireTeacherDuty: 'PICKET',
           },
           {
             href: '/portal/akademik/presensi/jam-manual',
             path: '/portal/akademik/presensi/jam-manual',
             label: 'Jam Masuk & Pulang',
             icon: <Calendar className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+            ],
+            requireTeacherDuty: 'PICKET_OR_COMMITTEE',
           },
           {
             href: '/portal/akademik/presensi/izin-keluar',
             path: '/portal/akademik/presensi/izin-keluar',
             label: 'Izin Keluar Sebentar',
             icon: <LogOut className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+            ],
+            requireTeacherDuty: 'PICKET_OR_COMMITTEE',
           },
         ],
       },
@@ -252,6 +327,8 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'OPERATOR',
           'KEPALA_LEMBAGA',
           'WAKA_KURIKULUM',
+          'KEPALA_TU',
+          'STAF_TU',
           'GURU',
           'WALI_KELAS',
         ],
@@ -279,30 +356,81 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
             path: '/portal/akademik/ujian/konfirmasi-pengawas',
             label: 'Konfirmasi Pengawas',
             icon: <ShieldCheck className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+            ],
+            requireTeacherDuty: 'EXAM_COMMITTEE',
           },
           {
             href: '/portal/akademik/ujian/bap',
             path: '/portal/akademik/ujian/bap',
             label: 'Berita Acara (BAP)',
             icon: <ClipboardCheck className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+            ],
+            requireTeacherDuty: 'SUPERVISOR_OR_COMMITTEE',
           },
           {
             href: '/portal/akademik/ujian/pengganti',
             path: '/portal/akademik/ujian/pengganti',
             label: 'Pengawas & Panitia Pengganti',
             icon: <User className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+            ],
+            requireTeacherDuty: 'EXAM_COMMITTEE',
           },
           {
             href: '/portal/akademik/ujian/absensi-siswa',
             path: '/portal/akademik/ujian/absensi-siswa',
             label: 'Absensi Siswa Ujian',
             icon: <ClipboardCheck className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+              'WALI_KELAS',
+            ],
+            requireTeacherDuty: 'SUPERVISOR_OR_COMMITTEE',
           },
           {
             href: '/portal/akademik/ujian/lpj-panitia',
             path: '/portal/akademik/ujian/lpj-panitia',
             label: 'LPJ Harian Panitia',
             icon: <FileText className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+            ],
+            requireTeacherDuty: 'EXAM_COMMITTEE',
           },
         ],
       },
@@ -310,17 +438,7 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         id: 'akademik-acara',
         label: 'Manajemen Acara & Kegiatan',
         icon: <CalendarRange className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'WAKA_KURIKULUM',
-          'WAKA_KESISWAAN',
-          'KEPALA_TU',
-          'STAF_TU',
-          'GURU',
-          'WALI_KELAS',
-        ],
+        allowedRoles: PERMISSIONS.ACARA_VIEW,
         children: [
           {
             href: '/portal/akademik/acara/kegiatan',
@@ -333,6 +451,18 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
             path: '/portal/akademik/acara/konfirmasi',
             label: 'Konfirmasi Kehadiran',
             icon: <ShieldCheck className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+              'PEMBINA_OSIM',
+              'PEMBINA_EKSTRAKURIKULER',
+            ],
+            requireTeacherDuty: 'PICKET',
           },
           {
             href: '/portal/akademik/acara/upacara',
@@ -347,33 +477,13 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         path: '/portal/akademik/jurnal-acara',
         label: 'Input Jurnal Acara',
         icon: <FileText className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'WAKA_KURIKULUM',
-          'GURU',
-          'WALI_KELAS',
-          'GURU_WALI',
-          'GURU_BK',
-        ],
+        allowedRoles: PERMISSIONS.JURNAL_ACARA_VIEW,
       },
       {
         id: 'akademik-rekap-absensi',
         label: 'Rekapitulasi Absensi',
         icon: <ClipboardCheck className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'WAKA_KURIKULUM',
-          'WAKA_KESISWAAN',
-          'KEPALA_TU',
-          'STAF_TU',
-          'GURU',
-          'WALI_KELAS',
-          'GURU_BK',
-        ],
+        allowedRoles: PERMISSIONS.REKAP_ABSENSI_VIEW,
         children: [
           {
             href: '/portal/akademik/rekap-absensi/guru',
@@ -386,6 +496,19 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
             path: '/portal/akademik/rekap-absensi/siswa-harian',
             label: 'Rekap Siswa Harian',
             icon: <Users className="w-3 h-3" />,
+            allowedRoles: [
+              'SUPERADMIN',
+              'OPERATOR',
+              'KEPALA_LEMBAGA',
+              'WAKA_KURIKULUM',
+              'WAKA_KESISWAAN',
+              'KEPALA_TU',
+              'STAF_TU',
+              'WALI_KELAS',
+              'GURU_BK',
+              'GURU_WALI',
+            ],
+            requireTeacherDuty: 'PICKET',
           },
           {
             href: '/portal/akademik/rekap-absensi/siswa-mapel',
@@ -437,75 +560,41 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         href: '/portal/sdm/gtk',
         path: '/portal/sdm/gtk',
         icon: <User className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'KEPALA_TU',
-          'STAF_TU',
-          'WAKA_KURIKULUM',
-          'WAKA_KESISWAAN',
-          'WAKA_HUMAS',
-        ],
+        allowedRoles: PERMISSIONS.SDM_GTK_VIEW,
       },
       {
         label: 'Manajemen Siswa',
         href: '/portal/sdm/siswa',
         path: '/portal/sdm/siswa',
         icon: <Users className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'KEPALA_TU',
-          'STAF_TU',
-          'WAKA_KURIKULUM',
-          'WAKA_KESISWAAN',
-          'WAKA_HUMAS',
-        ],
+        allowedRoles: PERMISSIONS.SDM_SISWA_VIEW,
       },
       {
         label: 'Manajemen Orang Tua/Wali Siswa',
         href: '/portal/sdm/orang-tua',
         path: '/portal/sdm/orang-tua',
         icon: <HeartHandshake className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'KEPALA_TU',
-          'STAF_TU',
-          'WAKA_KURIKULUM',
-          'WAKA_KESISWAAN',
-          'WAKA_HUMAS',
-        ],
+        allowedRoles: PERMISSIONS.SDM_ORTU_VIEW,
       },
       {
         id: 'sdm-alumni',
         label: 'Manajemen Alumni',
         icon: <GraduationCap className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'KEPALA_TU',
-          'STAF_TU',
-          'WAKA_KURIKULUM',
-          'WAKA_KESISWAAN',
-          'WAKA_HUMAS',
-        ],
+        allowedRoles: PERMISSIONS.SDM_ALUMNI_VIEW,
         children: [
           {
             href: '/portal/sdm/alumni/lulusan',
             path: '/portal/sdm/alumni/lulusan',
             label: 'Daftar Lulusan',
             icon: <GraduationCap className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.SDM_ALUMNI_VIEW,
           },
           {
             href: '/portal/sdm/alumni/tracer',
             path: '/portal/sdm/alumni/tracer',
             label: 'Tracer Study',
             icon: <FileText className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.SDM_ALUMNI_VIEW,
           },
         ],
       },
@@ -863,10 +952,55 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
       : [user.primaryRole]
     : [];
 
+  function matchesTeacherDuty(req?: TeacherDutyRequirement): boolean {
+    if (!req) return false;
+    const ta = user?.teacherAssignments;
+    if (!ta) return false;
+    switch (req) {
+      case 'PICKET':
+        return ta.isPicketTeacher;
+      case 'EXAM_SUPERVISOR':
+        return ta.isExamSupervisor;
+      case 'EXAM_COMMITTEE':
+        return ta.isExamCommittee;
+      case 'PICKET_OR_COMMITTEE':
+        return ta.isPicketTeacher || ta.isExamCommittee;
+      case 'SUPERVISOR_OR_COMMITTEE':
+        return ta.isExamSupervisor || ta.isExamCommittee;
+      default:
+        return false;
+    }
+  }
+
   function hasRoleAccess(item: NavItem): boolean {
     if (!authLoaded || userRoles.length === 0) return false;
-    if (!item.allowedRoles) return true;
-    return hasRolePermission(userRoles, item.allowedRoles);
+    if (!item.allowedRoles && !item.requireTeacherDuty) return true;
+    if (item.allowedRoles && hasRolePermission(userRoles, item.allowedRoles)) {
+      return true;
+    }
+    if (item.requireTeacherDuty && matchesTeacherDuty(item.requireTeacherDuty)) {
+      return true;
+    }
+    return false;
+  }
+
+  function canAccessCurrentView(targetPath: string): boolean {
+    if (!canAccessPortalPath(targetPath, userRoles)) return false;
+    for (const grp of ACCORDION_GROUPS) {
+      for (const it of grp.items) {
+        if (it.path === targetPath) {
+          return hasRoleAccess(it);
+        }
+        if (it.children) {
+          for (const ch of it.children) {
+            if (ch.path === targetPath) {
+              return hasRoleAccess(it) && hasRoleAccess(ch);
+            }
+          }
+        }
+      }
+    }
+    return true;
   }
 
   function isItemActive(item: NavItem): boolean {
@@ -1136,7 +1270,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
 
         {/* Page Content */}
         <main className="flex-1 p-4 sm:p-6">
-          {authLoaded && !canAccessPortalPath(normalizedPath, userRoles) ? (
+          {authLoaded && !canAccessCurrentView(normalizedPath) ? (
             <div className="max-w-xl mx-auto glass-card rounded-3xl p-8 text-center space-y-4 mt-8">
               <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto">
                 <ShieldAlert className="w-6 h-6" />

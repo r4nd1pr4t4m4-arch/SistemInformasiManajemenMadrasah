@@ -62,6 +62,40 @@ export async function GET() {
       .limit(100),
   ]);
 
+  const isGlobalGwViewer = hasAnyRole(guard.session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+  ]);
+  const ta = guard.session.teacherAssignments;
+
+  if (!isGlobalGwViewer && ta) {
+    let homeroomStudentIds = new Set<string>();
+    if (ta.homeroomClassroomIds && ta.homeroomClassroomIds.length > 0) {
+      const { data: enrolls } = await supabase
+        .from('student_enrollments')
+        .select('student_id')
+        .in('classroom_id', ta.homeroomClassroomIds);
+      homeroomStudentIds = new Set(
+        (enrolls || []).map((e) => e.student_id as string).filter(Boolean)
+      );
+    }
+
+    const scopedAssignments = (assignments || []).filter(
+      (a) => a.teacher_id === ta.teacherId || homeroomStudentIds.has(a.student_id)
+    );
+    const allowedAssignIds = new Set(scopedAssignments.map((a) => a.id as string));
+    const scopedLogs = (logs || []).filter((l) => allowedAssignIds.has(l.assignment_id));
+
+    return NextResponse.json({
+      assignments: scopedAssignments,
+      logs: scopedLogs,
+    });
+  }
+
   return NextResponse.json({
     assignments: assignments || [],
     logs: logs || [],
@@ -118,6 +152,22 @@ export async function POST(request: Request) {
       const parsed = LogSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data bimbingan Guru Wali tidak valid.' }, { status: 400 });
+      }
+
+      const isAdminActor = hasAnyRole(guard.session, ['SUPERADMIN', 'OPERATOR', 'WAKA_KESISWAAN']);
+      const myTeacherId = guard.session.teacherAssignments?.teacherId;
+      if (!isAdminActor && myTeacherId) {
+        const { data: assignRow } = await supabase
+          .from('guru_wali_assignments')
+          .select('teacher_id')
+          .eq('id', parsed.data.assignment_id)
+          .maybeSingle();
+        if (!assignRow || assignRow.teacher_id !== myTeacherId) {
+          return NextResponse.json(
+            { error: 'Anda hanya dapat mencatat bimbingan untuk siswa binaan Anda sendiri.' },
+            { status: 403 }
+          );
+        }
       }
       const { action: _, ...payload } = parsed.data;
       const { data, error } = await supabase

@@ -127,6 +127,19 @@ export async function GET(request: NextRequest) {
   }
 
   const scope = request.nextUrl.searchParams.get('scope') || 'gtk';
+  const scopeRoleMap: Record<string, typeof PERMISSIONS.SDM_VIEW> = {
+    gtk: PERMISSIONS.SDM_GTK_VIEW,
+    siswa: PERMISSIONS.SDM_SISWA_VIEW,
+    'orang-tua': PERMISSIONS.SDM_ORTU_VIEW,
+    alumni: PERMISSIONS.SDM_ALUMNI_VIEW,
+  };
+  const requiredScopeRoles = scopeRoleMap[scope];
+  if (requiredScopeRoles && !hasAnyRole(guard.session, requiredScopeRoles)) {
+    return NextResponse.json(
+      { error: 'Peran atau tugas tambahan Anda tidak memiliki akses untuk cakupan data SDM ini.' },
+      { status: 403 }
+    );
+  }
   const supabase = createSupabaseAdminClient();
 
   if (scope === 'gtk') {

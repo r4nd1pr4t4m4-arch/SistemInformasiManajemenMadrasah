@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
+  CreditCard,
   ExternalLink,
   FileCheck2,
   FileText,
@@ -14,6 +15,8 @@ import {
 } from 'lucide-react';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { DigitalStudentCard } from '@/components/portal/cards/digital-card-viewer';
+import type { StudentCardData } from '@/lib/cards/card-png-renderer';
 
 type DocumentType =
   | 'KK'
@@ -124,6 +127,7 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
   const [studentsList, setStudentsList] = useState<StudentRef[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [studentId, setStudentId] = useState<string | null>(null);
+  const [studentRecord, setStudentRecord] = useState<StudentCardData | null>(null);
   const [biodata, setBiodata] = useState(EMPTY_BIODATA);
   const [documents, setDocuments] = useState<StudentDocument[]>([]);
   const [docNumbers, setDocNumbers] = useState<Record<string, string>>({});
@@ -143,6 +147,7 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
       const s = data.student;
       if (s) {
         setStudentId(s.id);
+        setStudentRecord(s);
         setSelectedStudentId(s.id);
         setBiodata({
           full_name: s.full_name || '',
@@ -187,6 +192,7 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
         });
       } else {
         setStudentId(null);
+        setStudentRecord(null);
         setBiodata({
           ...EMPTY_BIODATA,
           full_name: data.profile?.full_name || '',
@@ -398,6 +404,7 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
       </div>
 
       {tab === 'biodata' ? (
+        <div className="space-y-6">
         <form onSubmit={handleSaveBiodata} className="space-y-6">
           <fieldset disabled={!canManage} className="space-y-6">
           <div className="glass-card rounded-3xl p-6 space-y-4">
@@ -778,6 +785,22 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
             </div>
           )}
         </form>
+        {studentRecord && (
+          <div className="glass-card rounded-3xl p-6 space-y-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-emerald-700" /> Kartu Pelajar Digital Resmi
+              </h2>
+              <p className="text-xs text-slate-500">
+                Pratinjau sisi depan &amp; belakang kartu pelajar Anda, siap diunduh sebagai file PNG.
+              </p>
+            </div>
+            <div className="max-w-xl">
+              <DigitalStudentCard student={studentRecord} />
+            </div>
+          </div>
+        )}
+        </div>
       ) : (
         <div className="space-y-6">
           {!studentId && (

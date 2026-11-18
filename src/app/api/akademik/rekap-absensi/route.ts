@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { hasAnyRole } from '@/lib/auth/session';
 import { getWibTodayDateString } from '@/lib/domain/jtm-late-penalty';
 
 function firstOfMonthWib(): string {
@@ -9,10 +10,7 @@ function firstOfMonthWib(): string {
 }
 
 export async function GET(request: NextRequest) {
-  const guard = await requireApiRoles([
-    ...ROLE_GROUPS.AKADEMIK,
-    'GURU_BK',
-  ]);
+  const guard = await requireApiRoles(PERMISSIONS.REKAP_ABSENSI_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -65,6 +63,23 @@ export async function GET(request: NextRequest) {
     supabase.from('teachers_staff').select('id, full_name, nip').eq('is_active', true).order('full_name'),
   ]);
 
+  const isGlobalRecapViewer = hasAnyRole(guard.session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+    'GURU_BK',
+  ]);
+  const ta = guard.session.teacherAssignments;
+  const myTeacherId = ta?.teacherId || null;
+  const homeroomSet = new Set(ta?.homeroomClassroomIds || []);
+  const taughtClassSet = new Set(ta?.taughtClassroomIds || []);
+  const taughtSubjectSet = new Set(ta?.taughtSubjectIds || []);
+  const guruWaliStudentSet = new Set(ta?.guruWaliStudentIds || []);
+
   // 1. Rekap Absensi Guru
   const leaveMap = new Map<string, number>();
   for (const sl of shortLeaves || []) {
@@ -90,6 +105,7 @@ export async function GET(request: NextRequest) {
   >();
 
   for (const row of teacherAtts || []) {
+    if (!isGlobalRecapViewer && myTeacherId && row.teacher_id !== myTeacherId) continue;
     if (teacherId && row.teacher_id !== teacherId) continue;
     const tObj = Array.isArray(row.teacher) ? row.teacher[0] : row.teacher;
     if (!teacherMap.has(row.teacher_id)) {
@@ -184,6 +200,14 @@ export async function GET(request: NextRequest) {
     const clsObj = Array.isArray(row.classroom) ? row.classroom[0] : row.classroom;
 
     if (!row.schedule_id) {
+      if (
+        !isGlobalRecapViewer &&
+        !ta?.isPicketTeacher &&
+        !homeroomSet.has(row.classroom_id) &&
+        !guruWaliStudentSet.has(row.student_id)
+      ) {
+        continue;
+      }
       const key = `${row.student_id}::${row.classroom_id}`;
       if (!dailyMap.has(key)) {
         dailyMap.set(key, {
@@ -219,6 +243,14 @@ export async function GET(request: NextRequest) {
 
       const rowSubjectId = schObj?.subject_id || subObj?.id || 'UNKNOWN';
       const rowTeacherId = schObj?.teacher_id || tchrObj?.id || 'UNKNOWN';
+      if (
+        !isGlobalRecapViewer &&
+        myTeacherId &&
+        rowTeacherId !== myTeacherId &&
+        !homeroomSet.has(row.classroom_id)
+      ) {
+        continue;
+      }
       if (subjectId && rowSubjectId !== subjectId) continue;
       if (teacherId && rowTeacherId !== teacherId) continue;
 
@@ -276,6 +308,21 @@ export async function GET(request: NextRequest) {
         a.full_name.localeCompare(b.full_name)
     );
 
+  const allowedFilterClassIds = new Set([...homeroomSet, ...taughtClassSet]);
+  const scopedFilterClassrooms =
+    isGlobalRecapViewer || ta?.isPicketTeacher
+      ? classrooms || []
+      : (classrooms || []).filter((c) => allowedFilterClassIds.has(c.id));
+
+  const scopedFilterSubjects = isGlobalRecapViewer
+    ? subjects || []
+    : (subjects || []).filter((s) => taughtSubjectSet.has(s.id) || homeroomSet.size > 0);
+
+  const scopedFilterTeachers =
+    !isGlobalRecapViewer && myTeacherId
+      ? (teachers || []).filter((t) => t.id === myTeacherId)
+      : teachers || [];
+
   return NextResponse.json({
     startDate,
     endDate,
@@ -283,9 +330,9 @@ export async function GET(request: NextRequest) {
     dailyStudentRecap,
     subjectStudentRecap,
     filters: {
-      classrooms: classrooms || [],
-      subjects: subjects || [],
-      teachers: teachers || [],
+      classrooms: scopedFilterClassrooms,
+      subjects: scopedFilterSubjects,
+      teachers: scopedFilterTeachers,
     },
   });
 }

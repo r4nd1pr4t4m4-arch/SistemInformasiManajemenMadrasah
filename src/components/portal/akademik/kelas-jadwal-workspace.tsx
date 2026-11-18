@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BookOpen, BookOpenCheck, CheckCircle2, Loader2, Users } from 'lucide-react';
+import { BookOpen, BookOpenCheck, CheckCircle2, Loader2, Pencil, Users, X } from 'lucide-react';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 
@@ -16,6 +16,9 @@ interface ClassroomRow {
   id: string;
   name: string;
   grade_level: string;
+  homeroom_teacher_id?: string | null;
+  room_location?: string | null;
+  homeroom_teacher?: { id: string; full_name: string } | null;
 }
 
 interface SubjectRow {
@@ -47,6 +50,7 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
 
+  const [editingClassroomId, setEditingClassroomId] = useState<string | null>(null);
   const [classForm, setClassForm] = useState({
     name: '',
     grade_level: 'X',
@@ -125,75 +129,152 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
 
       {section === 'rombel' && (
         <div className="glass-card rounded-3xl p-6 space-y-4">
-          <h1 className="text-base font-bold text-slate-900 flex items-center gap-2">
-            <Users className="w-4 h-4 text-emerald-700" /> Rombel &amp; Wali Kelas ({classrooms.length})
-          </h1>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h1 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Users className="w-4 h-4 text-emerald-700" /> Rombel &amp; Wali Kelas ({classrooms.length})
+            </h1>
+            {editingClassroomId && canManage && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold">
+                <Pencil className="w-3 h-3" /> Mode Edit Rombel &amp; Wali Kelas
+              </span>
+            )}
+          </div>
+
           {canManage && (
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const ok = await postAction(
-                {
-                  action: 'CREATE_CLASSROOM',
-                  name: classForm.name,
-                  grade_level: classForm.grade_level,
-                  homeroom_teacher_id: classForm.homeroom_teacher_id || null,
-                },
-                'Rombongan belajar berhasil dibuat.'
-              );
-              if (ok) setClassForm({ name: '', grade_level: 'X', homeroom_teacher_id: '' });
-            }}
-            className="grid sm:grid-cols-4 gap-2.5"
-          >
-            <input
-              required
-              placeholder="Nama Rombel (cth: X-A)"
-              value={classForm.name}
-              onChange={(e) => setClassForm({ ...classForm, name: e.target.value })}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-            />
-            <input
-              required
-              placeholder="Tingkat (X/XI/XII)"
-              value={classForm.grade_level}
-              onChange={(e) => setClassForm({ ...classForm, grade_level: e.target.value })}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-            />
-            <select
-              value={classForm.homeroom_teacher_id}
-              onChange={(e) =>
-                setClassForm({ ...classForm, homeroom_teacher_id: e.target.value })
-              }
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (editingClassroomId) {
+                  const ok = await postAction(
+                    {
+                      action: 'UPDATE_CLASSROOM',
+                      id: editingClassroomId,
+                      name: classForm.name,
+                      grade_level: classForm.grade_level,
+                      homeroom_teacher_id: classForm.homeroom_teacher_id || null,
+                    },
+                    'Data rombel & wali kelas berhasil diperbarui.'
+                  );
+                  if (ok) {
+                    setEditingClassroomId(null);
+                    setClassForm({ name: '', grade_level: 'X', homeroom_teacher_id: '' });
+                  }
+                } else {
+                  const ok = await postAction(
+                    {
+                      action: 'CREATE_CLASSROOM',
+                      name: classForm.name,
+                      grade_level: classForm.grade_level,
+                      homeroom_teacher_id: classForm.homeroom_teacher_id || null,
+                    },
+                    'Rombongan belajar berhasil dibuat.'
+                  );
+                  if (ok) setClassForm({ name: '', grade_level: 'X', homeroom_teacher_id: '' });
+                }
+              }}
+              className="grid sm:grid-cols-4 gap-2.5"
             >
-              <option value="">-- Pilih Wali Kelas --</option>
-              {teachers.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.full_name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-xl text-xs"
-            >
-              Tambah Rombel
-            </button>
-          </form>
+              <input
+                required
+                placeholder="Nama Rombel (cth: X-A)"
+                value={classForm.name}
+                onChange={(e) => setClassForm({ ...classForm, name: e.target.value })}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              />
+              <input
+                required
+                placeholder="Tingkat (X/XI/XII)"
+                value={classForm.grade_level}
+                onChange={(e) => setClassForm({ ...classForm, grade_level: e.target.value })}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              />
+              <select
+                value={classForm.homeroom_teacher_id}
+                onChange={(e) =>
+                  setClassForm({ ...classForm, homeroom_teacher_id: e.target.value })
+                }
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              >
+                <option value="">-- Pilih Wali Kelas (Tanpa Wali Kelas) --</option>
+                {teachers.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.full_name}
+                  </option>
+                ))}
+              </select>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-xl text-xs transition"
+                >
+                  {editingClassroomId ? 'Simpan Perubahan' : 'Tambah Rombel'}
+                </button>
+                {editingClassroomId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingClassroomId(null);
+                      setClassForm({ name: '', grade_level: 'X', homeroom_teacher_id: '' });
+                    }}
+                    className="inline-flex items-center justify-center px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                    title="Batal Edit"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </form>
           )}
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-2">
-            {classrooms.map((c) => (
-              <div
-                key={c.id}
-                className="modular-card rounded-xl p-3 flex items-center justify-between text-xs"
-              >
-                <span className="font-bold text-slate-900">{c.name}</span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
-                  Tingkat {c.grade_level}
-                </span>
-              </div>
-            ))}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+            {classrooms.map((c) => {
+              const isEditingThis = editingClassroomId === c.id;
+              return (
+                <div
+                  key={c.id}
+                  className={`modular-card rounded-2xl p-4 flex flex-col justify-between gap-2.5 text-xs border transition ${
+                    isEditingThis
+                      ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/30'
+                      : 'border-slate-200/80'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-bold text-slate-900 text-sm">{c.name}</p>
+                      <p className="text-[11px] text-slate-600 mt-0.5">
+                        Wali Kelas:{' '}
+                        <strong className="text-slate-800">
+                          {c.homeroom_teacher?.full_name || 'Belum ditetapkan'}
+                        </strong>
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold shrink-0">
+                      Tingkat {c.grade_level}
+                    </span>
+                  </div>
+
+                  {canManage && (
+                    <div className="pt-2 border-t border-slate-100 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingClassroomId(c.id);
+                          setClassForm({
+                            name: c.name,
+                            grade_level: c.grade_level,
+                            homeroom_teacher_id:
+                              c.homeroom_teacher_id || c.homeroom_teacher?.id || '',
+                          });
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 font-semibold text-[11px] transition"
+                      >
+                        <Pencil className="w-3 h-3" /> Edit Rombel / Wali Kelas
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

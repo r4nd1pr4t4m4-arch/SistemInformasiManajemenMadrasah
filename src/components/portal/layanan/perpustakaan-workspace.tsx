@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { CheckCircle2, CreditCard, Loader2 } from 'lucide-react';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { DigitalLibraryCard } from '@/components/portal/cards/digital-card-viewer';
 
 interface BookRow {
   id: string;
@@ -19,6 +20,11 @@ interface MemberRow {
   member_code: string;
   member_type: string;
   full_name: string;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  status?: string | null;
+  joined_at?: string | null;
   is_auto_registered: boolean;
 }
 
@@ -31,6 +37,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
   const [toast, setToast] = useState<string | null>(null);
   const [books, setBooks] = useState<BookRow[]>([]);
   const [members, setMembers] = useState<MemberRow[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState('');
 
   const [bookForm, setBookForm] = useState({
     title: '',
@@ -89,6 +96,8 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
     );
   }
 
+  const selectedMember = members.find((m) => m.id === selectedMemberId) || members[0] || null;
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {toast && (
@@ -99,7 +108,8 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
       )}
 
       {section === 'katalog' && (
-        <div className="grid lg:grid-cols-12 gap-6">
+        <div className="space-y-6">
+          <div className="grid lg:grid-cols-12 gap-6">
           {canManage && (
             <div className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-3 h-fit">
               <h1 className="text-sm font-bold text-slate-900">Tambah Koleksi Buku / E-Book</h1>
@@ -196,10 +206,30 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
               ))}
             </div>
           </div>
+          </div>
+
+          {selectedMember && (
+            <div className="glass-card rounded-3xl p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-sky-700" /> Kartu Anggota E-Library Saya
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Pratinjau sisi depan &amp; belakang kartu anggota perpustakaan Anda, siap diunduh sebagai file PNG.
+                  </p>
+                </div>
+              </div>
+              <div className="max-w-xl">
+                <DigitalLibraryCard member={selectedMember} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {section === 'anggota' && (
+        <div className="space-y-6">
         <div className="grid lg:grid-cols-12 gap-6">
           {canManage && (
             <div className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-3 h-fit">
@@ -255,22 +285,61 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
               Kartu Anggota Perpustakaan ({members.length})
             </h2>
             <div className="space-y-2 max-h-[28rem] overflow-y-auto">
-              {members.map((m) => (
-                <div
-                  key={m.id}
-                  className="modular-card rounded-xl p-3 flex items-center justify-between text-xs"
-                >
-                  <div>
-                    <p className="font-bold text-slate-900">{m.full_name}</p>
-                    <p className="font-mono text-[11px] text-emerald-700">{m.member_code}</p>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-semibold">
-                    {m.member_type} {m.is_auto_registered ? '(Otomatis)' : ''}
-                  </span>
-                </div>
-              ))}
+              {members.map((m) => {
+                const isSelected = selectedMember?.id === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setSelectedMemberId(m.id)}
+                    className={`w-full text-left modular-card rounded-xl p-3 flex items-center justify-between text-xs transition border ${
+                      isSelected
+                        ? 'border-sky-500 bg-sky-50/70 ring-1 ring-sky-300'
+                        : 'border-transparent hover:border-slate-200'
+                    }`}
+                  >
+                    <div>
+                      <p className="font-bold text-slate-900">{m.full_name}</p>
+                      <p className="font-mono text-[11px] text-emerald-700">{m.member_code}</p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-semibold">
+                      {m.member_type} {m.is_auto_registered ? '(Otomatis)' : ''}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
+        </div>
+
+        {selectedMember && (
+          <div className="glass-card rounded-3xl p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-sky-700" /> Pratinjau &amp; Unduh Kartu Perpustakaan (PNG)
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Klik salah satu anggota di atas untuk menampilkan kartu depan &amp; belakangnya.
+                </p>
+              </div>
+              <select
+                value={selectedMember.id}
+                onChange={(e) => setSelectedMemberId(e.target.value)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium"
+              >
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.full_name} ({m.member_code})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="max-w-xl">
+              <DigitalLibraryCard member={selectedMember} />
+            </div>
+          </div>
+        )}
         </div>
       )}
     </div>

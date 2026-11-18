@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { hasAnyRole } from '@/lib/auth/session';
 
 async function getOrCreateActiveAcademicYear(
   supabase: ReturnType<typeof createSupabaseAdminClient>
@@ -33,6 +34,15 @@ async function getOrCreateActiveAcademicYear(
 
 const ClassroomSchema = z.object({
   action: z.literal('CREATE_CLASSROOM'),
+  name: z.string().min(1),
+  grade_level: z.string().min(1),
+  homeroom_teacher_id: z.string().uuid().optional().nullable(),
+  room_location: z.string().optional().nullable(),
+});
+
+const UpdateClassroomSchema = z.object({
+  action: z.literal('UPDATE_CLASSROOM'),
+  id: z.string().uuid(),
   name: z.string().min(1),
   grade_level: z.string().min(1),
   homeroom_teacher_id: z.string().uuid().optional().nullable(),
@@ -113,6 +123,47 @@ export async function GET() {
       .select('*, student:students(full_name, nisn), classroom:classrooms(name)'),
   ]);
 
+  const isGlobalViewer = hasAnyRole(guard.session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+  ]);
+  const ta = guard.session.teacherAssignments;
+
+  if (!isGlobalViewer && ta && !ta.isPicketTeacher) {
+    const allowedClassIds = new Set([
+      ...(ta.homeroomClassroomIds || []),
+      ...(ta.taughtClassroomIds || []),
+    ]);
+    const homeroomSet = new Set(ta.homeroomClassroomIds || []);
+
+    const scopedSchedules = (schedules || []).filter(
+      (s) => s.teacher_id === ta.teacherId || homeroomSet.has(s.classroom_id)
+    );
+    const allowedSubjectIds = new Set([
+      ...(ta.taughtSubjectIds || []),
+      ...scopedSchedules.map((s) => s.subject_id as string).filter(Boolean),
+    ]);
+    const scopedClassrooms = (classrooms || []).filter((c) => allowedClassIds.has(c.id));
+    const scopedSubjects = (subjects || []).filter((sub) => allowedSubjectIds.has(sub.id));
+    const scopedPickets = (pickets || []).filter((p) => p.teacher_id === ta.teacherId);
+    const scopedEnrollments = (enrollments || []).filter((e) =>
+      allowedClassIds.has(e.classroom_id)
+    );
+
+    return NextResponse.json({
+      classrooms: scopedClassrooms,
+      subjects: scopedSubjects,
+      schedules: scopedSchedules,
+      pickets: scopedPickets,
+      enrollments: scopedEnrollments,
+    });
+  }
+
   return NextResponse.json({
     classrooms: classrooms || [],
     subjects: subjects || [],
@@ -150,6 +201,26 @@ export async function POST(request: Request) {
           room_location: parsed.data.room_location || null,
         })
         .select('*')
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ classroom: data });
+    }
+
+    if (body.action === 'UPDATE_CLASSROOM') {
+      const parsed = UpdateClassroomSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Data pembaruan rombel tidak valid.' }, { status: 400 });
+      }
+      const { data, error } = await supabase
+        .from('classrooms')
+        .update({
+          name: parsed.data.name.trim(),
+          grade_level: parsed.data.grade_level.trim(),
+          homeroom_teacher_id: parsed.data.homeroom_teacher_id || null,
+          room_location: parsed.data.room_location || null,
+        })
+        .eq('id', parsed.data.id)
+        .select('*, homeroom_teacher:teachers_staff(id, full_name)')
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ classroom: data });

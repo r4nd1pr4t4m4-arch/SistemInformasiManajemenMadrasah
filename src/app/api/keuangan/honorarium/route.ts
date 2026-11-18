@@ -6,6 +6,7 @@ import {
   calculateTeacherHonorarium,
 } from '@/lib/domain/honorarium';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { mapDutyCodeToRole } from '@/lib/auth/rbac';
 
 const UpdateRateSchema = z.object({
   action: z.literal('UPDATE_RATE'),
@@ -325,6 +326,34 @@ export async function POST(request: Request) {
         .select('*')
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+      // Sinkronkan peran otomatis ke user_roles jika guru sudah tertaut ke akun (profile_id)
+      const [{ data: teacherRow }, { data: dutyTypeRow }] = await Promise.all([
+        supabase
+          .from('teachers_staff')
+          .select('profile_id')
+          .eq('id', parsed.data.teacher_id)
+          .maybeSingle(),
+        supabase
+          .from('additional_duty_types')
+          .select('code, name')
+          .eq('id', parsed.data.duty_type_id)
+          .maybeSingle(),
+      ]);
+
+      if (teacherRow?.profile_id && dutyTypeRow) {
+        const mappedRole =
+          mapDutyCodeToRole(dutyTypeRow.code) || mapDutyCodeToRole(dutyTypeRow.name);
+        if (mappedRole) {
+          await supabase
+            .from('user_roles')
+            .upsert(
+              { user_id: teacherRow.profile_id, role: mappedRole },
+              { onConflict: 'user_id,role' }
+            );
+        }
+      }
+
       return NextResponse.json({ assignment: data });
     }
 

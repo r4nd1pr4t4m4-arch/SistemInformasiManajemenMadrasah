@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { canAccessPortalPath } from '@/lib/auth/rbac';
+import { canAccessPortalPath, mapDutyCodeToRole } from '@/lib/auth/rbac';
 import type { AppRole } from '@/types/database';
 
 export async function middleware(request: NextRequest) {
@@ -104,10 +104,10 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    const { data: extraRoles } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id);
+    const [{ data: extraRoles }, { data: teacherRow }] = await Promise.all([
+      supabase.from('user_roles').select('role').eq('user_id', user.id),
+      supabase.from('teachers_staff').select('id').eq('profile_id', user.id).maybeSingle(),
+    ]);
 
     const primaryRole =
       ((fallbackProfile as { primary_role?: AppRole } | null)?.primary_role as AppRole) || 'UMUM';
@@ -115,6 +115,34 @@ export async function middleware(request: NextRequest) {
     for (const r of extraRoles || []) {
       if (r.role) roleSet.add(r.role as AppRole);
     }
+
+    if (teacherRow?.id) {
+      const [{ data: dutyRows }, { data: homeroomRows }, { data: guruWaliRows }] =
+        await Promise.all([
+          supabase
+            .from('teacher_additional_duties')
+            .select('duty_type:additional_duty_types(code, name)')
+            .eq('teacher_id', teacherRow.id)
+            .eq('is_active', true),
+          supabase.from('classrooms').select('id').eq('homeroom_teacher_id', teacherRow.id).limit(1),
+          supabase
+            .from('guru_wali_assignments')
+            .select('id')
+            .eq('teacher_id', teacherRow.id)
+            .limit(1),
+        ]);
+
+      for (const d of dutyRows || []) {
+        const dt = Array.isArray(d.duty_type) ? d.duty_type[0] : d.duty_type;
+        const mapped =
+          mapDutyCodeToRole(dt?.code as string | null) ||
+          mapDutyCodeToRole(dt?.name as string | null);
+        if (mapped) roleSet.add(mapped);
+      }
+      if ((homeroomRows || []).length > 0) roleSet.add('WALI_KELAS');
+      if ((guruWaliRows || []).length > 0) roleSet.add('GURU_WALI');
+    }
+
     const userRoles = Array.from(roleSet);
 
     if (!canAccessPortalPath(request.nextUrl.pathname, userRoles)) {

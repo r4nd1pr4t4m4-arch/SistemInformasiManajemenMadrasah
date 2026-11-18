@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 
 const AddBookSchema = z.object({
   action: z.literal('ADD_BOOK'),
@@ -40,7 +41,7 @@ export async function GET() {
     return NextResponse.json({ books: [], members: [], loans: [] });
   }
 
-  const supabase = createSupabaseAdminClient();
+  const [session, supabase] = [await getCurrentUserWithRoles(), createSupabaseAdminClient()];
   const [{ data: books }, { data: members }, { data: loans }] = await Promise.all([
     supabase.from('library_books').select('*').order('title'),
     supabase.from('library_members').select('*').order('joined_at', { ascending: false }).limit(100),
@@ -50,6 +51,42 @@ export async function GET() {
       .order('created_at', { ascending: false })
       .limit(100),
   ]);
+
+  if (!session) {
+    return NextResponse.json({
+      books: books || [],
+      members: [],
+      loans: [],
+    });
+  }
+
+  const canViewAllMembers = hasAnyRole(session, PERMISSIONS.PERPUSTAKAAN_ANGGOTA_VIEW);
+  if (!canViewAllMembers) {
+    const myTeacherId = session.teacherAssignments?.teacherId || null;
+    const { data: myStudent } = session.roles.includes('SISWA')
+      ? await supabase
+          .from('students')
+          .select('id')
+          .eq('profile_id', session.userId)
+          .maybeSingle()
+      : { data: null };
+
+    const myMembers = (members || []).filter(
+      (m) =>
+        m.profile_id === session.userId ||
+        (myTeacherId && m.teacher_id === myTeacherId) ||
+        (myStudent?.id && m.student_id === myStudent.id) ||
+        (session.email && m.email && m.email.toLowerCase() === session.email.toLowerCase())
+    );
+    const myMemberIds = new Set(myMembers.map((m) => m.id));
+    const myLoans = (loans || []).filter((l) => myMemberIds.has(l.member_id));
+
+    return NextResponse.json({
+      books: books || [],
+      members: myMembers,
+      loans: myLoans,
+    });
+  }
 
   return NextResponse.json({
     books: books || [],

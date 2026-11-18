@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import type { AuthenticatedSession } from '@/lib/auth/session';
 import type { AppRole } from '@/types/database';
 
 const STAFF_ROLES: AppRole[] = [
@@ -12,6 +13,38 @@ const STAFF_ROLES: AppRole[] = [
   'STAF_TU',
   'WAKA_KESISWAAN',
 ];
+
+async function getAllowedStudentIdsForScopedRole(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  session: AuthenticatedSession
+): Promise<string[] | null> {
+  if (session.roles.some((r) => STAFF_ROLES.includes(r))) {
+    return null; // full access
+  }
+
+  const allowedIds = new Set<string>();
+  const ta = session.teacherAssignments;
+  if (ta?.guruWaliStudentIds?.length) {
+    ta.guruWaliStudentIds.forEach((id) => allowedIds.add(id));
+  }
+  if (ta?.homeroomClassroomIds?.length) {
+    const { data: homeroomEnr } = await supabase
+      .from('student_enrollments')
+      .select('student_id')
+      .in('classroom_id', ta.homeroomClassroomIds);
+    (homeroomEnr || []).forEach((r) => allowedIds.add(r.student_id));
+  }
+  if (session.roles.includes('ORANG_TUA')) {
+    const { data: guardRows } = await supabase
+      .from('student_guardians')
+      .select('student_id')
+      .eq('profile_id', session.userId)
+      .eq('is_active', true);
+    (guardRows || []).forEach((g) => allowedIds.add(g.student_id));
+  }
+
+  return allowedIds.size > 0 ? Array.from(allowedIds) : [];
+}
 
 const DOCUMENT_TYPES = [
   'KK',
@@ -93,12 +126,10 @@ function emptyToNull<T extends Record<string, unknown>>(obj: T): T {
 
 async function resolveTargetStudent(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
-  userId: string,
-  userEmail: string | null,
-  roles: AppRole[],
+  session: AuthenticatedSession,
   requestedStudentId?: string | null
 ) {
-  const isStaff = roles.some((r) => STAFF_ROLES.includes(r));
+  const isStaff = session.roles.some((r) => STAFF_ROLES.includes(r));
 
   if (requestedStudentId && isStaff) {
     const { data } = await supabase
@@ -109,26 +140,40 @@ async function resolveTargetStudent(
     return data;
   }
 
+  const scopedStudentIds = await getAllowedStudentIdsForScopedRole(supabase, session);
+  if (scopedStudentIds && scopedStudentIds.length > 0) {
+    const targetId =
+      requestedStudentId && scopedStudentIds.includes(requestedStudentId)
+        ? requestedStudentId
+        : scopedStudentIds[0];
+    const { data } = await supabase
+      .from('students')
+      .select('*')
+      .eq('id', targetId)
+      .maybeSingle();
+    if (data) return data;
+  }
+
   const { data: byProfile } = await supabase
     .from('students')
     .select('*')
-    .eq('profile_id', userId)
+    .eq('profile_id', session.userId)
     .maybeSingle();
   if (byProfile) return byProfile;
 
-  if (userEmail) {
+  if (session.email) {
     const { data: byEmail } = await supabase
       .from('students')
       .select('*')
-      .ilike('email', userEmail)
+      .ilike('email', session.email)
       .is('profile_id', null)
       .maybeSingle();
     if (byEmail) {
       await supabase
         .from('students')
-        .update({ profile_id: userId, updated_at: new Date().toISOString() })
+        .update({ profile_id: session.userId, updated_at: new Date().toISOString() })
         .eq('id', byEmail.id);
-      return { ...byEmail, profile_id: userId };
+      return { ...byEmail, profile_id: session.userId };
     }
   }
 
@@ -147,14 +192,9 @@ export async function GET(request: NextRequest) {
   const requestedStudentId = request.nextUrl.searchParams.get('studentId');
   const session = guard.session;
   const isStaff = session.roles.some((r) => STAFF_ROLES.includes(r));
+  const scopedStudentIds = await getAllowedStudentIdsForScopedRole(supabase, session);
 
-  const student = await resolveTargetStudent(
-    supabase,
-    session.userId,
-    session.email,
-    session.roles,
-    requestedStudentId
-  );
+  const student = await resolveTargetStudent(supabase, session, requestedStudentId);
 
   let documents: unknown[] = [];
   if (student) {
@@ -173,12 +213,19 @@ export async function GET(request: NextRequest) {
       .select('id, full_name, nis, nisn, status')
       .order('full_name', { ascending: true });
     studentsList = list || [];
+  } else if (scopedStudentIds && scopedStudentIds.length > 0) {
+    const { data: list } = await supabase
+      .from('students')
+      .select('id, full_name, nis, nisn, status')
+      .in('id', scopedStudentIds)
+      .order('full_name', { ascending: true });
+    studentsList = list || [];
   }
 
   return NextResponse.json({
     student,
     documents,
-    isStaff,
+    isStaff: isStaff || Boolean(scopedStudentIds && scopedStudentIds.length > 0),
     studentsList,
     profile: {
       id: session.userId,
@@ -209,13 +256,7 @@ export async function PATCH(request: NextRequest) {
     const { student_id, ...fields } = parsed.data;
     const supabase = createSupabaseAdminClient();
     const session = guard.session;
-    const existing = await resolveTargetStudent(
-      supabase,
-      session.userId,
-      session.email,
-      session.roles,
-      student_id
-    );
+    const existing = await resolveTargetStudent(supabase, session, student_id);
 
     if (existing) {
       const { data, error } = await supabase
@@ -269,13 +310,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = createSupabaseAdminClient();
     const session = guard.session;
-    const student = await resolveTargetStudent(
-      supabase,
-      session.userId,
-      session.email,
-      session.roles,
-      parsed.data.student_id
-    );
+    const student = await resolveTargetStudent(supabase, session, parsed.data.student_id);
 
     if (!student) {
       return NextResponse.json(
@@ -349,12 +384,7 @@ export async function DELETE(request: NextRequest) {
   const isStaff = session.roles.some((r) => STAFF_ROLES.includes(r));
 
   if (!isStaff) {
-    const student = await resolveTargetStudent(
-      supabase,
-      session.userId,
-      session.email,
-      session.roles
-    );
+    const student = await resolveTargetStudent(supabase, session);
     if (!student) {
       return NextResponse.json({ error: 'Data siswa tidak ditemukan.' }, { status: 404 });
     }

@@ -205,22 +205,92 @@ export async function GET() {
     supabase.from('institution_settings').select('geofence_enabled').limit(1).maybeSingle(),
   ]);
 
+  const canManageCommittees = hasAnyRole(guard.session, PERMISSIONS.ADMIN_CONFIRM);
+  const isGlobalExamViewer = hasAnyRole(guard.session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+  ]);
+  const ta = guard.session.teacherAssignments;
+  const isFullExamActor = isGlobalExamViewer || Boolean(ta?.isExamCommittee);
+
+  const scopedSupervisors =
+    !isFullExamActor && ta?.teacherId
+      ? (supervisors || []).filter(
+          (s) => s.teacher_id === ta.teacherId || s.original_teacher_id === ta.teacherId
+        )
+      : supervisors || [];
+
+  const scopedCommittees =
+    !isFullExamActor && ta?.teacherId
+      ? (committees || []).filter(
+          (c) => c.teacher_id === ta.teacherId || c.original_teacher_id === ta.teacherId
+        )
+      : committees || [];
+
+  const scopedBapReports =
+    !isFullExamActor && ta?.teacherId
+      ? (bapReports || []).filter((b) => b.teacher_id === ta.teacherId)
+      : bapReports || [];
+
+  const scopedCommitteeDailyReports =
+    !isGlobalExamViewer && ta?.teacherId
+      ? (committeeDailyReports || []).filter((r) => r.teacher_id === ta.teacherId)
+      : committeeDailyReports || [];
+
+  const scopedSupervisorAttendances =
+    !isFullExamActor && ta?.teacherId
+      ? (supervisorAttendances || []).filter((a) => a.teacher_id === ta.teacherId)
+      : supervisorAttendances || [];
+
+  const scopedCommitteeAttendances =
+    !isGlobalExamViewer && ta?.teacherId
+      ? (committeeAttendances || []).filter((a) => a.teacher_id === ta.teacherId)
+      : committeeAttendances || [];
+
+  const scopedSupervisorConfirmations =
+    !isFullExamActor && ta?.teacherId
+      ? (supervisorSessionConfirmations || []).filter((c) => c.teacher_id === ta.teacherId)
+      : supervisorSessionConfirmations || [];
+
+  const supervisedRoomIds = new Set(
+    scopedSupervisors.map((s) => s.exam_room_id).filter(Boolean)
+  );
+  const homeroomStudentIds = new Set(
+    (enrollments || [])
+      .filter((e) => (ta?.homeroomClassroomIds || []).includes(e.classroom_id))
+      .map((e) => e.student_id)
+  );
+
+  const scopedStudentAttendances =
+    !isFullExamActor && ta?.teacherId
+      ? (studentAttendances || []).filter(
+          (a) =>
+            (a.exam_room_id && supervisedRoomIds.has(a.exam_room_id)) ||
+            homeroomStudentIds.has(a.student_id)
+        )
+      : studentAttendances || [];
+
   return NextResponse.json({
     periods: periods || [],
     rooms: rooms || [],
-    supervisors: supervisors || [],
-    committees: committees || [],
-    studentAttendances: studentAttendances || [],
-    bapReports: bapReports || [],
-    committeeDailyReports: committeeDailyReports || [],
-    supervisorAttendances: supervisorAttendances || [],
-    committeeAttendances: committeeAttendances || [],
+    supervisors: scopedSupervisors,
+    committees: scopedCommittees,
+    studentAttendances: scopedStudentAttendances,
+    bapReports: scopedBapReports,
+    committeeDailyReports: scopedCommitteeDailyReports,
+    supervisorAttendances: scopedSupervisorAttendances,
+    committeeAttendances: scopedCommitteeAttendances,
     dailyGeofenceAttendances: dailyGeofenceAttendances || [],
-    supervisorSessionConfirmations: supervisorSessionConfirmations || [],
+    supervisorSessionConfirmations: scopedSupervisorConfirmations,
     students: students || [],
     classrooms: classrooms || [],
     enrollments: enrollments || [],
-    canManageCommittees: hasAnyRole(guard.session, PERMISSIONS.ADMIN_CONFIRM),
+    canManageCommittees,
     geofenceEnabled: settingsRow?.geofence_enabled ?? true,
   });
 }
@@ -394,12 +464,22 @@ export async function POST(request: Request) {
 
       const { data: supervisor, error: supErr } = await supabase
         .from('exam_supervisors')
-        .select('id, exam_period_id, exam_room_id, exam_date, session_name')
+        .select('id, exam_period_id, exam_room_id, exam_date, session_name, teacher_id')
         .eq('id', parsed.data.exam_supervisor_id)
         .single();
 
       if (supErr || !supervisor) {
         return NextResponse.json({ error: 'Jadwal pengawas ujian tidak ditemukan.' }, { status: 404 });
+      }
+
+      const ta = guard.session.teacherAssignments;
+      const canBypassSupervisorOwner =
+        hasAnyRole(guard.session, PERMISSIONS.ADMIN_CONFIRM) || Boolean(ta?.isExamCommittee);
+      if (!canBypassSupervisorOwner && supervisor.teacher_id !== ta?.teacherId) {
+        return NextResponse.json(
+          { error: 'Anda hanya dapat menginput absensi siswa ujian untuk sesi pengawasan Anda sendiri.' },
+          { status: 403 }
+        );
       }
 
       let delQuery = supabase
@@ -447,6 +527,16 @@ export async function POST(request: Request) {
 
       if (supErr || !supervisor) {
         return NextResponse.json({ error: 'Jadwal pengawas ujian tidak ditemukan.' }, { status: 404 });
+      }
+
+      const ta = guard.session.teacherAssignments;
+      const canBypassBapOwner =
+        hasAnyRole(guard.session, PERMISSIONS.ADMIN_CONFIRM) || Boolean(ta?.isExamCommittee);
+      if (!canBypassBapOwner && supervisor.teacher_id !== ta?.teacherId) {
+        return NextResponse.json(
+          { error: 'Anda hanya dapat mengisi Berita Acara (BAP) untuk jadwal pengawasan Anda sendiri.' },
+          { status: 403 }
+        );
       }
 
       // Cek konfirmasi per jadwal di schedule_session_confirmations (atau fallback ke teacher_attendances)
@@ -682,6 +772,14 @@ export async function POST(request: Request) {
         return NextResponse.json(
           { error: 'Data presensi Panitia Ujian tidak ditemukan.' },
           { status: 404 }
+        );
+      }
+      const canAdminConfirm = hasAnyRole(guard.session, PERMISSIONS.ADMIN_CONFIRM);
+      const ta = guard.session.teacherAssignments;
+      if (!canAdminConfirm && att.teacher_id !== ta?.teacherId) {
+        return NextResponse.json(
+          { error: 'Anda hanya dapat mengisi LPJ Harian Panitia untuk kehadiran Anda sendiri.' },
+          { status: 403 }
         );
       }
       if (!att.is_within_geofence || !att.admin_confirmed) {

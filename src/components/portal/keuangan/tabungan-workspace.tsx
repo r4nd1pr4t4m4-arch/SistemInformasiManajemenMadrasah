@@ -10,9 +10,34 @@ interface SavingsAccountRow {
   id: string;
   account_number: string;
   owner_type: string;
+  student_id?: string | null;
+  teacher_id?: string | null;
   owner_name: string;
   owner_phone: string | null;
   balance: number;
+}
+
+interface StudentCandidate {
+  id: string;
+  full_name: string;
+  nis: string | null;
+  nisn: string | null;
+  phone: string | null;
+}
+
+interface GtkCandidate {
+  id: string;
+  full_name: string;
+  nip: string | null;
+  phone: string | null;
+  staff_type: string;
+}
+
+interface PublicCandidate {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  label: string;
 }
 
 export type TabunganSection = 'buka-rekening' | 'transaksi' | 'rekap';
@@ -23,9 +48,16 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<SavingsAccountRow[]>([]);
+  const [students, setStudents] = useState<StudentCandidate[]>([]);
+  const [teachers, setTeachers] = useState<GtkCandidate[]>([]);
+  const [tuStaff, setTuStaff] = useState<GtkCandidate[]>([]);
+  const [publicUsers, setPublicUsers] = useState<PublicCandidate[]>([]);
+  const [selectedCandidateId, setSelectedCandidateId] = useState('');
 
   const [openAccForm, setOpenAccForm] = useState({
     owner_type: 'SISWA' as 'SISWA' | 'GURU' | 'TU' | 'UMUM',
+    student_id: null as string | null,
+    teacher_id: null as string | null,
     owner_name: '',
     owner_phone: '',
     initial_deposit: 50000,
@@ -48,6 +80,10 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
       const res = await fetch('/api/keuangan/tabungan');
       const data = await res.json();
       setAccounts(data.accounts || []);
+      setStudents(data.students || []);
+      setTeachers(data.teachers || []);
+      setTuStaff(data.tuStaff || []);
+      setPublicUsers(data.publicUsers || []);
     } finally {
       setLoading(false);
     }
@@ -110,27 +146,48 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
       </div>
 
       {section === 'buka-rekening' && canManage && (
-          <div className="glass-card rounded-3xl p-6 space-y-3 max-w-2xl">
-            <h1 className="text-sm font-bold text-slate-900">Buka Buku Tabungan Digital</h1>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await postTabungan(
-                  { action: 'OPEN_ACCOUNT', ...openAccForm },
-                  'Buku tabungan baru berhasil dibuka.'
-                );
-                setOpenAccForm({ ...openAccForm, owner_name: '', owner_phone: '' });
-              }}
-              className="space-y-2.5"
-            >
+        <div className="glass-card rounded-3xl p-6 space-y-3 max-w-2xl">
+          <h1 className="text-sm font-bold text-slate-900">Buka Buku Tabungan Digital</h1>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!openAccForm.owner_name.trim()) {
+                showToast('Pilih pemilik rekening terlebih dahulu.');
+                return;
+              }
+              await postTabungan(
+                { action: 'OPEN_ACCOUNT', ...openAccForm },
+                'Buku tabungan baru berhasil dibuka.'
+              );
+              setSelectedCandidateId('');
+              setOpenAccForm({
+                ...openAccForm,
+                student_id: null,
+                teacher_id: null,
+                owner_name: '',
+                owner_phone: '',
+              });
+            }}
+            className="space-y-3"
+          >
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-slate-600">
+                Peran / Kategori Pemilik Rekening
+              </label>
               <select
                 value={openAccForm.owner_type}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const nextType = e.target.value as typeof openAccForm.owner_type;
+                  setSelectedCandidateId('');
                   setOpenAccForm({
                     ...openAccForm,
-                    owner_type: e.target.value as typeof openAccForm.owner_type,
-                  })
-                }
+                    owner_type: nextType,
+                    student_id: null,
+                    teacher_id: null,
+                    owner_name: '',
+                    owner_phone: '',
+                  });
+                }}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
               >
                 <option value="SISWA">Siswa</option>
@@ -138,20 +195,159 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                 <option value="TU">Tata Usaha</option>
                 <option value="UMUM">Masyarakat Umum</option>
               </select>
-              <input
-                required
-                placeholder="Nama Pemilik Rekening"
-                value={openAccForm.owner_name}
-                onChange={(e) => setOpenAccForm({ ...openAccForm, owner_name: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-              />
-              <div className="grid grid-cols-2 gap-2">
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-slate-600">
+                Nama Pemilik Rekening ({openAccForm.owner_type})
+              </label>
+
+              {openAccForm.owner_type === 'SISWA' && (
+                <select
+                  required
+                  value={selectedCandidateId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedCandidateId(id);
+                    const s = students.find((item) => item.id === id);
+                    setOpenAccForm({
+                      ...openAccForm,
+                      student_id: s ? s.id : null,
+                      teacher_id: null,
+                      owner_name: s ? s.full_name : '',
+                      owner_phone: s?.phone || '',
+                    });
+                  }}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                >
+                  <option value="">-- Pilih Siswa --</option>
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.full_name} {s.nis ? `(NIS: ${s.nis})` : s.nisn ? `(NISN: ${s.nisn})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {openAccForm.owner_type === 'GURU' && (
+                <select
+                  required
+                  value={selectedCandidateId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedCandidateId(id);
+                    const g = teachers.find((item) => item.id === id);
+                    setOpenAccForm({
+                      ...openAccForm,
+                      student_id: null,
+                      teacher_id: g ? g.id : null,
+                      owner_name: g ? g.full_name : '',
+                      owner_phone: g?.phone || '',
+                    });
+                  }}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                >
+                  <option value="">-- Pilih Guru --</option>
+                  {teachers.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.full_name} {g.nip ? `(NIP: ${g.nip})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {openAccForm.owner_type === 'TU' && (
+                <select
+                  required
+                  value={selectedCandidateId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedCandidateId(id);
+                    const t = tuStaff.find((item) => item.id === id);
+                    setOpenAccForm({
+                      ...openAccForm,
+                      student_id: null,
+                      teacher_id: t ? t.id : null,
+                      owner_name: t ? t.full_name : '',
+                      owner_phone: t?.phone || '',
+                    });
+                  }}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                >
+                  <option value="">-- Pilih Staf Tata Usaha --</option>
+                  {tuStaff.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.full_name} {t.nip ? `(NIP: ${t.nip})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {openAccForm.owner_type === 'UMUM' && (
+                <div className="space-y-2">
+                  <select
+                    required={publicUsers.length > 0 && selectedCandidateId !== '__MANUAL__'}
+                    value={selectedCandidateId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setSelectedCandidateId(id);
+                      if (id === '__MANUAL__') {
+                        setOpenAccForm({
+                          ...openAccForm,
+                          student_id: null,
+                          teacher_id: null,
+                          owner_name: '',
+                          owner_phone: '',
+                        });
+                        return;
+                      }
+                      const u = publicUsers.find((item) => item.id === id);
+                      setOpenAccForm({
+                        ...openAccForm,
+                        student_id: null,
+                        teacher_id: null,
+                        owner_name: u ? u.full_name : '',
+                        owner_phone: u?.phone || '',
+                      });
+                    }}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  >
+                    <option value="">-- Pilih Pengguna / Anggota Umum --</option>
+                    {publicUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.label}
+                      </option>
+                    ))}
+                    <option value="__MANUAL__">+ Input Nama Masyarakat Umum Lainnya...</option>
+                  </select>
+
+                  {selectedCandidateId === '__MANUAL__' && (
+                    <input
+                      required
+                      placeholder="Masukkan Nama Lengkap Masyarakat Umum"
+                      value={openAccForm.owner_name}
+                      onChange={(e) =>
+                        setOpenAccForm({ ...openAccForm, owner_name: e.target.value })
+                      }
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-slate-600">No. HP / WhatsApp</label>
                 <input
                   placeholder="No. HP / WA"
                   value={openAccForm.owner_phone}
                   onChange={(e) => setOpenAccForm({ ...openAccForm, owner_phone: e.target.value })}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
                 />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-slate-600">Setoran Awal (Rp)</label>
                 <input
                   type="number"
                   min={0}
@@ -160,17 +356,18 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                   onChange={(e) =>
                     setOpenAccForm({ ...openAccForm, initial_deposit: Number(e.target.value) })
                   }
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
                 />
               </div>
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 text-white font-semibold py-2 rounded-xl text-xs"
-              >
-                Buka Rekening Tabungan
-              </button>
-            </form>
-          </div>
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+            >
+              Buka Rekening Tabungan
+            </button>
+          </form>
+        </div>
       )}
 
       {section === 'transaksi' && canManage && (

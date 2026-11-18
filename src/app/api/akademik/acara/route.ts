@@ -136,27 +136,37 @@ export async function GET() {
       .maybeSingle(),
   ]);
 
+  const isPicketTeacher = Boolean(guard.session.teacherAssignments?.isPicketTeacher);
+  const canConfirmOrManage = canManageEvents || isPicketTeacher;
+
   const filteredConfirmations =
-    !canManageEvents
+    !canConfirmOrManage
       ? currentTeacher
         ? (confirmations || []).filter((c) => c.teacher_id === currentTeacher.id)
         : []
       : confirmations || [];
 
   const filteredJournals =
-    !canManageEvents
+    !canConfirmOrManage
       ? currentTeacher
         ? (journals || []).filter((j) => j.teacher_id === currentTeacher.id)
         : []
       : journals || [];
+
+  const filteredTeachers =
+    !canConfirmOrManage
+      ? currentTeacher
+        ? (teachers || []).filter((t) => t.id === currentTeacher.id)
+        : []
+      : teachers || [];
 
   return NextResponse.json({
     events: events || [],
     confirmations: filteredConfirmations,
     journals: filteredJournals,
     ceremonies: ceremonies || [],
-    confirmedPicketAttendances: confirmedPicketAttendances || [],
-    teachers: teachers || [],
+    confirmedPicketAttendances: canConfirmOrManage ? confirmedPicketAttendances || [] : [],
+    teachers: filteredTeachers,
     currentTeacher: currentTeacher || null,
     canManageEvents,
   });
@@ -245,6 +255,27 @@ export async function POST(request: Request) {
       const parsed = ToggleEventSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'Permintaan tidak valid.' }, { status: 400 });
+      }
+      const isGlobalEventAdmin = hasAnyRole(guard.session, [
+        'SUPERADMIN',
+        'OPERATOR',
+        'WAKA_KURIKULUM',
+        'WAKA_KESISWAAN',
+        'KEPALA_TU',
+        'STAF_TU',
+      ]);
+      if (!isGlobalEventAdmin) {
+        const { data: ev } = await supabase
+          .from('school_events')
+          .select('created_by')
+          .eq('id', parsed.data.event_id)
+          .maybeSingle();
+        if (ev?.created_by && ev.created_by !== guard.session.userId) {
+          return NextResponse.json(
+            { error: 'Anda hanya dapat mengubah status acara/kegiatan yang Anda buat.' },
+            { status: 403 }
+          );
+        }
       }
       const { data, error } = await supabase
         .from('school_events')

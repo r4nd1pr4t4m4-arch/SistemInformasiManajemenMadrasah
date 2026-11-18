@@ -221,6 +221,102 @@ export async function GET() {
       .maybeSingle(),
   ]);
 
+  const isGlobalPresensiViewer = hasAnyRole(guard.session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+  ]);
+  const ta = guard.session.teacherAssignments;
+  const isPicketOrCommittee = Boolean(ta?.isPicketTeacher || ta?.isExamCommittee);
+
+  if (!isGlobalPresensiViewer && ta?.teacherId) {
+    const myTeacherId = ta.teacherId;
+    const allowedClassIds = new Set([
+      ...(ta.homeroomClassroomIds || []),
+      ...(ta.taughtClassroomIds || []),
+    ]);
+
+    const scopedStudentAtt = ta.isPicketTeacher
+      ? studentAtt || []
+      : (studentAtt || []).filter((sa) => allowedClassIds.has(sa.classroom_id));
+
+    const scopedTeacherAtt = isPicketOrCommittee
+      ? teacherAtt || []
+      : (teacherAtt || []).filter((a) => a.teacher_id === myTeacherId);
+
+    const scopedDelegations = ta.isPicketTeacher
+      ? delegations || []
+      : (delegations || []).filter(
+          (d) =>
+            d.original_teacher_id === myTeacherId || d.substitute_teacher_id === myTeacherId
+        );
+
+    const scopedJournals = (journals || []).filter((j) => j.teacher_id === myTeacherId);
+    const scopedPicketReports = (picketReports || []).filter(
+      (pr) => pr.teacher_id === myTeacherId
+    );
+    const scopedShortLeaves = isPicketOrCommittee
+      ? shortLeaves || []
+      : (shortLeaves || []).filter((lv) => lv.teacher_id === myTeacherId);
+
+    const scopedSessionConfirmations = isPicketOrCommittee
+      ? sessionConfirmations || []
+      : (sessionConfirmations || []).filter((sc) => sc.teacher_id === myTeacherId);
+
+    const scopedSchedules = ta.isPicketTeacher
+      ? schedules || []
+      : (schedules || []).filter((s) => s.teacher_id === myTeacherId);
+
+    const scopedClassrooms = ta.isPicketTeacher
+      ? classrooms || []
+      : (classrooms || []).filter((c) => allowedClassIds.has(c.id));
+
+    const scopedEnrollments = ta.isPicketTeacher
+      ? enrollments || []
+      : (enrollments || []).filter((en) => allowedClassIds.has(en.classroom_id));
+
+    const allowedStudentIds = new Set(scopedEnrollments.map((en) => en.student_id));
+    const scopedStudents = ta.isPicketTeacher
+      ? students || []
+      : (students || []).filter((st) => allowedStudentIds.has(st.id));
+
+    const scopedExamSupervisors = ta.isExamCommittee
+      ? examSupervisors || []
+      : (examSupervisors || []).filter((es) => es.teacher_id === myTeacherId);
+
+    const scopedExamCommittees = ta.isExamCommittee
+      ? examCommittees || []
+      : (examCommittees || []).filter((ec) => ec.teacher_id === myTeacherId);
+
+    return NextResponse.json({
+      studentAttendances: scopedStudentAtt,
+      teacherAttendances: scopedTeacherAtt,
+      delegations: scopedDelegations,
+      journals: scopedJournals,
+      picketReports: scopedPicketReports,
+      shortLeaves: scopedShortLeaves,
+      sessionConfirmations: scopedSessionConfirmations,
+      schedules: scopedSchedules,
+      students: scopedStudents,
+      classrooms: scopedClassrooms,
+      enrollments: scopedEnrollments,
+      examSupervisors: scopedExamSupervisors,
+      examCommittees: scopedExamCommittees,
+      todayDate: getWibTodayDateString(),
+      geofenceConfig: {
+        enabled: settings?.geofence_enabled ?? true,
+        latitude: settings?.geofence_lat ?? -6.2,
+        longitude: settings?.geofence_lng ?? 106.816666,
+        radiusMeters: settings?.geofence_radius_meters ?? 100,
+      },
+      canAdminConfirm,
+    });
+  }
+
   return NextResponse.json({
     studentAttendances: studentAtt || [],
     teacherAttendances: teacherAtt || [],
@@ -415,6 +511,27 @@ export async function POST(request: Request) {
 
       const { schedule_id, classroom_id, attendance_date, records } = parsed.data;
 
+      const isAdminActor = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
+      const ta = guard.session.teacherAssignments;
+      if (!isAdminActor && !ta?.isPicketTeacher && ta?.teacherId) {
+        const [{ data: schedRow }, { data: delRow }] = await Promise.all([
+          supabase.from('schedules').select('teacher_id').eq('id', schedule_id).maybeSingle(),
+          supabase
+            .from('teacher_delegations')
+            .select('id')
+            .eq('schedule_id', schedule_id)
+            .eq('substitute_teacher_id', ta.teacherId)
+            .eq('delegation_date', attendance_date)
+            .maybeSingle(),
+        ]);
+        if (schedRow?.teacher_id !== ta.teacherId && !delRow) {
+          return NextResponse.json(
+            { error: 'Anda hanya dapat menginput absensi siswa untuk jadwal mata pelajaran yang Anda ampu.' },
+            { status: 403 }
+          );
+        }
+      }
+
       await supabase
         .from('student_attendances')
         .delete()
@@ -465,6 +582,15 @@ export async function POST(request: Request) {
       const parsed = TeacherAttendanceSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data presensi guru tidak valid.' }, { status: 400 });
+      }
+
+      const isAdminActor = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
+      const myTeacherId = guard.session.teacherAssignments?.teacherId;
+      if (!isAdminActor && myTeacherId && parsed.data.teacher_id !== myTeacherId) {
+        return NextResponse.json(
+          { error: 'Anda hanya dapat mencatat presensi untuk akun GTK Anda sendiri.' },
+          { status: 403 }
+        );
       }
 
       if (
@@ -621,6 +747,15 @@ export async function POST(request: Request) {
           );
         }
 
+        const isAdminActor = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
+        const myTeacherId = guard.session.teacherAssignments?.teacherId;
+        if (!isAdminActor && myTeacherId && conf.teacher_id !== myTeacherId) {
+          return NextResponse.json(
+            { error: 'Anda hanya dapat mengisi jurnal pembelajaran untuk jadwal mengajar Anda sendiri.' },
+            { status: 403 }
+          );
+        }
+
         const { data: existingJournal } = await supabase
           .from('teaching_journals')
           .select('id')
@@ -693,6 +828,14 @@ export async function POST(request: Request) {
 
       if (attErr || !att) {
         return NextResponse.json({ error: 'Data presensi tidak ditemukan.' }, { status: 404 });
+      }
+      const isAdminActor = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
+      const myTeacherId = guard.session.teacherAssignments?.teacherId;
+      if (!isAdminActor && myTeacherId && att.teacher_id !== myTeacherId) {
+        return NextResponse.json(
+          { error: 'Anda hanya dapat mengisi jurnal pembelajaran untuk jadwal mengajar Anda sendiri.' },
+          { status: 403 }
+        );
       }
       if (att.attendance_type !== 'MENGAJAR') {
         return NextResponse.json(

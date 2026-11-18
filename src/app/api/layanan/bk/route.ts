@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { hasAnyRole } from '@/lib/auth/session';
 
 const CreateBkSchema = z.object({
   student_id: z.string().uuid(),
@@ -31,6 +32,30 @@ export async function GET() {
     .limit(100);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const isGlobalBkViewer = hasAnyRole(guard.session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KESISWAAN',
+    'GURU_BK',
+  ]);
+  const ta = guard.session.teacherAssignments;
+
+  if (!isGlobalBkViewer && ta?.homeroomClassroomIds?.length) {
+    const { data: enrolls } = await supabase
+      .from('student_enrollments')
+      .select('student_id')
+      .in('classroom_id', ta.homeroomClassroomIds);
+    const homeroomStudentIds = new Set(
+      (enrolls || []).map((e) => e.student_id as string).filter(Boolean)
+    );
+    const scoped = (data || []).filter(
+      (r) => homeroomStudentIds.has(r.student_id) && !r.is_confidential
+    );
+    return NextResponse.json({ records: scoped });
+  }
+
   return NextResponse.json({ records: data || [] });
 }
 

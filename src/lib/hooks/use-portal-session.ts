@@ -4,6 +4,21 @@ import { useEffect, useState } from 'react';
 import type { AppRole } from '@/types/database';
 import { hasRolePermission } from '@/lib/auth/rbac';
 
+export interface PortalTeacherAssignments {
+  teacherId: string;
+  dutyCodes: string[];
+  dutyNames: string[];
+  homeroomClassroomIds?: string[];
+  taughtClassroomIds?: string[];
+  taughtSubjectIds?: string[];
+  guruWaliStudentIds?: string[];
+  isHomeroomTeacher: boolean;
+  isGuruWali: boolean;
+  isPicketTeacher: boolean;
+  isExamSupervisor: boolean;
+  isExamCommittee: boolean;
+}
+
 export interface PortalSessionUser {
   userId: string;
   fullName: string;
@@ -11,6 +26,7 @@ export interface PortalSessionUser {
   avatarUrl?: string | null;
   primaryRole: AppRole;
   roles: AppRole[];
+  teacherAssignments?: PortalTeacherAssignments | null;
 }
 
 let cachedUser: PortalSessionUser | null = null;

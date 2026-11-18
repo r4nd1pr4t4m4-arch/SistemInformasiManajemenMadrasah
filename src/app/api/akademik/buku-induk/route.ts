@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { hasAnyRole } from '@/lib/auth/session';
 
 const CreateStudentSchema = z.object({
   type: z.literal('STUDENT'),
@@ -95,10 +96,63 @@ export async function GET() {
       is_library_member: libraryProfileIds.has(p.id),
     }));
 
+  const isGlobalReader = hasAnyRole(guard.session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'WAKA_HUMAS',
+    'KEPALA_TU',
+    'STAF_TU',
+    'BENDAHARA',
+    'BENDAHARA_KOMITE',
+    'PENGELOLA_TABUNGAN',
+    'GURU_BK',
+    'PUSTAKAWAN',
+  ]);
+  const ta = guard.session.teacherAssignments;
+
+  if (!isGlobalReader && ta) {
+    const canSeeAllTeachers = ta.isPicketTeacher || ta.isExamCommittee;
+    const scopedTeachers = canSeeAllTeachers
+      ? teachers || []
+      : (teachers || []).filter((t) => t.id === ta.teacherId);
+
+    const allowedClassIds = new Set([
+      ...(ta.homeroomClassroomIds || []),
+      ...(ta.taughtClassroomIds || []),
+    ]);
+    const allowedStudentIds = new Set<string>(ta.guruWaliStudentIds || []);
+
+    if (allowedClassIds.size > 0) {
+      const { data: enrollRows } = await supabase
+        .from('student_enrollments')
+        .select('student_id')
+        .in('classroom_id', Array.from(allowedClassIds));
+      for (const e of enrollRows || []) {
+        if (e.student_id) allowedStudentIds.add(e.student_id as string);
+      }
+    }
+
+    const scopedStudents =
+      ta.isPicketTeacher || ta.isExamCommittee || ta.isExamSupervisor
+        ? students || []
+        : (students || []).filter((s) => allowedStudentIds.has(s.id));
+
+    return NextResponse.json({
+      students: scopedStudents,
+      teachers: scopedTeachers,
+      activeAccounts: [],
+    });
+  }
+
   return NextResponse.json({
     students: students || [],
     teachers: teachers || [],
-    activeAccounts,
+    activeAccounts: hasAnyRole(guard.session, PERMISSIONS.BUKU_INDUK_PAGE_VIEW)
+      ? activeAccounts
+      : [],
   });
 }
 

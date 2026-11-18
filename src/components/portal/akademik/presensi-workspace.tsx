@@ -361,7 +361,13 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
       ]);
       const bi = await biRes.json();
       const pr = await prRes.json();
-      setTeachers(bi.teachers || []);
+      const loadedTeachers: TeacherOpt[] = bi.teachers || [];
+      setTeachers(loadedTeachers);
+      if (loadedTeachers.length === 1) {
+        setTeacherAttForm((prev) =>
+          prev.teacher_id ? prev : { ...prev, teacher_id: loadedTeachers[0].id }
+        );
+      }
       setStudents(pr.students || []);
       setClassrooms(pr.classrooms || []);
       setEnrollments(pr.enrollments || []);
