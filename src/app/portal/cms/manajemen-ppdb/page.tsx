@@ -7,6 +7,8 @@ import {
   PPDB_PATHWAYS,
   type PathwayQuotas,
 } from '@/lib/ppdb/pathways';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { PERMISSIONS } from '@/lib/auth/rbac';
 
 interface PpdbPeriodRow {
   id: string;
@@ -20,6 +22,8 @@ interface PpdbPeriodRow {
 }
 
 export default function ManajemenPpdbPage() {
+  const { hasPermission } = usePortalSession();
+  const canManage = hasPermission(PERMISSIONS.CMS_MANAGE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -127,6 +131,7 @@ export default function ManajemenPpdbPage() {
       )}
 
       <div className="grid lg:grid-cols-12 gap-6">
+        {canManage && (
         <form
           onSubmit={handleCreate}
           className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-4 h-fit"
@@ -266,8 +271,9 @@ export default function ManajemenPpdbPage() {
             {saving ? 'Menyimpan...' : 'Simpan Periode & Kuota PPDB'}
           </button>
         </form>
+        )}
 
-        <div className="lg:col-span-7 space-y-6">
+        <div className={`${canManage ? 'lg:col-span-7' : 'lg:col-span-12'} space-y-6`}>
           <div className="glass-card rounded-3xl p-6 space-y-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <CalendarRange className="w-4 h-4 text-emerald-700" /> Daftar Periode PPDB (
@@ -298,23 +304,25 @@ export default function ManajemenPpdbPage() {
                             {p.is_active ? 'AKTIF' : 'NONAKTIF'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleActive(p)}
-                            className="px-3 py-1 rounded-xl text-xs font-semibold border border-slate-200 bg-white hover:bg-emerald-50 hover:text-emerald-700 transition"
-                          >
-                            {p.is_active ? 'Nonaktifkan' : 'Aktifkan'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(p.id)}
-                            className="p-1.5 rounded-xl text-rose-600 hover:bg-rose-50 transition"
-                            title="Hapus Periode"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        {canManage && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleActive(p)}
+                              className="px-3 py-1 rounded-xl text-xs font-semibold border border-slate-200 bg-white hover:bg-emerald-50 hover:text-emerald-700 transition"
+                            >
+                              {p.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(p.id)}
+                              className="p-1.5 rounded-xl text-rose-600 hover:bg-rose-50 transition"
+                              title="Hapus Periode"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <p className="text-xs text-slate-500">
                         Buka: {p.open_date} s/d {p.close_date} • Pengumuman:{' '}

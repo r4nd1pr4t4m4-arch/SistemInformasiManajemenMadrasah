@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { connection } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 
 const FacilitySchema = z.object({
   name: z.string().min(2, 'Nama sarana/prasarana minimal 2 karakter.'),
@@ -15,7 +15,7 @@ const FacilitySchema = z.object({
 
 export async function GET() {
   await connection();
-  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  const guard = await requireApiRoles(PERMISSIONS.CMS_SARPRAS_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -36,7 +36,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  const guard = await requireApiRoles(PERMISSIONS.CMS_SARPRAS_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  const guard = await requireApiRoles(PERMISSIONS.CMS_SARPRAS_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -126,7 +126,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  const guard = await requireApiRoles(PERMISSIONS.CMS_SARPRAS_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {

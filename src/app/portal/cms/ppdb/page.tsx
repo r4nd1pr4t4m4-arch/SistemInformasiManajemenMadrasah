@@ -11,6 +11,8 @@ import {
   Search,
   UserCheck,
 } from 'lucide-react';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { PERMISSIONS } from '@/lib/auth/rbac';
 
 interface PpdbDocRow {
   id: string;
@@ -38,6 +40,8 @@ interface PpdbRow {
 }
 
 export default function CmsPpdbPage() {
+  const { hasPermission } = usePortalSession();
+  const canManage = hasPermission(PERMISSIONS.CMS_PPDB_MANAGE);
   const [loading, setLoading] = useState(true);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [bulkSyncing, setBulkSyncing] = useState(false);
@@ -189,7 +193,7 @@ export default function CmsPpdbPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {unsyncedLulusIds.length > 0 && (
+            {canManage && unsyncedLulusIds.length > 0 && (
               <button
                 type="button"
                 disabled={bulkSyncing}
@@ -315,37 +319,45 @@ export default function CmsPpdbPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      value={row.status}
-                      onChange={(e) => handleUpdatePpdbStatus(row.id, e.target.value)}
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold"
-                    >
-                      <option value="MENUNGGU_VERIFIKASI">MENUNGGU_VERIFIKASI</option>
-                      <option value="TERVERIFIKASI">TERVERIFIKASI</option>
-                      <option value="PERLU_PERBAIKAN">PERLU_PERBAIKAN</option>
-                      <option value="LULUS">LULUS</option>
-                      <option value="CADANGAN">CADANGAN</option>
-                      <option value="TIDAK_LULUS">TIDAK_LULUS</option>
-                    </select>
+                    {canManage ? (
+                      <>
+                        <select
+                          value={row.status}
+                          onChange={(e) => handleUpdatePpdbStatus(row.id, e.target.value)}
+                          className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold"
+                        >
+                          <option value="MENUNGGU_VERIFIKASI">MENUNGGU_VERIFIKASI</option>
+                          <option value="TERVERIFIKASI">TERVERIFIKASI</option>
+                          <option value="PERLU_PERBAIKAN">PERLU_PERBAIKAN</option>
+                          <option value="LULUS">LULUS</option>
+                          <option value="CADANGAN">CADANGAN</option>
+                          <option value="TIDAK_LULUS">TIDAK_LULUS</option>
+                        </select>
 
-                    {row.status === 'LULUS' && (
-                      <button
-                        type="button"
-                        disabled={isSyncing}
-                        onClick={() => handleSyncSingle(row)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-                          isSynced
-                            ? 'border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                            : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                        } disabled:opacity-50`}
-                      >
-                        {isSyncing ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-3.5 h-3.5" />
+                        {row.status === 'LULUS' && (
+                          <button
+                            type="button"
+                            disabled={isSyncing}
+                            onClick={() => handleSyncSingle(row)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                              isSynced
+                                ? 'border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                            } disabled:opacity-50`}
+                          >
+                            {isSyncing ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-3.5 h-3.5" />
+                            )}
+                            {isSynced ? 'Sinkron Ulang' : 'Sinkron ke Buku Induk'}
+                          </button>
                         )}
-                        {isSynced ? 'Sinkron Ulang' : 'Sinkron ke Buku Induk'}
-                      </button>
+                      </>
+                    ) : (
+                      <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold">
+                        {row.status}
+                      </span>
                     )}
                   </div>
                 </div>

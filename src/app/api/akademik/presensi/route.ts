@@ -318,6 +318,77 @@ export async function POST(request: Request) {
       return NextResponse.json({ attendance: data });
     }
 
+    if (body.action === 'BATCH_STUDENT_ATTENDANCE') {
+      const schema = z.object({
+        picket_attendance_id: z.string().uuid(),
+        classroom_id: z.string().uuid(),
+        attendance_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        records: z
+          .array(
+            z.object({
+              student_id: z.string().uuid(),
+              status: z.enum(['HADIR', 'SAKIT', 'IZIN', 'ALPA']),
+              notes: z.string().optional().nullable(),
+            })
+          )
+          .min(1),
+      });
+
+      const parsed = schema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Data absensi batch kelas tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const { picket_attendance_id, classroom_id, attendance_date, records } = parsed.data;
+      const { data: picketAtt } = await supabase
+        .from('teacher_attendances')
+        .select('id, attendance_type, attendance_date, is_within_geofence, admin_confirmed')
+        .eq('id', picket_attendance_id)
+        .maybeSingle();
+
+      if (
+        !picketAtt ||
+        picketAtt.attendance_type !== 'PIKET' ||
+        !picketAtt.is_within_geofence ||
+        !picketAtt.admin_confirmed
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'Hanya Guru Piket / Guru Piket Pengganti yang kehadirannya sudah dikonfirmasi Admin yang dapat melakukan absensi siswa.',
+          },
+          { status: 403 }
+        );
+      }
+
+      const targetDate = attendance_date || picketAtt.attendance_date;
+
+      await supabase
+        .from('student_attendances')
+        .delete()
+        .eq('classroom_id', classroom_id)
+        .eq('attendance_date', targetDate)
+        .is('schedule_id', null);
+
+      const rowsToInsert = records.map((r) => ({
+        student_id: r.student_id,
+        classroom_id,
+        schedule_id: null,
+        attendance_date: targetDate,
+        status: r.status,
+        notes: r.notes || null,
+        recorded_by: guard.session.userId,
+      }));
+
+      const { error: insErr } = await supabase.from('student_attendances').insert(rowsToInsert);
+      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+
+      return NextResponse.json({ ok: true, savedCount: rowsToInsert.length });
+    }
+
     if (body.action === 'RECORD_SUBJECT_STUDENT_ATTENDANCE') {
       const schema = z.object({
         schedule_id: z.string().uuid(),
@@ -1366,8 +1437,15 @@ export async function POST(request: Request) {
       let confirmedByRole: 'ADMIN' | 'GURU_PIKET' | 'PANITIA_UJIAN' = 'ADMIN';
       let confirmedByAttendanceId: string | null = null;
 
-      // Wajib sudah presensi geofencing minimal 1x pada hari tersebut
-      const { data: dailyAtt } = await supabase
+      const { data: settingsRow } = await supabase
+        .from('institution_settings')
+        .select('geofence_enabled')
+        .limit(1)
+        .maybeSingle();
+      const geofenceEnabled = settingsRow?.geofence_enabled ?? true;
+
+      // Wajib sudah presensi geofencing minimal 1x pada hari tersebut (kecuali PENGAWAS_UJIAN saat geofencing nonaktif)
+      let { data: dailyAtt } = await supabase
         .from('teacher_attendances')
         .select('id')
         .eq('teacher_id', d.teacher_id)
@@ -1377,13 +1455,38 @@ export async function POST(request: Request) {
         .maybeSingle();
 
       if (!dailyAtt) {
-        return NextResponse.json(
-          {
-            error:
-              'Guru/pengawas belum melakukan presensi geofencing pada tanggal tersebut (wajib 1x presensi per hari).',
-          },
-          { status: 400 }
-        );
+        if (d.session_type === 'PENGAWAS_UJIAN' && !geofenceEnabled) {
+          const { data: autoAtt, error: autoAttErr } = await supabase
+            .from('teacher_attendances')
+            .insert({
+              teacher_id: d.teacher_id,
+              attendance_date: d.session_date,
+              attendance_type: 'PENGAWAS_UJIAN',
+              exam_supervisor_id: d.exam_supervisor_id || null,
+              jtm_earned: 0,
+              distance_meters: 0,
+              is_within_geofence: true,
+              notes: 'Presensi otomatis pengawas ujian (fitur geofencing nonaktif)',
+            })
+            .select('id')
+            .single();
+
+          if (autoAttErr || !autoAtt) {
+            return NextResponse.json(
+              { error: autoAttErr?.message || 'Gagal membuat catatan presensi pengawas.' },
+              { status: 500 }
+            );
+          }
+          dailyAtt = autoAtt;
+        } else {
+          return NextResponse.json(
+            {
+              error:
+                'Guru/pengawas belum melakukan presensi geofencing pada tanggal tersebut (wajib 1x presensi per hari).',
+            },
+            { status: 400 }
+          );
+        }
       }
 
       if (d.session_type === 'MENGAJAR') {

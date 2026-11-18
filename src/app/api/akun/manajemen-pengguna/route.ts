@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { formatWibDateTime, isGmailSmtpConfigured, sendInstitutionalEmail } from '@/lib/email/mailer';
 import { buildAccountStatusEmail } from '@/lib/email/templates';
@@ -41,7 +41,7 @@ const UpdateUserSchema = z.object({
 });
 
 export async function GET() {
-  const guard = await requireApiRoles(ROLE_GROUPS.USER_MANAGEMENT);
+  const guard = await requireApiRoles(PERMISSIONS.USER_MANAGEMENT_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -114,7 +114,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.USER_MANAGEMENT);
+  const guard = await requireApiRoles(PERMISSIONS.USER_MANAGEMENT_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {

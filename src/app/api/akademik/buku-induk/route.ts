@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 
 const CreateStudentSchema = z.object({
   type: z.literal('STUDENT'),
@@ -44,7 +44,7 @@ const AssignLibraryOnlySchema = z.object({
 });
 
 export async function GET() {
-  const guard = await requireApiRoles(ROLE_GROUPS.BUKU_INDUK_READ);
+  const guard = await requireApiRoles(PERMISSIONS.BUKU_INDUK_API_READ);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -122,7 +122,7 @@ async function verifyActiveProfile(
 }
 
 export async function POST(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.AKADEMIK);
+  const guard = await requireApiRoles(PERMISSIONS.BUKU_INDUK_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {

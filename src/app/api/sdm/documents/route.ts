@@ -1,0 +1,238 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { isR2Configured, uploadBufferToR2 } from '@/lib/storage/r2';
+
+const ALLOWED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+]);
+
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+
+async function uploadFileToStorage(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  file: File,
+  keyPrefix: string
+): Promise<{ fileUrl: string; objectKey: string | null }> {
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const safeExt = file.name.split('.').pop() || 'bin';
+  const fileName = `${keyPrefix}-${Date.now()}.${safeExt}`;
+
+  if (isR2Configured()) {
+    const uploaded = await uploadBufferToR2({
+      folder: 'student-documents',
+      fileName,
+      contentType: file.type,
+      body: buffer,
+    });
+    return { fileUrl: uploaded.publicUrl, objectKey: uploaded.objectKey };
+  }
+
+  const bucketName = 'student-documents';
+  const { data: buckets } = await supabase.storage.listBuckets();
+  if (!buckets?.some((b) => b.name === bucketName)) {
+    await supabase.storage.createBucket(bucketName, { public: true });
+  }
+
+  const objectKey = `sdm/${fileName}`;
+  const { error: uploadErr } = await supabase.storage
+    .from(bucketName)
+    .upload(objectKey, buffer, { contentType: file.type, upsert: true });
+
+  if (!uploadErr) {
+    const { data: pub } = supabase.storage.from(bucketName).getPublicUrl(objectKey);
+    return { fileUrl: pub.publicUrl, objectKey };
+  }
+
+  if (file.size <= 1.5 * 1024 * 1024) {
+    const base64 = buffer.toString('base64');
+    return { fileUrl: `data:${file.type};base64,${base64}`, objectKey: null };
+  }
+
+  throw new Error('Gagal mengunggah file ke penyimpanan.');
+}
+
+export async function POST(request: NextRequest) {
+  const guard = await requireApiRoles(PERMISSIONS.SDM_MANAGE);
+  if (guard.errorResponse) return guard.errorResponse;
+
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
+  }
+
+  try {
+    const formData = await request.formData();
+    const file = formData.get('file');
+    const entityType = String(formData.get('entity_type') || '');
+    const entityId = String(formData.get('entity_id') || '');
+    const documentType = String(formData.get('document_type') || 'LAINNYA');
+    const documentTitle = String(formData.get('document_title') || '').trim() || null;
+    const documentNumber = String(formData.get('document_number') || '').trim() || null;
+
+    if (!['GTK', 'ORANG_TUA', 'SISWA', 'ALUMNI'].includes(entityType) || !entityId) {
+      return NextResponse.json({ error: 'Target entitas dokumen tidak valid.' }, { status: 400 });
+    }
+
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: 'File dokumen wajib dipilih.' }, { status: 400 });
+    }
+
+    if (!ALLOWED_MIME_TYPES.has(file.type)) {
+      return NextResponse.json(
+        { error: 'Format file harus JPG, PNG, WEBP, atau PDF.' },
+        { status: 400 }
+      );
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return NextResponse.json({ error: 'Ukuran file maksimal 5 MB.' }, { status: 400 });
+    }
+
+    const supabase = createSupabaseAdminClient();
+    const { fileUrl, objectKey } = await uploadFileToStorage(
+      supabase,
+      file,
+      `${entityType.toLowerCase()}-${documentType.toLowerCase()}-${entityId.slice(0, 8)}`
+    );
+
+    if (entityType === 'SISWA' || entityType === 'ALUMNI') {
+      const payload = {
+        student_id: entityId,
+        document_type: documentType,
+        document_title: documentTitle,
+        document_number: documentNumber,
+        file_name: file.name,
+        file_url: fileUrl,
+        object_key: objectKey,
+        mime_type: file.type,
+        file_size: file.size,
+        verification_status: 'TERVERIFIKASI',
+        uploaded_by: guard.session.userId,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (documentType !== 'LAINNYA') {
+        const { data: existingDoc } = await supabase
+          .from('student_documents')
+          .select('id')
+          .eq('student_id', entityId)
+          .eq('document_type', documentType)
+          .maybeSingle();
+
+        if (existingDoc) {
+          const { data, error } = await supabase
+            .from('student_documents')
+            .update(payload)
+            .eq('id', existingDoc.id)
+            .select('*')
+            .single();
+          if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+          return NextResponse.json({ document: data });
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('student_documents')
+        .insert(payload)
+        .select('*')
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ document: data }, { status: 201 });
+    }
+
+    const { data, error } = await supabase
+      .from('sdm_documents')
+      .insert({
+        entity_type: entityType,
+        entity_id: entityId,
+        document_type: documentType,
+        document_title: documentTitle,
+        document_number: documentNumber,
+        file_name: file.name,
+        file_url: fileUrl,
+        object_key: objectKey,
+        mime_type: file.type,
+        file_size: file.size,
+        uploaded_by: guard.session.userId,
+      })
+      .select('*')
+      .single();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ document: data }, { status: 201 });
+  } catch (err) {
+    return NextResponse.json(
+      { error: (err as Error).message || 'Gagal mengunggah dokumen SDM.' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const guard = await requireApiRoles(PERMISSIONS.SDM_MANAGE);
+  if (guard.errorResponse) return guard.errorResponse;
+
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
+  }
+
+  const VerifySchema = z.object({
+    id: z.string().uuid(),
+    verification_status: z.enum(['MENUNGGU', 'TERVERIFIKASI', 'DITOLAK']),
+    verification_notes: z.string().optional().nullable(),
+  });
+
+  try {
+    const body = await request.json();
+    const parsed = VerifySchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Data verifikasi dokumen tidak valid.' }, { status: 400 });
+    }
+
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from('student_documents')
+      .update({
+        verification_status: parsed.data.verification_status,
+        verification_notes: parsed.data.verification_notes ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', parsed.data.id)
+      .select('*')
+      .single();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ document: data });
+  } catch {
+    return NextResponse.json({ error: 'Gagal memperbarui verifikasi dokumen.' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const guard = await requireApiRoles(PERMISSIONS.SDM_MANAGE);
+  if (guard.errorResponse) return guard.errorResponse;
+
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
+  }
+
+  const entityType = request.nextUrl.searchParams.get('entity_type');
+  const id = request.nextUrl.searchParams.get('id');
+  if (!entityType || !id) {
+    return NextResponse.json({ error: 'Parameter entity_type dan id wajib diisi.' }, { status: 400 });
+  }
+
+  const table =
+    entityType === 'SISWA' || entityType === 'ALUMNI' ? 'student_documents' : 'sdm_documents';
+
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.from(table).delete().eq('id', id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}

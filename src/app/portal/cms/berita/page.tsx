@@ -3,8 +3,12 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Loader2, Plus, Trash2 } from 'lucide-react';
 import type { PostItem } from '@/types/database';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { PERMISSIONS } from '@/lib/auth/rbac';
 
 export default function CmsBeritaPage() {
+  const { hasPermission } = usePortalSession();
+  const canManage = hasPermission(PERMISSIONS.CMS_MANAGE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -87,6 +91,7 @@ export default function CmsBeritaPage() {
       )}
 
       <div className="grid lg:grid-cols-12 gap-6">
+        {canManage && (
         <form
           onSubmit={handleCreatePost}
           className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-4 h-fit"
@@ -147,8 +152,9 @@ export default function CmsBeritaPage() {
             Terbitkan Konten
           </button>
         </form>
+        )}
 
-        <div className="lg:col-span-7 space-y-3">
+        <div className={`${canManage ? 'lg:col-span-7' : 'lg:col-span-12'} space-y-3`}>
           {posts.length === 0 ? (
             <div className="glass-card rounded-3xl p-6 text-sm text-slate-600">
               Belum ada artikel yang diterbitkan.
@@ -166,14 +172,16 @@ export default function CmsBeritaPage() {
                   <p className="font-bold text-slate-900 text-sm mt-1.5">{p.title}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{p.excerpt}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleDeletePost(p.id)}
-                  className="p-2 rounded-xl text-rose-600 hover:bg-rose-50"
-                  title="Hapus"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePost(p.id)}
+                    className="p-2 rounded-xl text-rose-600 hover:bg-rose-50"
+                    title="Hapus"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             ))
           )}

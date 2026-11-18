@@ -35,6 +35,8 @@ import {
   X,
 } from 'lucide-react';
 import type { AppRole } from '@/types/database';
+import { PERMISSIONS, canAccessPortalPath, hasRolePermission } from '@/lib/auth/rbac';
+import { clearPortalSessionCache } from '@/lib/hooks/use-portal-session';
 
 interface UserInfo {
   fullName: string;
@@ -45,12 +47,14 @@ interface UserInfo {
 }
 
 interface NavItem {
-  href: string;
-  path: string;
+  id?: string;
+  href?: string;
+  path?: string;
   tab?: string;
   label: string;
   icon: React.ReactNode;
   allowedRoles?: AppRole[];
+  children?: NavItem[];
 }
 
 interface AccordionGroup {
@@ -85,21 +89,21 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         path: '/portal/cms/ppdb',
         label: 'Verifikasi PPDB',
         icon: <Users className="w-3.5 h-3.5" />,
-        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
+        allowedRoles: PERMISSIONS.CMS_PPDB_VIEW,
       },
       {
         href: '/portal/cms/manajemen-ppdb',
         path: '/portal/cms/manajemen-ppdb',
         label: 'Manajemen PPDB',
         icon: <CalendarRange className="w-3.5 h-3.5" />,
-        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
+        allowedRoles: PERMISSIONS.CMS_VIEW,
       },
       {
         href: '/portal/cms/sarana-prasarana',
         path: '/portal/cms/sarana-prasarana',
         label: 'Sarana & Prasarana',
         icon: <Building2 className="w-3.5 h-3.5" />,
-        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_HUMAS', 'KEPALA_TU', 'STAF_TU'],
+        allowedRoles: PERMISSIONS.CMS_SARPRAS_VIEW,
       },
     ],
   },
@@ -109,8 +113,7 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
     icon: <BookOpenCheck className="w-4 h-4" />,
     items: [
       {
-        href: '/portal/akademik/buku-induk',
-        path: '/portal/akademik/buku-induk',
+        id: 'akademik-buku-induk',
         label: 'Buku Induk Digital',
         icon: <Users className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -122,10 +125,30 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'KEPALA_TU',
           'STAF_TU',
         ],
+        children: [
+          {
+            href: '/portal/akademik/buku-induk/siswa',
+            path: '/portal/akademik/buku-induk/siswa',
+            label: 'Daftar Siswa',
+            icon: <Users className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/buku-induk/gtk',
+            path: '/portal/akademik/buku-induk/gtk',
+            label: 'Daftar GTK',
+            icon: <User className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/buku-induk/penempatan-akun',
+            path: '/portal/akademik/buku-induk/penempatan-akun',
+            label: 'Penempatan Akun Aktif',
+            icon: <User className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.BUKU_INDUK_MANAGE,
+          },
+        ],
       },
       {
-        href: '/portal/akademik/kelas-jadwal',
-        path: '/portal/akademik/kelas-jadwal',
+        id: 'akademik-kelas-jadwal',
         label: 'Kelas & Jadwal',
         icon: <Calendar className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -136,10 +159,29 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'GURU',
           'WALI_KELAS',
         ],
+        children: [
+          {
+            href: '/portal/akademik/kelas-jadwal/rombel',
+            path: '/portal/akademik/kelas-jadwal/rombel',
+            label: 'Rombel & Wali Kelas',
+            icon: <Users className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/kelas-jadwal/mapel',
+            path: '/portal/akademik/kelas-jadwal/mapel',
+            label: 'Mata Pelajaran',
+            icon: <BookOpen className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/kelas-jadwal/jadwal',
+            path: '/portal/akademik/kelas-jadwal/jadwal',
+            label: 'Jadwal Pelajaran',
+            icon: <Calendar className="w-3 h-3" />,
+          },
+        ],
       },
       {
-        href: '/portal/akademik/presensi',
-        path: '/portal/akademik/presensi',
+        id: 'akademik-presensi',
         label: 'Presensi GPS & Delegasi',
         icon: <MapPin className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -150,10 +192,59 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'GURU',
           'WALI_KELAS',
         ],
+        children: [
+          {
+            href: '/portal/akademik/presensi/gps',
+            path: '/portal/akademik/presensi/gps',
+            label: 'Presensi Guru (GPS)',
+            icon: <MapPin className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/presensi/jurnal',
+            path: '/portal/akademik/presensi/jurnal',
+            label: 'Jurnal Pembelajaran',
+            icon: <BookOpen className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/presensi/konfirmasi',
+            path: '/portal/akademik/presensi/konfirmasi',
+            label: 'Konfirmasi Kehadiran',
+            icon: <ShieldCheck className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/presensi/pengganti',
+            path: '/portal/akademik/presensi/pengganti',
+            label: 'Guru Pengganti',
+            icon: <Users className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/presensi/absensi-siswa',
+            path: '/portal/akademik/presensi/absensi-siswa',
+            label: 'Absensi Siswa Reguler',
+            icon: <ClipboardCheck className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/presensi/laporan-piket',
+            path: '/portal/akademik/presensi/laporan-piket',
+            label: 'Laporan Harian Piket',
+            icon: <FileText className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/presensi/jam-manual',
+            path: '/portal/akademik/presensi/jam-manual',
+            label: 'Jam Masuk & Pulang',
+            icon: <Calendar className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/presensi/izin-keluar',
+            path: '/portal/akademik/presensi/izin-keluar',
+            label: 'Izin Keluar Sebentar',
+            icon: <LogOut className="w-3 h-3" />,
+          },
+        ],
       },
       {
-        href: '/portal/akademik/ujian',
-        path: '/portal/akademik/ujian',
+        id: 'akademik-ujian',
         label: 'Periode Ujian (JTM)',
         icon: <ClipboardCheck className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -164,10 +255,59 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'GURU',
           'WALI_KELAS',
         ],
+        children: [
+          {
+            href: '/portal/akademik/ujian/periode',
+            path: '/portal/akademik/ujian/periode',
+            label: 'Periode Ujian',
+            icon: <CalendarRange className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/ujian/pengawas',
+            path: '/portal/akademik/ujian/pengawas',
+            label: 'Pengawas Ruang',
+            icon: <Users className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/ujian/panitia',
+            path: '/portal/akademik/ujian/panitia',
+            label: 'Panitia Ujian',
+            icon: <Users className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/ujian/konfirmasi-pengawas',
+            path: '/portal/akademik/ujian/konfirmasi-pengawas',
+            label: 'Konfirmasi Pengawas',
+            icon: <ShieldCheck className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/ujian/bap',
+            path: '/portal/akademik/ujian/bap',
+            label: 'Berita Acara (BAP)',
+            icon: <ClipboardCheck className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/ujian/pengganti',
+            path: '/portal/akademik/ujian/pengganti',
+            label: 'Pengawas & Panitia Pengganti',
+            icon: <User className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/ujian/absensi-siswa',
+            path: '/portal/akademik/ujian/absensi-siswa',
+            label: 'Absensi Siswa Ujian',
+            icon: <ClipboardCheck className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/ujian/lpj-panitia',
+            path: '/portal/akademik/ujian/lpj-panitia',
+            label: 'LPJ Harian Panitia',
+            icon: <FileText className="w-3 h-3" />,
+          },
+        ],
       },
       {
-        href: '/portal/akademik/acara',
-        path: '/portal/akademik/acara',
+        id: 'akademik-acara',
         label: 'Manajemen Acara & Kegiatan',
         icon: <CalendarRange className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -180,6 +320,26 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'STAF_TU',
           'GURU',
           'WALI_KELAS',
+        ],
+        children: [
+          {
+            href: '/portal/akademik/acara/kegiatan',
+            path: '/portal/akademik/acara/kegiatan',
+            label: 'Daftar & Tambah Acara',
+            icon: <CalendarRange className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/acara/konfirmasi',
+            path: '/portal/akademik/acara/konfirmasi',
+            label: 'Konfirmasi Kehadiran',
+            icon: <ShieldCheck className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/acara/upacara',
+            path: '/portal/akademik/acara/upacara',
+            label: 'Upacara Bendera Senin',
+            icon: <Users className="w-3 h-3" />,
+          },
         ],
       },
       {
@@ -199,8 +359,7 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         ],
       },
       {
-        href: '/portal/akademik/rekap-absensi',
-        path: '/portal/akademik/rekap-absensi',
+        id: 'akademik-rekap-absensi',
         label: 'Rekapitulasi Absensi',
         icon: <ClipboardCheck className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -215,10 +374,29 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'WALI_KELAS',
           'GURU_BK',
         ],
+        children: [
+          {
+            href: '/portal/akademik/rekap-absensi/guru',
+            path: '/portal/akademik/rekap-absensi/guru',
+            label: 'Rekap Absensi Guru',
+            icon: <User className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/rekap-absensi/siswa-harian',
+            path: '/portal/akademik/rekap-absensi/siswa-harian',
+            label: 'Rekap Siswa Harian',
+            icon: <Users className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/rekap-absensi/siswa-mapel',
+            path: '/portal/akademik/rekap-absensi/siswa-mapel',
+            label: 'Rekap Siswa per Mapel',
+            icon: <BookOpenCheck className="w-3 h-3" />,
+          },
+        ],
       },
       {
-        href: '/portal/akademik/kalender',
-        path: '/portal/akademik/kalender',
+        id: 'akademik-kalender',
         label: 'Kalender Pendidikan',
         icon: <Calendar className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -231,6 +409,20 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'STAF_TU',
           'GURU',
           'WALI_KELAS',
+        ],
+        children: [
+          {
+            href: '/portal/akademik/kalender/agenda',
+            path: '/portal/akademik/kalender/agenda',
+            label: 'Agenda Kalender',
+            icon: <Calendar className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/akademik/kalender/log-jtm',
+            path: '/portal/akademik/kalender/log-jtm',
+            label: 'Log JTM Libur Berbayar',
+            icon: <Calculator className="w-3 h-3" />,
+          },
         ],
       },
     ],
@@ -289,9 +481,8 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         ],
       },
       {
+        id: 'sdm-alumni',
         label: 'Manajemen Alumni',
-        href: '/portal/sdm/alumni',
-        path: '/portal/sdm/alumni',
         icon: <GraduationCap className="w-3.5 h-3.5" />,
         allowedRoles: [
           'SUPERADMIN',
@@ -303,6 +494,20 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'WAKA_KESISWAAN',
           'WAKA_HUMAS',
         ],
+        children: [
+          {
+            href: '/portal/sdm/alumni/lulusan',
+            path: '/portal/sdm/alumni/lulusan',
+            label: 'Daftar Lulusan',
+            icon: <GraduationCap className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/sdm/alumni/tracer',
+            path: '/portal/sdm/alumni/tracer',
+            label: 'Tracer Study',
+            icon: <FileText className="w-3 h-3" />,
+          },
+        ],
       },
     ],
   },
@@ -312,25 +517,97 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
     icon: <Wallet className="w-4 h-4" />,
     items: [
       {
-        href: '/portal/keuangan/spp',
-        path: '/portal/keuangan/spp',
+        id: 'keuangan-spp',
         label: 'SPP & Iuran Komite',
         icon: <Receipt className="w-3.5 h-3.5" />,
-        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'BENDAHARA', 'BENDAHARA_KOMITE'],
+        allowedRoles: PERMISSIONS.SPP_VIEW,
+        children: [
+          {
+            href: '/portal/keuangan/spp/jenis-biaya',
+            path: '/portal/keuangan/spp/jenis-biaya',
+            label: 'Jenis Biaya',
+            icon: <Settings className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/keuangan/spp/terbitkan',
+            path: '/portal/keuangan/spp/terbitkan',
+            label: 'Terbitkan Tagihan',
+            icon: <FileText className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.SPP_MANAGE,
+          },
+          {
+            href: '/portal/keuangan/spp/pembayaran',
+            path: '/portal/keuangan/spp/pembayaran',
+            label: 'Pembayaran & Tagihan',
+            icon: <Receipt className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/keuangan/spp/kelompok-saudara',
+            path: '/portal/keuangan/spp/kelompok-saudara',
+            label: 'Kelompok Saudara',
+            icon: <Users className="w-3 h-3" />,
+          },
+        ],
       },
       {
-        href: '/portal/keuangan/tabungan',
-        path: '/portal/keuangan/tabungan',
+        id: 'keuangan-tabungan',
         label: 'Tabungan Digital',
         icon: <PiggyBank className="w-3.5 h-3.5" />,
-        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'PENGELOLA_TABUNGAN'],
+        allowedRoles: PERMISSIONS.TABUNGAN_VIEW,
+        children: [
+          {
+            href: '/portal/keuangan/tabungan/buka-rekening',
+            path: '/portal/keuangan/tabungan/buka-rekening',
+            label: 'Buka Rekening',
+            icon: <User className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.TABUNGAN_MANAGE,
+          },
+          {
+            href: '/portal/keuangan/tabungan/transaksi',
+            path: '/portal/keuangan/tabungan/transaksi',
+            label: 'Transaksi Setor / Tarik',
+            icon: <Wallet className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.TABUNGAN_MANAGE,
+          },
+          {
+            href: '/portal/keuangan/tabungan/rekap',
+            path: '/portal/keuangan/tabungan/rekap',
+            label: 'Rekapitulasi Tabungan',
+            icon: <PiggyBank className="w-3 h-3" />,
+          },
+        ],
       },
       {
-        href: '/portal/keuangan/honorarium',
-        path: '/portal/keuangan/honorarium',
+        id: 'keuangan-honorarium',
         label: 'Honorarium Guru',
         icon: <Calculator className="w-3.5 h-3.5" />,
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'BENDAHARA', 'KEPALA_TU'],
+        children: [
+          {
+            href: '/portal/keuangan/honorarium/tarif-jam',
+            path: '/portal/keuangan/honorarium/tarif-jam',
+            label: 'Tarif JTM & Jam Sekolah',
+            icon: <Settings className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/keuangan/honorarium/jarak-guru',
+            path: '/portal/keuangan/honorarium/jarak-guru',
+            label: 'Jarak Rumah Guru',
+            icon: <MapPin className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/keuangan/honorarium/tugas-tambahan',
+            path: '/portal/keuangan/honorarium/tugas-tambahan',
+            label: 'Tugas Tambahan & Tunjangan',
+            icon: <Users className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/keuangan/honorarium/rekap',
+            path: '/portal/keuangan/honorarium/rekap',
+            label: 'Generate & Rekap Slip',
+            icon: <Calculator className="w-3 h-3" />,
+          },
+        ],
       },
     ],
   },
@@ -347,18 +624,24 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'KEPALA_TU', 'STAF_TU'],
       },
       {
-        href: '/portal/layanan/perpustakaan',
-        path: '/portal/layanan/perpustakaan',
+        id: 'layanan-perpustakaan',
         label: 'E-Library',
         icon: <BookOpen className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'PUSTAKAWAN',
-          'GURU',
-          'STAF_TU',
-          'SISWA',
-          'UMUM',
+        allowedRoles: PERMISSIONS.PERPUSTAKAAN_VIEW,
+        children: [
+          {
+            href: '/portal/layanan/perpustakaan/katalog',
+            path: '/portal/layanan/perpustakaan/katalog',
+            label: 'Katalog & Tambah Buku',
+            icon: <BookOpen className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/layanan/perpustakaan/anggota',
+            path: '/portal/layanan/perpustakaan/anggota',
+            label: 'Anggota & Kartu E-Library',
+            icon: <Users className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.PERPUSTAKAAN_ANGGOTA_VIEW,
+          },
         ],
       },
       {
@@ -366,21 +649,21 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         path: '/portal/layanan/bk',
         label: 'Bimbingan Konseling (BK)',
         icon: <ShieldAlert className="w-3.5 h-3.5" />,
-        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_KESISWAAN', 'GURU_BK'],
+        allowedRoles: PERMISSIONS.BK_VIEW,
       },
       {
         href: '/portal/layanan/guru-wali',
         path: '/portal/layanan/guru-wali',
         label: 'Manajemen Guru Wali',
         icon: <HeartHandshake className="w-3.5 h-3.5" />,
-        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'GURU_WALI', 'WALI_KELAS', 'GURU'],
+        allowedRoles: PERMISSIONS.GURU_WALI_VIEW,
       },
       {
         href: '/portal/layanan/alumni',
         path: '/portal/layanan/alumni',
         label: 'Tracer Study Alumni',
         icon: <GraduationCap className="w-3.5 h-3.5" />,
-        allowedRoles: ['SUPERADMIN', 'OPERATOR', 'WAKA_HUMAS', 'GURU_BK', 'ALUMNI', 'STAF_TU'],
+        allowedRoles: PERMISSIONS.ALUMNI_VIEW,
       },
     ],
   },
@@ -390,8 +673,7 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
     icon: <GraduationCap className="w-4 h-4" />,
     items: [
       {
-        href: '/portal/siswa/biodata-dokumen',
-        path: '/portal/siswa/biodata-dokumen',
+        id: 'siswa-biodata-dokumen',
         label: 'Biodata & Dokumen',
         icon: <FileText className="w-3.5 h-3.5" />,
         allowedRoles: [
@@ -402,6 +684,20 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           'KEPALA_TU',
           'STAF_TU',
           'WAKA_KESISWAAN',
+        ],
+        children: [
+          {
+            href: '/portal/siswa/biodata-dokumen/biodata',
+            path: '/portal/siswa/biodata-dokumen/biodata',
+            label: 'Biodata Lengkap',
+            icon: <User className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/siswa/biodata-dokumen/dokumen',
+            path: '/portal/siswa/biodata-dokumen/dokumen',
+            label: 'Scan Dokumen Pribadi',
+            icon: <FileText className="w-3 h-3" />,
+          },
         ],
       },
     ],
@@ -446,27 +742,75 @@ const PAGE_TITLES: Record<string, string> = {
   '/portal/cms/berita': 'Berita, Artikel & Pengumuman',
   '/portal/cms/ppdb': 'Verifikasi & Kelulusan PPDB Online',
   '/portal/cms/manajemen-ppdb': 'Manajemen Periode Pembukaan PPDB',
+  '/portal/cms/sarana-prasarana': 'Manajemen Sarana & Prasarana',
   '/portal/akademik/buku-induk': 'Buku Induk Digital (Siswa & GTK)',
+  '/portal/akademik/buku-induk/siswa': 'Buku Induk Digital — Daftar Siswa',
+  '/portal/akademik/buku-induk/gtk': 'Buku Induk Digital — Daftar GTK',
+  '/portal/akademik/buku-induk/penempatan-akun': 'Buku Induk Digital — Penempatan Akun Aktif',
   '/portal/akademik/kelas-jadwal': 'Manajemen Kelas & Jadwal Pelajaran',
+  '/portal/akademik/kelas-jadwal/rombel': 'Kelas & Jadwal — Rombel & Wali Kelas',
+  '/portal/akademik/kelas-jadwal/mapel': 'Kelas & Jadwal — Mata Pelajaran',
+  '/portal/akademik/kelas-jadwal/jadwal': 'Kelas & Jadwal — Jadwal Pelajaran',
   '/portal/akademik/presensi': 'Presensi GPS & Delegasi Guru Pengganti',
+  '/portal/akademik/presensi/gps': 'Presensi Guru (GPS Geofencing)',
+  '/portal/akademik/presensi/jurnal': 'Jurnal Pembelajaran (Hitung JTM)',
+  '/portal/akademik/presensi/konfirmasi': 'Konfirmasi Kehadiran (Admin / Guru Piket)',
+  '/portal/akademik/presensi/pengganti': 'Penunjukkan Guru Pengganti',
+  '/portal/akademik/presensi/absensi-siswa': 'Absensi Siswa Reguler (Guru Piket)',
+  '/portal/akademik/presensi/laporan-piket': 'Laporan Harian Guru Piket',
+  '/portal/akademik/presensi/jam-manual': 'Input Manual Jam Masuk & Pulang',
+  '/portal/akademik/presensi/izin-keluar': 'Izin Keluar Sebentar',
   '/portal/akademik/ujian': 'Periode Ujian (Pengawas & Panitia JTM)',
+  '/portal/akademik/ujian/periode': 'Ujian — Periode Ujian',
+  '/portal/akademik/ujian/pengawas': 'Ujian — Pengawas Ruang Ujian',
+  '/portal/akademik/ujian/panitia': 'Ujian — Panitia Ujian',
+  '/portal/akademik/ujian/konfirmasi-pengawas': 'Ujian — Konfirmasi Kehadiran Pengawas',
+  '/portal/akademik/ujian/bap': 'Ujian — Berita Acara Pengawasan (BAP)',
+  '/portal/akademik/ujian/pengganti': 'Ujian — Pengawas & Panitia Pengganti',
+  '/portal/akademik/ujian/absensi-siswa': 'Ujian — Absensi Siswa Ujian',
+  '/portal/akademik/ujian/lpj-panitia': 'Ujian — LPJ Harian Panitia Ujian',
   '/portal/akademik/acara': 'Manajemen Acara & Kegiatan Lembaga',
+  '/portal/akademik/acara/kegiatan': 'Acara & Kegiatan — Daftar & Tambah',
+  '/portal/akademik/acara/konfirmasi': 'Acara & Kegiatan — Konfirmasi Kehadiran',
+  '/portal/akademik/acara/upacara': 'Acara & Kegiatan — Upacara Bendera Senin',
   '/portal/akademik/jurnal-acara': 'Input Jurnal Acara Guru',
   '/portal/akademik/kalender': 'Kalender Pendidikan & Libur Berbayar',
+  '/portal/akademik/kalender/agenda': 'Kalender Pendidikan — Agenda & Tanggal',
+  '/portal/akademik/kalender/log-jtm': 'Kalender Pendidikan — Log JTM Libur Berbayar',
   '/portal/akademik/rekap-absensi': 'Rekapitulasi Absensi Guru & Siswa',
+  '/portal/akademik/rekap-absensi/guru': 'Rekapitulasi Absensi Guru',
+  '/portal/akademik/rekap-absensi/siswa-harian': 'Rekapitulasi Absensi Siswa Harian',
+  '/portal/akademik/rekap-absensi/siswa-mapel': 'Rekapitulasi Absensi Siswa per Mapel',
   '/portal/sdm/gtk': 'Manajemen GTK',
   '/portal/sdm/siswa': 'Manajemen Siswa',
   '/portal/sdm/orang-tua': 'Manajemen Orang Tua / Wali Siswa',
   '/portal/sdm/alumni': 'Manajemen Alumni',
+  '/portal/sdm/alumni/lulusan': 'Manajemen Alumni — Daftar Lulusan',
+  '/portal/sdm/alumni/tracer': 'Manajemen Alumni — Tracer Study',
   '/portal/keuangan/spp': 'Keuangan SPP & Iuran Komite',
+  '/portal/keuangan/spp/jenis-biaya': 'SPP & Komite — Jenis Biaya',
+  '/portal/keuangan/spp/terbitkan': 'SPP & Komite — Terbitkan Tagihan',
+  '/portal/keuangan/spp/pembayaran': 'SPP & Komite — Pembayaran & Daftar Tagihan',
+  '/portal/keuangan/spp/kelompok-saudara': 'SPP & Komite — Kelompok Saudara',
   '/portal/keuangan/tabungan': 'Tabungan Digital Warga & Umum',
+  '/portal/keuangan/tabungan/buka-rekening': 'Tabungan Digital — Buka Rekening',
+  '/portal/keuangan/tabungan/transaksi': 'Tabungan Digital — Transaksi Setor / Tarik',
+  '/portal/keuangan/tabungan/rekap': 'Tabungan Digital — Rekapitulasi Buku',
   '/portal/keuangan/honorarium': 'Manajemen Honorarium Guru',
+  '/portal/keuangan/honorarium/tarif-jam': 'Honorarium — Tarif JTM & Jam Sekolah',
+  '/portal/keuangan/honorarium/jarak-guru': 'Honorarium — Jarak Rumah Guru',
+  '/portal/keuangan/honorarium/tugas-tambahan': 'Honorarium — Tugas Tambahan & Tunjangan',
+  '/portal/keuangan/honorarium/rekap': 'Honorarium — Generate & Rekap Slip',
   '/portal/layanan/persuratan': 'Persuratan, Arsip Digital & Kartu Pelajar',
   '/portal/layanan/perpustakaan': 'Perpustakaan Digital (E-Library)',
+  '/portal/layanan/perpustakaan/katalog': 'E-Library — Katalog & Tambah Buku',
+  '/portal/layanan/perpustakaan/anggota': 'E-Library — Anggota & Kartu Perpustakaan',
   '/portal/layanan/bk': 'Bimbingan Konseling (BK) & Poin Siswa',
   '/portal/layanan/guru-wali': 'Manajemen Guru Wali',
   '/portal/layanan/alumni': 'Tracer Study / Portal Alumni',
   '/portal/siswa/biodata-dokumen': 'Biodata & Dokumen Siswa',
+  '/portal/siswa/biodata-dokumen/biodata': 'Biodata Lengkap Siswa',
+  '/portal/siswa/biodata-dokumen/dokumen': 'Scan Dokumen Pribadi Siswa',
   '/portal/akun/profil': 'Profil Akun',
   '/portal/akun/manajemen-pengguna': 'Manajemen Pengguna & Persetujuan Akun',
   '/portal/akun/kata-sandi': 'Ganti Kata Sandi',
@@ -479,6 +823,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -491,12 +836,14 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
       .then((data) => {
         if (data?.user) setUser(data.user);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setAuthLoaded(true));
   }, []);
 
   async function handleLogout() {
     setLoggingOut(true);
     try {
+      clearPortalSessionCache();
       await fetch('/api/auth/logout', { method: 'POST' });
     } finally {
       window.location.assign('/login');
@@ -516,12 +863,32 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
       : [user.primaryRole]
     : [];
 
+  function hasRoleAccess(item: NavItem): boolean {
+    if (!authLoaded || userRoles.length === 0) return false;
+    if (!item.allowedRoles) return true;
+    return hasRolePermission(userRoles, item.allowedRoles);
+  }
+
+  function isItemActive(item: NavItem): boolean {
+    if (item.path && (pathname === item.path || pathname.startsWith(`${item.path}/`))) {
+      return true;
+    }
+    if (item.children) {
+      return item.children.some((child) => isItemActive(child));
+    }
+    return false;
+  }
+
   const visibleGroups = ACCORDION_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => {
-      if (!item.allowedRoles || userRoles.length === 0) return true;
-      return userRoles.some((r) => item.allowedRoles!.includes(r));
-    }),
+    items: group.items
+      .filter(hasRoleAccess)
+      .map((item) =>
+        item.children
+          ? { ...item, children: item.children.filter(hasRoleAccess) }
+          : item
+      )
+      .filter((item) => !item.children || item.children.length > 0),
   })).filter((g) => g.items.length > 0);
 
   const currentTab = searchParams.get('tab');
@@ -568,7 +935,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         <div className="pt-1 space-y-1.5">
           {visibleGroups.map((group) => {
             const isOpen = Boolean(openGroups[group.id]);
-            const hasActiveChild = group.items.some((item) => item.path === pathname);
+            const hasActiveChild = group.items.some((item) => isItemActive(item));
 
             return (
               <div key={group.id} className="rounded-xl overflow-hidden">
@@ -595,11 +962,64 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
                 {isOpen && (
                   <div className="mt-1 ml-3 pl-3 border-l border-slate-200/80 space-y-1">
                     {group.items.map((item) => {
+                      if (item.children && item.children.length > 0) {
+                        const subId = item.id || item.label;
+                        const isSubOpen = Boolean(openGroups[subId]);
+                        const hasActiveSubChild = item.children.some((c) => isItemActive(c));
+
+                        return (
+                          <div key={subId} className="rounded-lg overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => toggleGroup(subId)}
+                              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition ${
+                                hasActiveSubChild
+                                  ? 'bg-emerald-50 text-emerald-800 font-semibold'
+                                  : 'text-slate-600 hover:bg-white/80 hover:text-emerald-700'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                {item.icon}
+                                <span className="truncate">{item.label}</span>
+                              </span>
+                              {isSubOpen ? (
+                                <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+                              ) : (
+                                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+                              )}
+                            </button>
+
+                            {isSubOpen && (
+                              <div className="mt-1 ml-2.5 pl-2.5 border-l border-slate-200/80 space-y-0.5">
+                                {item.children.map((subItem) => {
+                                  const isSubActive = pathname === subItem.path;
+                                  return (
+                                    <Link
+                                      key={subItem.href}
+                                      href={subItem.href || '#'}
+                                      onClick={() => setSidebarOpen(false)}
+                                      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] font-medium transition ${
+                                        isSubActive
+                                          ? 'bg-emerald-600 text-white shadow-xs font-semibold'
+                                          : 'text-slate-600 hover:bg-white/80 hover:text-emerald-700'
+                                      }`}
+                                    >
+                                      {subItem.icon}
+                                      <span className="truncate">{subItem.label}</span>
+                                    </Link>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+
                       const isActive = pathname === item.path;
                       return (
                         <Link
                           key={item.href}
-                          href={item.href}
+                          href={item.href || '#'}
                           onClick={() => setSidebarOpen(false)}
                           className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition ${
                             isActive
@@ -715,7 +1135,32 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 sm:p-6">{children}</main>
+        <main className="flex-1 p-4 sm:p-6">
+          {authLoaded && !canAccessPortalPath(normalizedPath, userRoles) ? (
+            <div className="max-w-xl mx-auto glass-card rounded-3xl p-8 text-center space-y-4 mt-8">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h1 className="text-lg font-bold text-slate-900">Akses Halaman Ditolak</h1>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Peran akun Anda ({userRoles.join(', ') || 'Tidak ada peran'}) tidak memiliki izin
+                  untuk mengakses halaman ini.
+                </p>
+              </div>
+              <div>
+                <Link
+                  href="/portal"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
+                >
+                  Kembali ke Dashboard Portal
+                </Link>
+              </div>
+            </div>
+          ) : (
+            children
+          )}
+        </main>
 
         {/* Portal Footer */}
         <footer className="border-t border-slate-200/70 bg-white/60 backdrop-blur px-6 py-4 text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-2">

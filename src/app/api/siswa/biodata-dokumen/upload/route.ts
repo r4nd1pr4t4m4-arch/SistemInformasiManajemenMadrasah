@@ -1,18 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { isR2Configured, uploadBufferToR2 } from '@/lib/storage/r2';
-import type { AppRole } from '@/types/database';
-
-const ALLOWED_ROLES: AppRole[] = [
-  'SISWA',
-  'SUPERADMIN',
-  'OPERATOR',
-  'KEPALA_LEMBAGA',
-  'KEPALA_TU',
-  'STAF_TU',
-  'WAKA_KESISWAAN',
-];
 
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
@@ -25,7 +14,7 @@ const ALLOWED_MIME_TYPES = new Set([
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 export async function POST(request: Request) {
-  const guard = await requireApiRoles(ALLOWED_ROLES);
+  const guard = await requireApiRoles(PERMISSIONS.SISWA_BIODATA_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   try {

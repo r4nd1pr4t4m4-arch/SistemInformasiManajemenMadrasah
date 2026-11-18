@@ -5,7 +5,7 @@ import {
   calculateDailyTransportAllowance,
   calculateTeacherHonorarium,
 } from '@/lib/domain/honorarium';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 
 const UpdateRateSchema = z.object({
   action: z.literal('UPDATE_RATE'),
@@ -78,7 +78,7 @@ const GenerateHonorariumSchema = z.object({
 });
 
 export async function GET() {
-  const guard = await requireApiRoles(ROLE_GROUPS.HONORARIUM);
+  const guard = await requireApiRoles(PERMISSIONS.HONORARIUM_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -150,7 +150,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.HONORARIUM);
+  const guard = await requireApiRoles(PERMISSIONS.HONORARIUM_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -298,7 +298,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.HONORARIUM);
+  const guard = await requireApiRoles(PERMISSIONS.HONORARIUM_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {

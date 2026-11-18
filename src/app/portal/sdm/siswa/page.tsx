@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   CheckCircle2,
   Edit3,
@@ -13,6 +14,8 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { PERMISSIONS } from '@/lib/auth/rbac';
 
 type ActiveAccount = {
   id: string;
@@ -66,6 +69,8 @@ const EMPTY_FORM = {
 };
 
 export default function ManajemenSiswaPage() {
+  const { hasPermission } = usePortalSession();
+  const canManage = hasPermission(PERMISSIONS.SDM_MANAGE);
   const [items, setItems] = useState<StudentItem[]>([]);
   const [accounts, setAccounts] = useState<ActiveAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -205,13 +210,15 @@ export default function ManajemenSiswaPage() {
             Kelola data induk peserta didik, status akademik, dan penautan akun siswa.
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Tambah Siswa
-        </button>
+        {canManage && (
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Tambah Siswa
+          </button>
+        )}
       </div>
 
       {message && (
@@ -349,20 +356,30 @@ export default function ManajemenSiswaPage() {
                     </td>
                     <td className="py-3 px-3 text-right">
                       <div className="inline-flex items-center gap-1">
-                        <button
-                          onClick={() => openEdit(item)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                          title="Edit"
+                        <Link
+                          href={`/portal/sdm/siswa/${item.id}`}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
                         >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item)}
-                          className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50"
-                          title="Hapus"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                          Detail
+                        </Link>
+                        {canManage && (
+                          <>
+                            <button
+                              onClick={() => openEdit(item)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                              title="Edit"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(item)}
+                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50"
+                              title="Hapus"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -373,7 +390,7 @@ export default function ManajemenSiswaPage() {
         </div>
       </div>
 
-      {modalOpen && (
+      {canManage && modalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">

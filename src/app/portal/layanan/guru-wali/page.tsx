@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
+import { PERMISSIONS } from '@/lib/auth/rbac';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
 
 interface Opt {
   id: string;
@@ -26,6 +28,9 @@ interface MentoringLogRow {
 }
 
 export default function GuruWaliPage() {
+  const { hasPermission } = usePortalSession();
+  const canAssign = hasPermission(PERMISSIONS.GURU_WALI_ASSIGN);
+  const canLog = hasPermission(PERMISSIONS.GURU_WALI_LOG);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [students, setStudents] = useState<Opt[]>([]);
@@ -101,108 +106,118 @@ export default function GuruWaliPage() {
       )}
 
       <div className="grid lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 space-y-5">
-          <div className="glass-card rounded-3xl p-6 space-y-3">
-            <h1 className="text-sm font-bold text-slate-900">
-              Tetapkan Guru Wali Siswa (Terpisah dari BK)
-            </h1>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await postGw(
-                  { action: 'ASSIGN_GURU_WALI', ...assignForm },
-                  'Guru Wali siswa berhasil ditetapkan.'
-                );
-              }}
-              className="space-y-2.5"
-            >
-              <select
-                required
-                value={assignForm.teacher_id}
-                onChange={(e) => setAssignForm({ ...assignForm, teacher_id: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-              >
-                <option value="">-- Pilih Guru Wali --</option>
-                {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.full_name}
-                  </option>
-                ))}
-              </select>
-              <select
-                required
-                value={assignForm.student_id}
-                onChange={(e) => setAssignForm({ ...assignForm, student_id: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-              >
-                <option value="">-- Pilih Siswa --</option>
-                {students.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="w-full bg-slate-900 text-white font-semibold py-2 rounded-xl text-xs"
-              >
-                Simpan Penugasan
-              </button>
-            </form>
-          </div>
+        {(canAssign || canLog) && (
+          <div className="lg:col-span-5 space-y-5">
+            {canAssign && (
+              <div className="glass-card rounded-3xl p-6 space-y-3">
+                <h1 className="text-sm font-bold text-slate-900">
+                  Tetapkan Guru Wali Siswa (Terpisah dari BK)
+                </h1>
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    await postGw(
+                      { action: 'ASSIGN_GURU_WALI', ...assignForm },
+                      'Guru Wali siswa berhasil ditetapkan.'
+                    );
+                  }}
+                  className="space-y-2.5"
+                >
+                  <select
+                    required
+                    value={assignForm.teacher_id}
+                    onChange={(e) => setAssignForm({ ...assignForm, teacher_id: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  >
+                    <option value="">-- Pilih Guru Wali --</option>
+                    {teachers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.full_name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    required
+                    value={assignForm.student_id}
+                    onChange={(e) => setAssignForm({ ...assignForm, student_id: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  >
+                    <option value="">-- Pilih Siswa --</option>
+                    {students.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    className="w-full bg-slate-900 text-white font-semibold py-2 rounded-xl text-xs"
+                  >
+                    Simpan Penugasan
+                  </button>
+                </form>
+              </div>
+            )}
 
-          <div className="glass-card rounded-3xl p-6 space-y-3">
-            <h2 className="text-sm font-bold text-slate-900">Catat Bimbingan Guru Wali</h2>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await postGw(
-                  { action: 'ADD_MENTORING_LOG', ...logForm },
-                  'Rekam jejak bimbingan Guru Wali tersimpan.'
-                );
-                setLogForm({ ...logForm, topic: '', notes: '' });
-              }}
-              className="space-y-2.5"
-            >
-              <select
-                required
-                value={logForm.assignment_id}
-                onChange={(e) => setLogForm({ ...logForm, assignment_id: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-              >
-                <option value="">-- Pilih Siswa Bimbingan --</option>
-                {assignments.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.student?.full_name} (Wali: {a.teacher?.full_name})
-                  </option>
-                ))}
-              </select>
-              <input
-                required
-                placeholder="Topik Bimbingan"
-                value={logForm.topic}
-                onChange={(e) => setLogForm({ ...logForm, topic: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-              />
-              <textarea
-                required
-                rows={3}
-                placeholder="Catatan Perkembangan"
-                value={logForm.notes}
-                onChange={(e) => setLogForm({ ...logForm, notes: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-              />
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 text-white font-semibold py-2 rounded-xl text-xs"
-              >
-                Simpan Log Bimbingan
-              </button>
-            </form>
+            {canLog && (
+              <div className="glass-card rounded-3xl p-6 space-y-3">
+                <h2 className="text-sm font-bold text-slate-900">Catat Bimbingan Guru Wali</h2>
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    await postGw(
+                      { action: 'ADD_MENTORING_LOG', ...logForm },
+                      'Rekam jejak bimbingan Guru Wali tersimpan.'
+                    );
+                    setLogForm({ ...logForm, topic: '', notes: '' });
+                  }}
+                  className="space-y-2.5"
+                >
+                  <select
+                    required
+                    value={logForm.assignment_id}
+                    onChange={(e) => setLogForm({ ...logForm, assignment_id: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  >
+                    <option value="">-- Pilih Siswa Bimbingan --</option>
+                    {assignments.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.student?.full_name} (Wali: {a.teacher?.full_name})
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    required
+                    placeholder="Topik Bimbingan"
+                    value={logForm.topic}
+                    onChange={(e) => setLogForm({ ...logForm, topic: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  />
+                  <textarea
+                    required
+                    rows={3}
+                    placeholder="Catatan Perkembangan"
+                    value={logForm.notes}
+                    onChange={(e) => setLogForm({ ...logForm, notes: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  />
+                  <button
+                    type="submit"
+                    className="w-full bg-emerald-600 text-white font-semibold py-2 rounded-xl text-xs"
+                  >
+                    Simpan Log Bimbingan
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
-        <div className="lg:col-span-7 glass-card rounded-3xl p-6 space-y-3">
+        <div
+          className={`${
+            canAssign || canLog ? 'lg:col-span-7' : 'lg:col-span-12'
+          } glass-card rounded-3xl p-6 space-y-3`}
+        >
           <h2 className="text-base font-bold text-slate-900">
             Rekam Jejak Bimbingan Guru Wali ({logs.length})
           </h2>

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 
 const OpenAccountSchema = z.object({
   action: z.literal('OPEN_ACCOUNT'),
@@ -23,7 +23,7 @@ const TransactionSchema = z.object({
 });
 
 export async function GET() {
-  const guard = await requireApiRoles(ROLE_GROUPS.TABUNGAN);
+  const guard = await requireApiRoles(PERMISSIONS.TABUNGAN_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -47,7 +47,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.TABUNGAN);
+  const guard = await requireApiRoles(PERMISSIONS.TABUNGAN_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {

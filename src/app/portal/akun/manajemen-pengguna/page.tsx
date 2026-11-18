@@ -17,6 +17,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { AppRole } from '@/types/database';
+import { PERMISSIONS } from '@/lib/auth/rbac';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
 
 type AccountStatus = 'PENDING' | 'AKTIF' | 'NONAKTIF' | 'DITOLAK';
 
@@ -69,6 +71,8 @@ const ASSIGNABLE_ROLES: { value: AppRole; label: string }[] = [
 ];
 
 export default function ManajemenPenggunaPage() {
+  const { hasPermission } = usePortalSession();
+  const canManage = hasPermission(PERMISSIONS.USER_MANAGEMENT_MANAGE);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [summary, setSummary] = useState<Summary>({
@@ -392,90 +396,98 @@ export default function ManajemenPenggunaPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <select
-                      aria-label={`Role ${u.full_name}`}
-                      value={u.primary_role}
-                      disabled={isBusy}
-                      onChange={(e) =>
-                        handleAction({
-                          userId: u.id,
-                          action: 'UPDATE_ROLE',
-                          primaryRole: e.target.value as AppRole,
-                        })
-                      }
-                      className="px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700"
-                    >
-                      {ASSIGNABLE_ROLES.map((r) => (
-                        <option key={r.value} value={r.value}>
-                          {r.label}
-                        </option>
-                      ))}
-                    </select>
-
-                    {u.account_status === 'PENDING' && (
+                    {canManage ? (
                       <>
-                        <button
-                          type="button"
+                        <select
+                          aria-label={`Role ${u.full_name}`}
+                          value={u.primary_role}
                           disabled={isBusy}
-                          onClick={() =>
+                          onChange={(e) =>
                             handleAction({
                               userId: u.id,
-                              action: 'APPROVE',
+                              action: 'UPDATE_ROLE',
+                              primaryRole: e.target.value as AppRole,
                             })
                           }
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
+                          className="px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700"
                         >
-                          {isBusy ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <UserCheck className="w-3.5 h-3.5" />
-                          )}
-                          Setujui & Aktifkan
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => {
-                            setRejectModalUser(u);
-                            setRejectionReason('');
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition disabled:opacity-50"
-                        >
-                          <XCircle className="w-3.5 h-3.5" /> Tolak
-                        </button>
+                          {ASSIGNABLE_ROLES.map((r) => (
+                            <option key={r.value} value={r.value}>
+                              {r.label}
+                            </option>
+                          ))}
+                        </select>
+
+                        {u.account_status === 'PENDING' && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() =>
+                                handleAction({
+                                  userId: u.id,
+                                  action: 'APPROVE',
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
+                            >
+                              {isBusy ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <UserCheck className="w-3.5 h-3.5" />
+                              )}
+                              Setujui & Aktifkan
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => {
+                                setRejectModalUser(u);
+                                setRejectionReason('');
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition disabled:opacity-50"
+                            >
+                              <XCircle className="w-3.5 h-3.5" /> Tolak
+                            </button>
+                          </>
+                        )}
+
+                        {u.account_status === 'AKTIF' && (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() =>
+                              handleAction({
+                                userId: u.id,
+                                action: 'DEACTIVATE',
+                              })
+                            }
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition disabled:opacity-50"
+                          >
+                            <UserX className="w-3.5 h-3.5" /> Nonaktifkan
+                          </button>
+                        )}
+
+                        {(u.account_status === 'NONAKTIF' || u.account_status === 'DITOLAK') && (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() =>
+                              handleAction({
+                                userId: u.id,
+                                action: 'APPROVE',
+                              })
+                            }
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" /> Aktifkan Kembali
+                          </button>
+                        )}
                       </>
-                    )}
-
-                    {u.account_status === 'AKTIF' && (
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() =>
-                          handleAction({
-                            userId: u.id,
-                            action: 'DEACTIVATE',
-                          })
-                        }
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition disabled:opacity-50"
-                      >
-                        <UserX className="w-3.5 h-3.5" /> Nonaktifkan
-                      </button>
-                    )}
-
-                    {(u.account_status === 'NONAKTIF' || u.account_status === 'DITOLAK') && (
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() =>
-                          handleAction({
-                            userId: u.id,
-                            action: 'APPROVE',
-                          })
-                        }
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
-                      >
-                        <UserCheck className="w-3.5 h-3.5" /> Aktifkan Kembali
-                      </button>
+                    ) : (
+                      <span className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700">
+                        Role: {u.primary_role}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -486,7 +498,7 @@ export default function ManajemenPenggunaPage() {
       </div>
 
       {/* Modal Tolak Pendaftaran */}
-      {rejectModalUser && (
+      {canManage && rejectModalUser && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
             <h2 className="text-base font-bold text-slate-900">Tolak Pendaftaran Akun</h2>

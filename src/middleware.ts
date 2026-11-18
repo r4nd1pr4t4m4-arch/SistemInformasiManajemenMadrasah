@@ -1,5 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { canAccessPortalPath } from '@/lib/auth/rbac';
+import type { AppRole } from '@/types/database';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -76,7 +78,7 @@ export async function middleware(request: NextRequest) {
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('is_active, account_status')
+      .select('is_active, account_status, primary_role')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -84,7 +86,7 @@ export async function middleware(request: NextRequest) {
       ? (
           await supabase
             .from('profiles')
-            .select('is_active')
+            .select('is_active, primary_role')
             .eq('id', user.id)
             .maybeSingle()
         ).data
@@ -100,6 +102,26 @@ export async function middleware(request: NextRequest) {
       loginUrl.pathname = '/login';
       loginUrl.searchParams.set('account_status', accountStatus || 'PENDING');
       return NextResponse.redirect(loginUrl);
+    }
+
+    const { data: extraRoles } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id);
+
+    const primaryRole =
+      ((fallbackProfile as { primary_role?: AppRole } | null)?.primary_role as AppRole) || 'UMUM';
+    const roleSet = new Set<AppRole>([primaryRole]);
+    for (const r of extraRoles || []) {
+      if (r.role) roleSet.add(r.role as AppRole);
+    }
+    const userRoles = Array.from(roleSet);
+
+    if (!canAccessPortalPath(request.nextUrl.pathname, userRoles)) {
+      const portalUrl = request.nextUrl.clone();
+      portalUrl.pathname = '/portal';
+      portalUrl.search = '';
+      return NextResponse.redirect(portalUrl);
     }
   }
 

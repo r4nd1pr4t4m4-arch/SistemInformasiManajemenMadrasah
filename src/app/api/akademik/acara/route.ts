@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 import { calculateLateJtm } from '@/lib/domain/jtm-late-penalty';
 
@@ -70,10 +70,10 @@ function getIsoDayOfWeek(dateStr: string): number {
 }
 
 export async function GET() {
-  const guard = await requireApiRoles(ROLE_GROUPS.AKADEMIK);
+  const guard = await requireApiRoles(PERMISSIONS.ACARA_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
-  const canManageEvents = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
+  const canManageEvents = hasAnyRole(guard.session, PERMISSIONS.ACARA_MANAGE);
 
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({
@@ -163,7 +163,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.AKADEMIK);
+  const guard = await requireApiRoles(PERMISSIONS.ACARA_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -173,7 +173,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const supabase = createSupabaseAdminClient();
-    const isAdmin = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
+    const isAdmin = hasAnyRole(guard.session, PERMISSIONS.ACARA_MANAGE);
 
     if (body.action === 'CREATE_EVENT') {
       if (!isAdmin) {

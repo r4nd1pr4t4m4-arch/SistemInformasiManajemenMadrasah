@@ -58,7 +58,7 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
 
 export function hasAnyRole(
   session: AuthenticatedSession | null,
-  allowed: AppRole[]
+  allowed: readonly AppRole[]
 ): boolean {
   if (!session) return false;
   return session.roles.some((r) => allowed.includes(r));

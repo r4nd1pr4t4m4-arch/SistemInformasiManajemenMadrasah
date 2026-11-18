@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 import { processPaidHolidayJtm } from '@/lib/domain/paid-holiday-jtm';
 import { getWibTodayDateString } from '@/lib/domain/jtm-late-penalty';
@@ -30,10 +30,10 @@ const RunAutoJtmSchema = z.object({
 });
 
 export async function GET() {
-  const guard = await requireApiRoles(ROLE_GROUPS.AKADEMIK);
+  const guard = await requireApiRoles(PERMISSIONS.KALENDER_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
-  const canManageCalendar = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
+  const canManageCalendar = hasAnyRole(guard.session, PERMISSIONS.KALENDER_MANAGE);
 
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({
@@ -67,15 +67,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.AKADEMIK);
+  const guard = await requireApiRoles(PERMISSIONS.KALENDER_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
-
-  if (!hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM)) {
-    return NextResponse.json(
-      { error: 'Hanya Admin / Kurikulum / Kesiswaan / TU yang dapat mengelola Kalender Pendidikan.' },
-      { status: 403 }
-    );
-  }
 
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });

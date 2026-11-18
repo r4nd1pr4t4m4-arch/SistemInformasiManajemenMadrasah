@@ -12,6 +12,8 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { PERMISSIONS } from '@/lib/auth/rbac';
 
 type ConditionType = 'BAIK' | 'RUSAK_RINGAN' | 'RUSAK_BERAT' | 'DALAM_PERBAIKAN';
 
@@ -54,6 +56,8 @@ const EMPTY_FORM = {
 };
 
 export default function ManajemenSaranaPrasaranaPage() {
+  const { hasPermission } = usePortalSession();
+  const canManage = hasPermission(PERMISSIONS.CMS_SARPRAS_MANAGE);
   const [facilities, setFacilities] = useState<FacilityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -207,6 +211,7 @@ export default function ManajemenSaranaPrasaranaPage() {
       </div>
 
       {/* Form Tambah / Edit */}
+      {canManage && (
       <form onSubmit={handleSubmit} className="glass-card rounded-3xl p-6 md:p-7 space-y-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -324,6 +329,7 @@ export default function ManajemenSaranaPrasaranaPage() {
             : 'Tambah Sarana & Prasarana'}
         </button>
       </form>
+      )}
 
       {/* Daftar Sarana & Prasarana */}
       <div className="glass-card rounded-3xl p-6 md:p-7 space-y-4">
@@ -396,22 +402,24 @@ export default function ManajemenSaranaPrasaranaPage() {
                     )}
                   </div>
 
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(item)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
-                    >
-                      <Pencil className="w-3.5 h-3.5" /> Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(item)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-rose-200 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" /> Hapus
-                    </button>
-                  </div>
+                  {canManage && (
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => startEdit(item)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(item)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-rose-200 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Hapus
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

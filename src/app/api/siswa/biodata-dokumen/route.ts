@@ -1,18 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import type { AppRole } from '@/types/database';
-
-const ALLOWED_ROLES: AppRole[] = [
-  'SISWA',
-  'SUPERADMIN',
-  'OPERATOR',
-  'KEPALA_LEMBAGA',
-  'KEPALA_TU',
-  'STAF_TU',
-  'WAKA_KESISWAAN',
-];
 
 const STAFF_ROLES: AppRole[] = [
   'SUPERADMIN',
@@ -146,7 +136,7 @@ async function resolveTargetStudent(
 }
 
 export async function GET(request: NextRequest) {
-  const guard = await requireApiRoles(ALLOWED_ROLES);
+  const guard = await requireApiRoles(PERMISSIONS.SISWA_BIODATA_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -199,7 +189,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const guard = await requireApiRoles(ALLOWED_ROLES);
+  const guard = await requireApiRoles(PERMISSIONS.SISWA_BIODATA_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -260,7 +250,7 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const guard = await requireApiRoles(ALLOWED_ROLES);
+  const guard = await requireApiRoles(PERMISSIONS.SISWA_BIODATA_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -342,7 +332,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const guard = await requireApiRoles(ALLOWED_ROLES);
+  const guard = await requireApiRoles(PERMISSIONS.SISWA_BIODATA_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {

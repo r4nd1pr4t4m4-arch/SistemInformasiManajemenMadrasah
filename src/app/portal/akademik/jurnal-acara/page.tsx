@@ -10,6 +10,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { calculateLateJtm, getWibTodayDateString, isSundayDate } from '@/lib/domain/jtm-late-penalty';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { PERMISSIONS } from '@/lib/auth/rbac';
 
 interface ConfirmationOpt {
   id: string;
@@ -43,6 +45,8 @@ interface EventJournalRow {
 }
 
 export default function JurnalAcaraPage() {
+  const { hasPermission } = usePortalSession();
+  const canSubmit = hasPermission(PERMISSIONS.JURNAL_ACARA_SUBMIT);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -185,6 +189,7 @@ export default function JurnalAcaraPage() {
       </div>
 
       <div className="grid lg:grid-cols-12 gap-6">
+        {canSubmit && (
         <div className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-4">
           <h2 className="text-base font-bold text-slate-900">Form Input Jurnal Acara</h2>
 
@@ -276,8 +281,9 @@ export default function JurnalAcaraPage() {
             </form>
           )}
         </div>
+        )}
 
-        <div className="lg:col-span-7 glass-card rounded-3xl p-6 space-y-4">
+        <div className={`${canSubmit ? 'lg:col-span-7' : 'lg:col-span-12'} glass-card rounded-3xl p-6 space-y-4`}>
           <h2 className="text-base font-bold text-slate-900">
             Riwayat Jurnal Acara &amp; Perolehan JTM ({visibleJournals.length})
           </h2>

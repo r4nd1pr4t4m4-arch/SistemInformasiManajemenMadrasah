@@ -242,7 +242,7 @@ export default function PortalDashboardPage() {
     ? user.roles && user.roles.length > 0
       ? user.roles
       : [user.primaryRole]
-    : ['UMUM'];
+    : [];
 
   const visibleCards = DASHBOARD_CARDS.filter((card) =>
     activeRoles.some((role) => card.allowedRoles.includes(role))

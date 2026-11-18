@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
+import { PERMISSIONS } from '@/lib/auth/rbac';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
 
 interface AlumniRow {
   id: string;
@@ -13,6 +15,8 @@ interface AlumniRow {
 }
 
 export default function AlumniPage() {
+  const { hasPermission } = usePortalSession();
+  const canSubmit = hasPermission(PERMISSIONS.ALUMNI_SUBMIT);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [alumni, setAlumni] = useState<AlumniRow[]>([]);
@@ -85,66 +89,72 @@ export default function AlumniPage() {
       )}
 
       <div className="grid lg:grid-cols-12 gap-6">
-        <form
-          onSubmit={handleSubmit}
-          className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-3 h-fit"
-        >
-          <h1 className="text-base font-bold text-slate-900">Input Tracer Study Alumni</h1>
-          <input
-            required
-            placeholder="Nama Lengkap Alumni"
-            value={alumniForm.full_name}
-            onChange={(e) => setAlumniForm({ ...alumniForm, full_name: e.target.value })}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="number"
-              value={alumniForm.graduation_year}
-              onChange={(e) =>
-                setAlumniForm({ ...alumniForm, graduation_year: Number(e.target.value) })
-              }
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-            />
-            <select
-              value={alumniForm.current_activity}
-              onChange={(e) =>
-                setAlumniForm({
-                  ...alumniForm,
-                  current_activity: e.target.value as typeof alumniForm.current_activity,
-                })
-              }
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-            >
-              <option value="KULIAH">Kuliah</option>
-              <option value="BEKERJA">Bekerja</option>
-              <option value="WIRAUSAHA">Wirausaha</option>
-              <option value="PESANTREN">Pesantren</option>
-            </select>
-          </div>
-          <input
-            placeholder="Kampus / Perusahaan / Instansi"
-            value={alumniForm.institution_or_company}
-            onChange={(e) =>
-              setAlumniForm({ ...alumniForm, institution_or_company: e.target.value })
-            }
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-          />
-          <input
-            placeholder="Jurusan / Jabatan"
-            value={alumniForm.major_or_position}
-            onChange={(e) => setAlumniForm({ ...alumniForm, major_or_position: e.target.value })}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-          />
-          <button
-            type="submit"
-            className="w-full bg-emerald-600 text-white font-semibold py-2.5 rounded-xl text-xs"
+        {canSubmit && (
+          <form
+            onSubmit={handleSubmit}
+            className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-3 h-fit"
           >
-            Simpan Data Alumni
-          </button>
-        </form>
+            <h1 className="text-base font-bold text-slate-900">Input Tracer Study Alumni</h1>
+            <input
+              required
+              placeholder="Nama Lengkap Alumni"
+              value={alumniForm.full_name}
+              onChange={(e) => setAlumniForm({ ...alumniForm, full_name: e.target.value })}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="number"
+                value={alumniForm.graduation_year}
+                onChange={(e) =>
+                  setAlumniForm({ ...alumniForm, graduation_year: Number(e.target.value) })
+                }
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              />
+              <select
+                value={alumniForm.current_activity}
+                onChange={(e) =>
+                  setAlumniForm({
+                    ...alumniForm,
+                    current_activity: e.target.value as typeof alumniForm.current_activity,
+                  })
+                }
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              >
+                <option value="KULIAH">Kuliah</option>
+                <option value="BEKERJA">Bekerja</option>
+                <option value="WIRAUSAHA">Wirausaha</option>
+                <option value="PESANTREN">Pesantren</option>
+              </select>
+            </div>
+            <input
+              placeholder="Kampus / Perusahaan / Instansi"
+              value={alumniForm.institution_or_company}
+              onChange={(e) =>
+                setAlumniForm({ ...alumniForm, institution_or_company: e.target.value })
+              }
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            />
+            <input
+              placeholder="Jurusan / Jabatan"
+              value={alumniForm.major_or_position}
+              onChange={(e) => setAlumniForm({ ...alumniForm, major_or_position: e.target.value })}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            />
+            <button
+              type="submit"
+              className="w-full bg-emerald-600 text-white font-semibold py-2.5 rounded-xl text-xs"
+            >
+              Simpan Data Alumni
+            </button>
+          </form>
+        )}
 
-        <div className="lg:col-span-7 glass-card rounded-3xl p-6 space-y-3">
+        <div
+          className={`${
+            canSubmit ? 'lg:col-span-7' : 'lg:col-span-12'
+          } glass-card rounded-3xl p-6 space-y-3`}
+        >
           <h2 className="text-base font-bold text-slate-900">Sebaran Alumni ({alumni.length})</h2>
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {alumni.map((a) => (

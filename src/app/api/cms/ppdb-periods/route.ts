@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 
 import { DEFAULT_PATHWAY_QUOTAS } from '@/lib/ppdb/pathways';
 
@@ -33,7 +33,7 @@ const UpdatePeriodSchema = z.object({
 });
 
 export async function GET() {
-  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  const guard = await requireApiRoles(PERMISSIONS.CMS_PPDB_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -51,7 +51,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  const guard = await requireApiRoles(PERMISSIONS.CMS_PPDB_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  const guard = await requireApiRoles(PERMISSIONS.CMS_PPDB_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -150,7 +150,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.CMS);
+  const guard = await requireApiRoles(PERMISSIONS.CMS_PPDB_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
   const { searchParams } = new URL(request.url);

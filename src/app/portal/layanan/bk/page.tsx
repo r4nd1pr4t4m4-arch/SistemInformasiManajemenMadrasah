@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
+import { PERMISSIONS } from '@/lib/auth/rbac';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
 
 interface StudentOpt {
   id: string;
@@ -18,6 +20,8 @@ interface BkRecordRow {
 }
 
 export default function BkPage() {
+  const { hasPermission } = usePortalSession();
+  const canManage = hasPermission(PERMISSIONS.BK_MANAGE);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [students, setStudents] = useState<StudentOpt[]>([]);
@@ -91,68 +95,74 @@ export default function BkPage() {
       )}
 
       <div className="grid lg:grid-cols-12 gap-6">
-        <form
-          onSubmit={handleSubmit}
-          className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-3 h-fit"
-        >
-          <h1 className="text-base font-bold text-slate-900">Catat Konsultasi / Poin BK</h1>
-          <select
-            required
-            value={bkForm.student_id}
-            onChange={(e) => setBkForm({ ...bkForm, student_id: e.target.value })}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+        {canManage && (
+          <form
+            onSubmit={handleSubmit}
+            className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-3 h-fit"
           >
-            <option value="">-- Pilih Siswa --</option>
-            {students.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.full_name}
-              </option>
-            ))}
-          </select>
-          <div className="grid grid-cols-2 gap-2">
+            <h1 className="text-base font-bold text-slate-900">Catat Konsultasi / Poin BK</h1>
             <select
-              value={bkForm.record_type}
-              onChange={(e) =>
-                setBkForm({ ...bkForm, record_type: e.target.value as typeof bkForm.record_type })
-              }
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              required
+              value={bkForm.student_id}
+              onChange={(e) => setBkForm({ ...bkForm, student_id: e.target.value })}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
             >
-              <option value="KONSULTASI">Konsultasi BK</option>
-              <option value="PELANGGARAN">Pelanggaran</option>
-              <option value="PRESTASI">Poin Prestasi</option>
+              <option value="">-- Pilih Siswa --</option>
+              {students.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.full_name}
+                </option>
+              ))}
             </select>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={bkForm.record_type}
+                onChange={(e) =>
+                  setBkForm({ ...bkForm, record_type: e.target.value as typeof bkForm.record_type })
+                }
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              >
+                <option value="KONSULTASI">Konsultasi BK</option>
+                <option value="PELANGGARAN">Pelanggaran</option>
+                <option value="PRESTASI">Poin Prestasi</option>
+              </select>
+              <input
+                type="number"
+                placeholder="Poin"
+                value={bkForm.points}
+                onChange={(e) => setBkForm({ ...bkForm, points: Number(e.target.value) })}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              />
+            </div>
             <input
-              type="number"
-              placeholder="Poin"
-              value={bkForm.points}
-              onChange={(e) => setBkForm({ ...bkForm, points: Number(e.target.value) })}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              required
+              placeholder="Judul Kasus / Prestasi / Konsultasi"
+              value={bkForm.title}
+              onChange={(e) => setBkForm({ ...bkForm, title: e.target.value })}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
             />
-          </div>
-          <input
-            required
-            placeholder="Judul Kasus / Prestasi / Konsultasi"
-            value={bkForm.title}
-            onChange={(e) => setBkForm({ ...bkForm, title: e.target.value })}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-          />
-          <textarea
-            required
-            rows={3}
-            placeholder="Deskripsi & tindak lanjut"
-            value={bkForm.description}
-            onChange={(e) => setBkForm({ ...bkForm, description: e.target.value })}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-          />
-          <button
-            type="submit"
-            className="w-full bg-emerald-600 text-white font-semibold py-2.5 rounded-xl text-xs"
-          >
-            Simpan Catatan BK
-          </button>
-        </form>
+            <textarea
+              required
+              rows={3}
+              placeholder="Deskripsi & tindak lanjut"
+              value={bkForm.description}
+              onChange={(e) => setBkForm({ ...bkForm, description: e.target.value })}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            />
+            <button
+              type="submit"
+              className="w-full bg-emerald-600 text-white font-semibold py-2.5 rounded-xl text-xs"
+            >
+              Simpan Catatan BK
+            </button>
+          </form>
+        )}
 
-        <div className="lg:col-span-7 glass-card rounded-3xl p-6 space-y-3">
+        <div
+          className={`${
+            canManage ? 'lg:col-span-7' : 'lg:col-span-12'
+          } glass-card rounded-3xl p-6 space-y-3`}
+        >
           <h2 className="text-base font-bold text-slate-900">
             Riwayat BK &amp; Poin Siswa ({records.length})
           </h2>

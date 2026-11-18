@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { hasAnyRole } from '@/lib/auth/session';
 
 const GtkCreateSchema = z.object({
   full_name: z.string().min(2),
@@ -118,7 +119,7 @@ async function fetchActiveAccounts(supabase: ReturnType<typeof createSupabaseAdm
 }
 
 export async function GET(request: NextRequest) {
-  const guard = await requireApiRoles(ROLE_GROUPS.SDM);
+  const guard = await requireApiRoles(PERMISSIONS.SDM_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -221,7 +222,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const guard = await requireApiRoles(ROLE_GROUPS.SDM);
+  const guard = await requireApiRoles(PERMISSIONS.SDM_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -231,6 +232,14 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const scope = body?.scope as string;
+    const requiredRoles =
+      scope === 'alumni-tracer' ? PERMISSIONS.SDM_ALUMNI_MANAGE : PERMISSIONS.SDM_MANAGE;
+    if (!hasAnyRole(guard.session, requiredRoles)) {
+      return NextResponse.json(
+        { error: 'Akses ditolak. Peran akun Anda tidak memiliki izin kelola untuk modul SDM ini.' },
+        { status: 403 }
+      );
+    }
     const supabase = createSupabaseAdminClient();
 
     if (scope === 'gtk') {
@@ -331,7 +340,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const guard = await requireApiRoles(ROLE_GROUPS.SDM);
+  const guard = await requireApiRoles(PERMISSIONS.SDM_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -341,6 +350,14 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
     const scope = body?.scope as string;
+    const requiredRoles =
+      scope === 'alumni-tracer' ? PERMISSIONS.SDM_ALUMNI_MANAGE : PERMISSIONS.SDM_MANAGE;
+    if (!hasAnyRole(guard.session, requiredRoles)) {
+      return NextResponse.json(
+        { error: 'Akses ditolak. Peran akun Anda tidak memiliki izin kelola untuk modul SDM ini.' },
+        { status: 403 }
+      );
+    }
     const supabase = createSupabaseAdminClient();
 
     if (scope === 'gtk') {
@@ -426,7 +443,7 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const guard = await requireApiRoles(ROLE_GROUPS.SDM);
+  const guard = await requireApiRoles(PERMISSIONS.SDM_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -437,6 +454,15 @@ export async function DELETE(request: NextRequest) {
   const id = request.nextUrl.searchParams.get('id');
   if (!scope || !id) {
     return NextResponse.json({ error: 'Parameter scope dan id wajib diisi.' }, { status: 400 });
+  }
+
+  const requiredRoles =
+    scope === 'alumni-tracer' ? PERMISSIONS.SDM_ALUMNI_MANAGE : PERMISSIONS.SDM_MANAGE;
+  if (!hasAnyRole(guard.session, requiredRoles)) {
+    return NextResponse.json(
+      { error: 'Akses ditolak. Peran akun Anda tidak memiliki izin kelola untuk modul SDM ini.' },
+      { status: 403 }
+    );
   }
 
   const tableMap: Record<string, string> = {

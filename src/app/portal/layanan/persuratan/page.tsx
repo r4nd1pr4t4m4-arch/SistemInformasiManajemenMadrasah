@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { CheckCircle2, CreditCard, Loader2 } from 'lucide-react';
+import { PERMISSIONS } from '@/lib/auth/rbac';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
 
 interface StudentOpt {
   id: string;
@@ -22,6 +24,8 @@ interface LetterRow {
 }
 
 export default function PersuratanPage() {
+  const { hasPermission } = usePortalSession();
+  const canManage = hasPermission(PERMISSIONS.PERSURATAN_MANAGE);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [students, setStudents] = useState<StudentOpt[]>([]);
@@ -107,67 +111,69 @@ export default function PersuratanPage() {
 
       <div className="grid lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5 space-y-5">
-          <div className="glass-card rounded-3xl p-6 space-y-3">
-            <h1 className="text-sm font-bold text-slate-900">Catat Surat Masuk / Keluar</h1>
-            <form onSubmit={postLetter} className="space-y-2.5">
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={letterForm.direction}
-                  onChange={(e) =>
-                    setLetterForm({
-                      ...letterForm,
-                      direction: e.target.value as 'MASUK' | 'KELUAR',
-                    })
-                  }
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+          {canManage && (
+            <div className="glass-card rounded-3xl p-6 space-y-3">
+              <h1 className="text-sm font-bold text-slate-900">Catat Surat Masuk / Keluar</h1>
+              <form onSubmit={postLetter} className="space-y-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={letterForm.direction}
+                    onChange={(e) =>
+                      setLetterForm({
+                        ...letterForm,
+                        direction: e.target.value as 'MASUK' | 'KELUAR',
+                      })
+                    }
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  >
+                    <option value="KELUAR">Surat Keluar</option>
+                    <option value="MASUK">Surat Masuk</option>
+                  </select>
+                  <select
+                    value={letterForm.category}
+                    onChange={(e) =>
+                      setLetterForm({
+                        ...letterForm,
+                        category: e.target.value as typeof letterForm.category,
+                      })
+                    }
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  >
+                    <option value="SURAT_KETERANGAN_AKTIF">Ket. Siswa Aktif</option>
+                    <option value="SURAT_MUTASI">Surat Mutasi</option>
+                    <option value="SURAT_TUGAS">Surat Tugas Guru</option>
+                    <option value="LAINNYA">Lainnya</option>
+                  </select>
+                </div>
+                <input
+                  required
+                  placeholder="Nomor Surat (cth: 045/MA-N/XI/2026)"
+                  value={letterForm.letter_number}
+                  onChange={(e) => setLetterForm({ ...letterForm, letter_number: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                />
+                <input
+                  required
+                  placeholder="Perihal / Subjek Surat"
+                  value={letterForm.subject}
+                  onChange={(e) => setLetterForm({ ...letterForm, subject: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                />
+                <input
+                  placeholder="Tujuan / Pengirim"
+                  value={letterForm.counterparty}
+                  onChange={(e) => setLetterForm({ ...letterForm, counterparty: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                />
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 text-white font-semibold py-2 rounded-xl text-xs"
                 >
-                  <option value="KELUAR">Surat Keluar</option>
-                  <option value="MASUK">Surat Masuk</option>
-                </select>
-                <select
-                  value={letterForm.category}
-                  onChange={(e) =>
-                    setLetterForm({
-                      ...letterForm,
-                      category: e.target.value as typeof letterForm.category,
-                    })
-                  }
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-                >
-                  <option value="SURAT_KETERANGAN_AKTIF">Ket. Siswa Aktif</option>
-                  <option value="SURAT_MUTASI">Surat Mutasi</option>
-                  <option value="SURAT_TUGAS">Surat Tugas Guru</option>
-                  <option value="LAINNYA">Lainnya</option>
-                </select>
-              </div>
-              <input
-                required
-                placeholder="Nomor Surat (cth: 045/MA-N/XI/2026)"
-                value={letterForm.letter_number}
-                onChange={(e) => setLetterForm({ ...letterForm, letter_number: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-              />
-              <input
-                required
-                placeholder="Perihal / Subjek Surat"
-                value={letterForm.subject}
-                onChange={(e) => setLetterForm({ ...letterForm, subject: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-              />
-              <input
-                placeholder="Tujuan / Pengirim"
-                value={letterForm.counterparty}
-                onChange={(e) => setLetterForm({ ...letterForm, counterparty: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-              />
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 text-white font-semibold py-2 rounded-xl text-xs"
-              >
-                Simpan Arsip Surat
-              </button>
-            </form>
-          </div>
+                  Simpan Arsip Surat
+                </button>
+              </form>
+            </div>
+          )}
 
           <div className="glass-card rounded-3xl p-6 space-y-3">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">

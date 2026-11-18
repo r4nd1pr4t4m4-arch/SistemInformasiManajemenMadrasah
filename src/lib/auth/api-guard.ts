@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserWithRoles, hasAnyRole, type AuthenticatedSession } from '@/lib/auth/session';
+import { PERMISSIONS } from '@/lib/auth/rbac';
 import type { AppRole } from '@/types/database';
+
+export { PERMISSIONS };
 
 export const ROLE_GROUPS = {
   CMS: [
@@ -123,7 +126,7 @@ export const ROLE_GROUPS = {
   ] as AppRole[],
 };
 
-export async function requireApiRoles(allowedRoles: AppRole[]): Promise<
+export async function requireApiRoles(allowedRoles: readonly AppRole[]): Promise<
   | { session: AuthenticatedSession; errorResponse: null }
   | { session: null; errorResponse: NextResponse }
 > {

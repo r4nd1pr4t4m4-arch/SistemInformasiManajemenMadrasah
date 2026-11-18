@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
+import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { hasAnyRole } from '@/lib/auth/session';
 
 async function getActiveAcademicYearId(
   supabase: ReturnType<typeof createSupabaseAdminClient>
@@ -40,7 +41,7 @@ const LogSchema = z.object({
 });
 
 export async function GET() {
-  const guard = await requireApiRoles(ROLE_GROUPS.GURU_WALI);
+  const guard = await requireApiRoles(PERMISSIONS.GURU_WALI_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -68,7 +69,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const guard = await requireApiRoles(ROLE_GROUPS.GURU_WALI);
+  const guard = await requireApiRoles(PERMISSIONS.GURU_WALI_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
@@ -80,6 +81,12 @@ export async function POST(request: Request) {
     const supabase = createSupabaseAdminClient();
 
     if (body.action === 'ASSIGN_GURU_WALI') {
+      if (!hasAnyRole(guard.session, PERMISSIONS.GURU_WALI_ASSIGN)) {
+        return NextResponse.json(
+          { error: 'Peran Anda tidak memiliki izin untuk menetapkan Guru Wali.' },
+          { status: 403 }
+        );
+      }
       const parsed = AssignSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data penugasan Guru Wali tidak valid.' }, { status: 400 });
@@ -102,6 +109,12 @@ export async function POST(request: Request) {
     }
 
     if (body.action === 'ADD_MENTORING_LOG') {
+      if (!hasAnyRole(guard.session, PERMISSIONS.GURU_WALI_LOG)) {
+        return NextResponse.json(
+          { error: 'Peran Anda tidak memiliki izin untuk mencatat log bimbingan Guru Wali.' },
+          { status: 403 }
+        );
+      }
       const parsed = LogSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data bimbingan Guru Wali tidak valid.' }, { status: 400 });

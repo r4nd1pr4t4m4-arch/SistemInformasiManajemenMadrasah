@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import type { InstitutionSettings, InstitutionType } from '@/types/database';
 import { invalidateInstitutionSettingsCache } from '@/lib/hooks/use-institution-settings';
+import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { PERMISSIONS } from '@/lib/auth/rbac';
 
 export default function CmsProfilPage() {
+  const { hasPermission } = usePortalSession();
+  const canManage = hasPermission(PERMISSIONS.CMS_MANAGE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -90,9 +94,17 @@ export default function CmsProfilPage() {
 
       {settings && (
         <form onSubmit={handleSaveSettings} className="glass-card rounded-3xl p-7 space-y-5">
-          <h1 className="text-lg font-bold text-slate-900">
-            Pengaturan Identitas Lembaga &amp; Geofencing
-          </h1>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h1 className="text-lg font-bold text-slate-900">
+              Pengaturan Identitas Lembaga &amp; Geofencing
+            </h1>
+            {!canManage && (
+              <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
+                Mode Baca Saja (Read-Only)
+              </span>
+            )}
+          </div>
+          <fieldset disabled={!canManage} className="space-y-5">
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -311,18 +323,20 @@ export default function CmsProfilPage() {
               <label className="block text-xs font-semibold text-slate-700">
                 Misi Lembaga
               </label>
-              <button
-                type="button"
-                onClick={() =>
-                  setSettings({
-                    ...settings,
-                    mission: [...(settings.mission || []), ''],
-                  })
-                }
-                className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
-              >
-                <Plus className="w-3.5 h-3.5" /> Tambah Poin Misi
-              </button>
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings({
+                      ...settings,
+                      mission: [...(settings.mission || []), ''],
+                    })
+                  }
+                  className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Tambah Poin Misi
+                </button>
+              )}
             </div>
             <div className="space-y-2">
               {(settings.mission && settings.mission.length > 0 ? settings.mission : ['']).map(
@@ -346,17 +360,19 @@ export default function CmsProfilPage() {
                       placeholder={`Poin misi ke-${idx + 1}...`}
                       className="flex-1 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm"
                     />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = (settings.mission || []).filter((_, i) => i !== idx);
-                        setSettings({ ...settings, mission: next });
-                      }}
-                      className="p-2 rounded-xl border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition"
-                      aria-label={`Hapus misi ${idx + 1}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {canManage && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = (settings.mission || []).filter((_, i) => i !== idx);
+                          setSettings({ ...settings, mission: next });
+                        }}
+                        className="p-2 rounded-xl border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition"
+                        aria-label={`Hapus misi ${idx + 1}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 )
               )}
@@ -472,15 +488,18 @@ export default function CmsProfilPage() {
               </div>
             </div>
           </div>
+          </fieldset>
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2.5 rounded-2xl text-sm transition"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? 'Menyimpan...' : 'Simpan Pengaturan'}
-          </button>
+          {canManage && (
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2.5 rounded-2xl text-sm transition"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Menyimpan...' : 'Simpan Pengaturan'}
+            </button>
+          )}
         </form>
       )}
     </div>
