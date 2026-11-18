@@ -47,22 +47,34 @@ export async function POST(request: Request) {
 
     const { data: existingProfile } = await admin
       .from('profiles')
-      .select('id, account_status, is_active')
+      .select('id, account_status, is_active, rejection_reason')
       .ilike('email', normalizedEmail)
       .maybeSingle();
 
     if (existingProfile) {
-      const status =
+      const rawStatus =
         existingProfile.account_status || (existingProfile.is_active ? 'AKTIF' : 'NONAKTIF');
-      return NextResponse.json(
-        {
-          code: 'EMAIL_ALREADY_REGISTERED',
-          accountStatus: status,
-          email: normalizedEmail,
-          error: 'Alamat email tersebut sudah terdaftar pada akun lain.',
-        },
-        { status: 409 }
-      );
+      const isPermanentRejected =
+        rawStatus === 'DITOLAK_PERMANEN' ||
+        (rawStatus === 'DITOLAK' &&
+          Boolean(existingProfile.rejection_reason?.startsWith('[TOLAK_PERMANEN]')));
+      const status = isPermanentRejected ? 'DITOLAK_PERMANEN' : rawStatus;
+
+      // Jika statusnya DITOLAK biasa (bukan DITOLAK_PERMANEN), izinkan kirim OTP untuk daftar ulang
+      if (status !== 'DITOLAK') {
+        return NextResponse.json(
+          {
+            code: 'EMAIL_ALREADY_REGISTERED',
+            accountStatus: status,
+            email: normalizedEmail,
+            error:
+              status === 'DITOLAK_PERMANEN'
+                ? 'Pendaftaran dengan alamat email ini telah ditolak secara permanen oleh Admin dan tidak dapat digunakan kembali.'
+                : 'Alamat email tersebut sudah terdaftar pada akun lain.',
+          },
+          { status: 409 }
+        );
+      }
     }
 
     const [school, otp] = await Promise.all([

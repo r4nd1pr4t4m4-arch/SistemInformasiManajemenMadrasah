@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, CheckCircle2, KeyRound, LogIn, Mail, UserPlus } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  KeyRound,
+  LogIn,
+  Mail,
+  RefreshCw,
+  UserPlus,
+} from 'lucide-react';
 import { createSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { validatePasswordStrength } from '@/lib/auth/password-policy';
 import { PasswordInput } from '@/components/auth/password-strength-input';
@@ -19,6 +28,7 @@ export default function LoginPage() {
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [duplicateEmailModal, setDuplicateEmailModal] = useState<{
     email: string;
     accountStatus: string;
@@ -28,10 +38,15 @@ export default function LoginPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const statusParam = params.get('account_status');
-    if (statusParam === 'DITOLAK') {
+    if (statusParam === 'DITOLAK_PERMANEN') {
       setMessage({
         type: 'error',
-        text: 'Pendaftaran akun Anda ditolak oleh Admin.',
+        text: 'Pendaftaran akun Anda ditolak secara permanen oleh Admin dan alamat email ini tidak dapat digunakan untuk mendaftar ulang.',
+      });
+    } else if (statusParam === 'DITOLAK') {
+      setMessage({
+        type: 'error',
+        text: 'Pendaftaran akun Anda ditolak oleh Admin. Anda masih dapat mendaftar ulang menggunakan email yang sama pada tab "Daftar Akun".',
       });
     } else if (statusParam === 'NONAKTIF') {
       setMessage({
@@ -46,7 +61,15 @@ export default function LoginPage() {
     }
   }, []);
 
-  async function handleSendRegisterOtp() {
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = window.setInterval(() => {
+      setResendCooldown((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCooldown]);
+
+  async function handleSendRegisterOtp(isResend = false) {
     setMessage(null);
     if (!email.trim()) {
       setMessage({ type: 'error', text: 'Masukkan alamat email terlebih dahulu.' });
@@ -75,9 +98,12 @@ export default function LoginPage() {
       setOtpSent(true);
       setOtpVerified(false);
       setOtpCode('');
+      setResendCooldown(60);
       setMessage({
         type: 'success',
-        text: data.message || 'Kode OTP 6 digit telah dikirim ke email Anda.',
+        text: isResend
+          ? `Kode OTP baru 6 digit telah dikirim ulang ke ${email.trim()}.`
+          : data.message || 'Kode OTP 6 digit telah dikirim ke email Anda.',
       });
     } catch {
       setMessage({ type: 'error', text: 'Terjadi kesalahan jaringan saat mengirim OTP.' });
@@ -182,19 +208,35 @@ export default function LoginPage() {
               ).data
             : profile;
 
-          const accountStatus = (profile as { account_status?: string } | null)?.account_status;
-          const rejectionReason = (profile as { rejection_reason?: string | null } | null)?.rejection_reason;
+          const rawAccountStatus = (profile as { account_status?: string } | null)?.account_status;
+          const rawRejectionReason = (profile as { rejection_reason?: string | null } | null)
+            ?.rejection_reason;
+          const isPermanentRejected =
+            rawAccountStatus === 'DITOLAK_PERMANEN' ||
+            (rawAccountStatus === 'DITOLAK' &&
+              Boolean(rawRejectionReason?.startsWith('[TOLAK_PERMANEN]')));
+          const accountStatus = isPermanentRejected ? 'DITOLAK_PERMANEN' : rawAccountStatus;
+          const rejectionReason = rawRejectionReason
+            ? rawRejectionReason.replace(/^\[TOLAK_PERMANEN\]\s*/, '')
+            : null;
           const isAllowed =
             Boolean(fallbackProfile?.is_active) && (!accountStatus || accountStatus === 'AKTIF');
 
           if (!isAllowed) {
             await supabase.auth.signOut();
-            if (accountStatus === 'DITOLAK') {
+            if (accountStatus === 'DITOLAK_PERMANEN') {
               setMessage({
                 type: 'error',
                 text: rejectionReason
-                  ? `Pendaftaran akun Anda ditolak oleh Admin. Alasan: ${rejectionReason}`
-                  : 'Pendaftaran akun Anda ditolak oleh Admin.',
+                  ? `Pendaftaran akun Anda ditolak secara permanen oleh Admin. Alasan: ${rejectionReason}. Alamat email ini tidak dapat digunakan untuk mendaftar ulang.`
+                  : 'Pendaftaran akun Anda ditolak secara permanen oleh Admin dan alamat email ini tidak dapat digunakan untuk mendaftar ulang.',
+              });
+            } else if (accountStatus === 'DITOLAK') {
+              setMessage({
+                type: 'error',
+                text: rejectionReason
+                  ? `Pendaftaran akun Anda ditolak oleh Admin. Alasan: ${rejectionReason}. Anda dapat mendaftar ulang menggunakan email yang sama pada tab "Daftar Akun".`
+                  : 'Pendaftaran akun Anda ditolak oleh Admin. Anda dapat mendaftar ulang menggunakan email yang sama pada tab "Daftar Akun".',
               });
             } else if (accountStatus === 'NONAKTIF') {
               setMessage({
@@ -353,6 +395,7 @@ export default function LoginPage() {
                         setOtpVerified(false);
                         setOtpSent(false);
                         setOtpCode('');
+                        setResendCooldown(0);
                       }
                     }}
                     placeholder="nama@lembaga.sch.id"
@@ -362,11 +405,17 @@ export default function LoginPage() {
                 {mode === 'register' && (
                   <button
                     type="button"
-                    disabled={otpSending || !email.trim()}
-                    onClick={handleSendRegisterOtp}
+                    disabled={otpSending || !email.trim() || (otpSent && resendCooldown > 0)}
+                    onClick={() => handleSendRegisterOtp(otpSent)}
                     className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold transition shrink-0"
                   >
-                    {otpSending ? 'Mengirim...' : otpSent ? 'Kirim Ulang' : 'Kirim OTP'}
+                    {otpSending
+                      ? 'Mengirim...'
+                      : otpSent
+                      ? resendCooldown > 0
+                        ? `Kirim Ulang (${resendCooldown}d)`
+                        : 'Kirim Ulang OTP'
+                      : 'Kirim OTP'}
                   </button>
                 )}
               </div>
@@ -405,9 +454,28 @@ export default function LoginPage() {
                     {otpVerified ? 'Terverifikasi' : otpVerifying ? 'Memeriksa...' : 'Verifikasi OTP'}
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-500">
-                  Klik &quot;Kirim OTP&quot;, masukkan kode 6 digit dari email Anda, lalu klik &quot;Verifikasi OTP&quot; untuk mengaktifkan tombol Buat Akun.
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                  <p className="text-[11px] text-slate-500 flex-1">
+                    {otpSent
+                      ? 'Belum menerima email atau kode OTP kedaluwarsa? Anda dapat meminta kode OTP baru.'
+                      : 'Klik "Kirim OTP", masukkan kode 6 digit dari email Anda, lalu klik "Verifikasi OTP".'}
+                  </p>
+                  {otpSent && (
+                    <button
+                      type="button"
+                      disabled={otpSending || !email.trim() || resendCooldown > 0}
+                      onClick={() => handleSendRegisterOtp(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 border border-slate-300 hover:border-emerald-300 text-emerald-700 disabled:text-slate-400 disabled:hover:bg-white disabled:hover:border-slate-300 text-[11px] font-semibold transition shrink-0"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${otpSending ? 'animate-spin' : ''}`} />
+                      {otpSending
+                        ? 'Mengirim Ulang...'
+                        : resendCooldown > 0
+                        ? `Request Ulang OTP (${resendCooldown}d)`
+                        : 'Request Ulang Kode OTP'}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -482,6 +550,10 @@ export default function LoginPage() {
               {duplicateEmailModal.accountStatus === 'PENDING' ? (
                 <span>
                   Akun dengan email ini saat ini berstatus <strong>Menunggu Persetujuan Admin</strong>. Silakan tunggu email notifikasi aktivasi dari Admin.
+                </span>
+              ) : duplicateEmailModal.accountStatus === 'DITOLAK_PERMANEN' ? (
+                <span>
+                  Pendaftaran akun dengan email ini telah berstatus <strong>Ditolak Permanen</strong> oleh Admin. Alamat email ini tidak dapat digunakan lagi untuk mendaftar akun baru.
                 </span>
               ) : duplicateEmailModal.accountStatus === 'DITOLAK' ? (
                 <span>

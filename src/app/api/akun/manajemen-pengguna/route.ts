@@ -32,9 +32,11 @@ const APP_ROLES: [AppRole, ...AppRole[]] = [
   'UMUM',
 ];
 
+const PERMANENT_REJECT_PREFIX = '[TOLAK_PERMANEN] ';
+
 const UpdateUserSchema = z.object({
   userId: z.string().uuid(),
-  action: z.enum(['APPROVE', 'REJECT', 'DEACTIVATE', 'UPDATE_ROLE']),
+  action: z.enum(['APPROVE', 'REJECT', 'REJECT_PERMANENT', 'DEACTIVATE', 'UPDATE_ROLE']),
   primaryRole: z.enum(APP_ROLES).optional(),
   rejectionReason: z.string().max(500).optional().nullable(),
   sendEmail: z.boolean().optional().default(true),
@@ -87,10 +89,21 @@ export async function GET() {
   const libMap = new Map((libMembers || []).map((l) => [l.profile_id as string, l]));
 
   const users = (profiles || []).map((p) => {
-    const status = p.account_status || (p.is_active ? 'AKTIF' : 'NONAKTIF');
+    const rawReason = p.rejection_reason || null;
+    const isPermByReason = Boolean(rawReason && rawReason.startsWith('[TOLAK_PERMANEN]'));
+    const cleanReason = isPermByReason
+      ? rawReason!.replace(/^\[TOLAK_PERMANEN\]\s*/, '') || null
+      : rawReason;
+    const rawStatus = p.account_status || (p.is_active ? 'AKTIF' : 'NONAKTIF');
+    const status =
+      rawStatus === 'DITOLAK_PERMANEN' || (rawStatus === 'DITOLAK' && isPermByReason)
+        ? 'DITOLAK_PERMANEN'
+        : rawStatus;
+
     return {
       ...p,
       account_status: status,
+      rejection_reason: cleanReason,
       roles: rolesMap.get(p.id) || [p.primary_role as AppRole],
       linked_student: studentMap.get(p.id) || null,
       linked_teacher: teacherMap.get(p.id) || null,
@@ -103,7 +116,9 @@ export async function GET() {
     pending: users.filter((u) => u.account_status === 'PENDING').length,
     active: users.filter((u) => u.account_status === 'AKTIF' && u.is_active).length,
     inactive: users.filter((u) => u.account_status === 'NONAKTIF').length,
-    rejected: users.filter((u) => u.account_status === 'DITOLAK').length,
+    rejected: users.filter(
+      (u) => u.account_status === 'DITOLAK' || u.account_status === 'DITOLAK_PERMANEN'
+    ).length,
   };
 
   return NextResponse.json({
@@ -135,7 +150,7 @@ export async function PATCH(request: Request) {
 
     if (
       userId === guard.session.userId &&
-      (action === 'REJECT' || action === 'DEACTIVATE')
+      (action === 'REJECT' || action === 'REJECT_PERMANENT' || action === 'DEACTIVATE')
     ) {
       return NextResponse.json(
         { error: 'Anda tidak dapat menonaktifkan atau menolak akun Anda sendiri.' },
@@ -171,6 +186,12 @@ export async function PATCH(request: Request) {
       updatePayload.rejection_reason = rejectionReason?.trim() || null;
       updatePayload.reviewed_at = nowIso;
       updatePayload.reviewed_by = guard.session.userId;
+    } else if (action === 'REJECT_PERMANENT') {
+      updatePayload.is_active = false;
+      updatePayload.account_status = 'DITOLAK_PERMANEN';
+      updatePayload.rejection_reason = `${PERMANENT_REJECT_PREFIX}${rejectionReason?.trim() || ''}`.trim();
+      updatePayload.reviewed_at = nowIso;
+      updatePayload.reviewed_by = guard.session.userId;
     } else if (action === 'DEACTIVATE') {
       updatePayload.is_active = false;
       updatePayload.account_status = 'NONAKTIF';
@@ -182,12 +203,31 @@ export async function PATCH(request: Request) {
       updatePayload.primary_role = primaryRole;
     }
 
-    const { data: updatedUser, error: updateErr } = await supabase
+    let { data: updatedUser, error: updateErr } = await supabase
       .from('profiles')
       .update(updatePayload)
       .eq('id', userId)
       .select('*')
       .single();
+
+    // Fallback jika constraint database belum dimigrasi untuk menerima 'DITOLAK_PERMANEN'
+    if (
+      updateErr &&
+      action === 'REJECT_PERMANENT' &&
+      updateErr.message.includes('account_status')
+    ) {
+      const fallbackRes = await supabase
+        .from('profiles')
+        .update({
+          ...updatePayload,
+          account_status: 'DITOLAK',
+        })
+        .eq('id', userId)
+        .select('*')
+        .single();
+      updatedUser = fallbackRes.data;
+      updateErr = fallbackRes.error;
+    }
 
     if (updateErr || !updatedUser) {
       return NextResponse.json(
@@ -220,7 +260,13 @@ export async function PATCH(request: Request) {
           const origin = request.headers.get('origin') || inst?.website_url || '';
           const loginUrl = origin ? `${origin.replace(/\/$/, '')}/login` : null;
           const emailStatus =
-            action === 'APPROVE' ? 'AKTIF' : action === 'REJECT' ? 'DITOLAK' : 'NONAKTIF';
+            action === 'APPROVE'
+              ? 'AKTIF'
+              : action === 'REJECT'
+              ? 'DITOLAK'
+              : action === 'REJECT_PERMANENT'
+              ? 'DITOLAK_PERMANEN'
+              : 'NONAKTIF';
 
           const tpl = buildAccountStatusEmail({
             institutionName: inst?.name || 'Portal SIMMS',
@@ -229,7 +275,10 @@ export async function PATCH(request: Request) {
             recipientName: targetUser.full_name,
             recipientEmail: targetUser.email,
             status: emailStatus,
-            rejectionReason: action === 'REJECT' ? rejectionReason?.trim() || null : null,
+            rejectionReason:
+              action === 'REJECT' || action === 'REJECT_PERMANENT'
+                ? rejectionReason?.trim() || null
+                : null,
             loginUrl,
             reviewedAtWib: formatWibDateTime(),
           });

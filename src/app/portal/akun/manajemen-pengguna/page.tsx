@@ -20,7 +20,7 @@ import type { AppRole } from '@/types/database';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 
-type AccountStatus = 'PENDING' | 'AKTIF' | 'NONAKTIF' | 'DITOLAK';
+type AccountStatus = 'PENDING' | 'AKTIF' | 'NONAKTIF' | 'DITOLAK' | 'DITOLAK_PERMANEN';
 
 interface ManagedUser {
   id: string;
@@ -124,7 +124,7 @@ export default function ManajemenPenggunaPage() {
 
   async function handleAction(params: {
     userId: string;
-    action: 'APPROVE' | 'REJECT' | 'DEACTIVATE' | 'UPDATE_ROLE';
+    action: 'APPROVE' | 'REJECT' | 'REJECT_PERMANENT' | 'DEACTIVATE' | 'UPDATE_ROLE';
     primaryRole?: AppRole;
     rejectionReason?: string;
   }) {
@@ -155,7 +155,9 @@ export default function ManajemenPenggunaPage() {
           params.action === 'APPROVE'
             ? 'Akun diaktifkan & email notifikasi persetujuan telah dikirim.'
             : params.action === 'REJECT'
-            ? 'Pendaftaran akun ditolak & email notifikasi penolakan telah dikirim.'
+            ? 'Pendaftaran akun ditolak (pengguna masih dapat mendaftar ulang) & email notifikasi telah dikirim.'
+            : params.action === 'REJECT_PERMANENT'
+            ? 'Pendaftaran akun ditolak secara permanen (email tidak dapat digunakan mendaftar lagi) & email notifikasi telah dikirim.'
             : 'Akun dinonaktifkan & email pemberitahuan telah dikirim.'
         );
       } else {
@@ -175,7 +177,15 @@ export default function ManajemenPenggunaPage() {
   const filteredUsers = useMemo(() => {
     const q = search.trim().toLowerCase();
     return users.filter((u) => {
-      if (filterStatus !== 'ALL' && u.account_status !== filterStatus) return false;
+      if (filterStatus !== 'ALL') {
+        if (filterStatus === 'DITOLAK') {
+          if (u.account_status !== 'DITOLAK' && u.account_status !== 'DITOLAK_PERMANEN') {
+            return false;
+          }
+        } else if (u.account_status !== filterStatus) {
+          return false;
+        }
+      }
       if (!q) return true;
       return (
         u.full_name.toLowerCase().includes(q) ||
@@ -200,10 +210,17 @@ export default function ManajemenPenggunaPage() {
         </span>
       );
     }
+    if (status === 'DITOLAK_PERMANEN') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-900 text-white border border-rose-950">
+          <XCircle className="w-3 h-3" /> Ditolak Permanen
+        </span>
+      );
+    }
     if (status === 'DITOLAK') {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-          <XCircle className="w-3 h-3" /> Ditolak
+          <XCircle className="w-3 h-3" /> Ditolak (Bisa Daftar Ulang)
         </span>
       );
     }
@@ -366,11 +383,13 @@ export default function ManajemenPenggunaPage() {
                         })}
                       </span>
                     </div>
-                    {u.rejection_reason && u.account_status === 'DITOLAK' && (
-                      <p className="text-[11px] text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg inline-block">
-                        Alasan ditolak: {u.rejection_reason}
-                      </p>
-                    )}
+                    {u.rejection_reason &&
+                      (u.account_status === 'DITOLAK' ||
+                        u.account_status === 'DITOLAK_PERMANEN') && (
+                        <p className="text-[11px] text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg inline-block">
+                          Alasan ditolak: {u.rejection_reason}
+                        </p>
+                      )}
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {u.linked_student && (
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200">
@@ -468,7 +487,9 @@ export default function ManajemenPenggunaPage() {
                           </button>
                         )}
 
-                        {(u.account_status === 'NONAKTIF' || u.account_status === 'DITOLAK') && (
+                        {(u.account_status === 'NONAKTIF' ||
+                          u.account_status === 'DITOLAK' ||
+                          u.account_status === 'DITOLAK_PERMANEN') && (
                           <button
                             type="button"
                             disabled={isBusy}
@@ -500,12 +521,22 @@ export default function ManajemenPenggunaPage() {
       {/* Modal Tolak Pendaftaran */}
       {canManage && rejectModalUser && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-slate-200">
             <h2 className="text-base font-bold text-slate-900">Tolak Pendaftaran Akun</h2>
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-slate-600 leading-relaxed">
               Anda akan menolak pendaftaran akun <strong>{rejectModalUser.full_name}</strong> (
               {rejectModalUser.email}). Email notifikasi penolakan akan dikirim secara otomatis.
             </p>
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 space-y-1">
+              <p>
+                • <strong>Tolak &amp; Kirim Email:</strong> Pengguna masih diizinkan mendaftar ulang
+                menggunakan alamat email yang sama (status kembali ke <em>Menunggu Persetujuan</em>).
+              </p>
+              <p>
+                • <strong>Tolak Permanen:</strong> Alamat email ini diblokir dari pendaftaran ulang
+                sehingga pengguna tidak dapat mendaftar lagi dengan email yang sama.
+              </p>
+            </div>
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-700">
                 Alasan Penolakan (opsional)
@@ -514,11 +545,11 @@ export default function ManajemenPenggunaPage() {
                 rows={3}
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
-                placeholder="Misal: Email tidak terdaftar sebagai warga lembaga..."
+                placeholder="Misal: Nama lengkap belum sesuai identitas resmi / Email bukan warga lembaga..."
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
               />
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setRejectModalUser(null)}
@@ -539,6 +570,20 @@ export default function ManajemenPenggunaPage() {
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
               >
                 {busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak & Kirim Email'}
+              </button>
+              <button
+                type="button"
+                disabled={busyId === rejectModalUser.id}
+                onClick={() =>
+                  handleAction({
+                    userId: rejectModalUser.id,
+                    action: 'REJECT_PERMANENT',
+                    rejectionReason,
+                  })
+                }
+                className="px-4 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 text-white text-xs font-semibold disabled:opacity-50"
+              >
+                {busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak Permanen'}
               </button>
             </div>
           </div>

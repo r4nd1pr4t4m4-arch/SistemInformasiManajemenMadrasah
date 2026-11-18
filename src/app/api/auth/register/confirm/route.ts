@@ -60,6 +60,76 @@ export async function POST(request: Request) {
     }
 
     const admin = createSupabaseAdminClient();
+
+    // Cek apakah email ini sudah ada di profiles (misal: akun yang sebelumnya DITOLAK biasa dan sedang daftar ulang)
+    const { data: existingProfile } = await admin
+      .from('profiles')
+      .select('id, account_status, is_active, rejection_reason')
+      .ilike('email', normalizedEmail)
+      .maybeSingle();
+
+    if (existingProfile) {
+      const rawStatus =
+        existingProfile.account_status || (existingProfile.is_active ? 'AKTIF' : 'NONAKTIF');
+      const isPermanentRejected =
+        rawStatus === 'DITOLAK_PERMANEN' ||
+        (rawStatus === 'DITOLAK' &&
+          Boolean(existingProfile.rejection_reason?.startsWith('[TOLAK_PERMANEN]')));
+
+      if (isPermanentRejected) {
+        return NextResponse.json(
+          {
+            error:
+              'Pendaftaran dengan alamat email ini telah ditolak secara permanen oleh Admin dan tidak dapat didaftarkan kembali.',
+          },
+          { status: 403 }
+        );
+      }
+
+      if (rawStatus !== 'DITOLAK') {
+        return NextResponse.json(
+          { error: 'Alamat email tersebut sudah terdaftar pada akun lain.' },
+          { status: 409 }
+        );
+      }
+
+      // Pengguna berstatus DITOLAK (biasa) mendaftar ulang: perbarui password & nama di Auth, lalu kembalikan ke PENDING
+      const { error: updateAuthErr } = await admin.auth.admin.updateUserById(existingProfile.id, {
+        email: normalizedEmail,
+        password: parsed.data.password,
+        email_confirm: true,
+        user_metadata: { full_name: fullName },
+      });
+
+      if (updateAuthErr) {
+        return NextResponse.json(
+          { error: updateAuthErr.message || 'Gagal memperbarui kredensial pendaftaran ulang.' },
+          { status: 400 }
+        );
+      }
+
+      await admin
+        .from('profiles')
+        .update({
+          full_name: fullName,
+          is_active: false,
+          account_status: 'PENDING',
+          rejection_reason: null,
+          reviewed_at: null,
+          reviewed_by: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingProfile.id);
+
+      const reRegResponse = NextResponse.json({
+        ok: true,
+        message:
+          'Pendaftaran ulang berhasil! Data akun Anda telah diperbarui dan statusnya kembali menjadi Menunggu Persetujuan Admin.',
+      });
+      reRegResponse.cookies.delete(REGISTER_VERIFIED_COOKIE);
+      return reRegResponse;
+    }
+
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email: normalizedEmail,
       password: parsed.data.password,

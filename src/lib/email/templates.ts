@@ -276,7 +276,7 @@ export function buildAccountStatusEmail(params: {
   institutionEmail?: string | null;
   recipientName: string;
   recipientEmail: string;
-  status: 'AKTIF' | 'DITOLAK' | 'NONAKTIF';
+  status: 'AKTIF' | 'DITOLAK' | 'DITOLAK_PERMANEN' | 'NONAKTIF';
   rejectionReason?: string | null;
   loginUrl?: string | null;
   reviewedAtWib: string;
@@ -341,27 +341,30 @@ export function buildAccountStatusEmail(params: {
     };
   }
 
-  if (params.status === 'DITOLAK') {
+  if (params.status === 'DITOLAK' || params.status === 'DITOLAK_PERMANEN') {
+    const isPermanent = params.status === 'DITOLAK_PERMANEN';
     const html = wrapEmailLayout({
       institutionName: params.institutionName,
       institutionAddress: params.institutionAddress,
       institutionEmail: params.institutionEmail,
-      preheader: `Pendaftaran akun Anda di ${params.institutionName} ditolak.`,
+      preheader: isPermanent
+        ? `Pendaftaran akun Anda di ${params.institutionName} ditolak secara permanen.`
+        : `Pendaftaran akun Anda di ${params.institutionName} ditolak.`,
       badgeText: 'Status Pendaftaran Akun',
-      title: 'Pendaftaran Akun Ditolak',
+      title: isPermanent ? 'Pendaftaran Akun Ditolak Permanen' : 'Pendaftaran Akun Ditolak',
       bodyHtml: `
         <p style="margin:0 0 14px;font-size:14px;line-height:1.65;color:#334155;">
           Assalamu'alaikum / Salam sejahtera, <strong>${safeName}</strong>,
         </p>
         <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#475569;">
-          Mohon maaf, pendaftaran akun Anda pada Portal SIMMS <strong>${escapeHtml(params.institutionName)}</strong> belum dapat kami setujui (<strong>DITOLAK</strong>).
+          Mohon maaf, pendaftaran akun Anda pada Portal SIMMS <strong>${escapeHtml(params.institutionName)}</strong> belum dapat kami setujui (<strong>${isPermanent ? 'DITOLAK PERMANEN' : 'DITOLAK'}</strong>).
         </p>
 
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#fff1f2;border:1px solid #fecdd3;border-radius:12px;margin-bottom:20px;">
           <tr>
             <td style="padding:14px 16px;font-size:12px;color:#9f1239;line-height:1.7;">
               <div><strong>Email Akun:</strong> ${safeEmail}</div>
-              <div><strong>Status Pendaftaran:</strong> DITOLAK</div>
+              <div><strong>Status Pendaftaran:</strong> ${isPermanent ? 'DITOLAK PERMANEN' : 'DITOLAK (Dapat Daftar Ulang)'}</div>
               <div><strong>Waktu Peninjauan:</strong> ${safeTime}</div>
               ${safeReason ? `<div><strong>Catatan / Alasan:</strong> ${safeReason}</div>` : ''}
             </td>
@@ -369,22 +372,32 @@ export function buildAccountStatusEmail(params: {
         </table>
 
         <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">
-          Jika Anda merasa ini adalah kekeliruan atau membutuhkan informasi lebih lanjut, silakan hubungi admin/operator lembaga.
+          ${
+            isPermanent
+              ? 'Alamat email ini telah ditolak secara permanen dan tidak dapat digunakan kembali untuk mendaftar akun baru.'
+              : 'Anda masih dapat melakukan pendaftaran ulang menggunakan alamat email yang sama setelah memperbaiki data/identitas Anda untuk ditinjau kembali oleh Admin.'
+          }
         </p>
       `,
     });
 
     const text = [
       `Halo ${params.recipientName},`,
-      `Mohon maaf, pendaftaran akun Anda di ${params.institutionName} (${params.recipientEmail}) DITOLAK pada ${params.reviewedAtWib}.`,
+      `Mohon maaf, pendaftaran akun Anda di ${params.institutionName} (${params.recipientEmail}) ${
+        isPermanent ? 'DITOLAK PERMANEN' : 'DITOLAK'
+      } pada ${params.reviewedAtWib}.`,
       params.rejectionReason ? `Alasan: ${params.rejectionReason}` : '',
-      'Silakan hubungi admin/operator lembaga jika membutuhkan informasi lebih lanjut.',
+      isPermanent
+        ? 'Alamat email ini tidak dapat digunakan kembali untuk mendaftar akun baru.'
+        : 'Anda masih dapat mendaftar ulang menggunakan alamat email ini setelah memperbaiki data Anda.',
     ]
       .filter(Boolean)
       .join('\n');
 
     return {
-      subject: `[${params.institutionName}] Pendaftaran Akun Anda Ditolak`,
+      subject: `[${params.institutionName}] Pendaftaran Akun Anda ${
+        isPermanent ? 'Ditolak Permanen' : 'Ditolak'
+      }`,
       html,
       text,
     };
