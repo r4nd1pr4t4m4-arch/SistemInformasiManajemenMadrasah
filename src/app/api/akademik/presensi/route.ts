@@ -146,6 +146,7 @@ export async function GET() {
     { data: schedules },
     { data: students },
     { data: classrooms },
+    { data: enrollments },
     { data: examSupervisors },
     { data: examCommittees },
     { data: settings },
@@ -189,7 +190,7 @@ export async function GET() {
     supabase
       .from('schedule_session_confirmations')
       .select(
-        '*, teacher:teachers_staff(full_name), schedule:schedules(day_of_week, start_time, end_time, jtm_count, classroom:classrooms(name), subject:subjects(name)), delegation:teacher_delegations(jtm_transferred, reason, original:teachers_staff!teacher_delegations_original_teacher_id_fkey(full_name)), exam_supervisor:exam_supervisors(exam_date, session_name, jtm_allocated)'
+        '*, teacher:teachers_staff(full_name), schedule:schedules(classroom_id, day_of_week, start_time, end_time, jtm_count, classroom:classrooms(name), subject:subjects(name)), delegation:teacher_delegations(jtm_transferred, reason, original:teachers_staff!teacher_delegations_original_teacher_id_fkey(full_name)), exam_supervisor:exam_supervisors(exam_date, session_name, jtm_allocated)'
       )
       .order('created_at', { ascending: false })
       .limit(120),
@@ -200,6 +201,10 @@ export async function GET() {
       .limit(200),
     supabase.from('students').select('id, full_name, nis').eq('status', 'AKTIF').order('full_name').limit(300),
     supabase.from('classrooms').select('id, name').order('name').limit(100),
+    supabase
+      .from('student_enrollments')
+      .select('student_id, classroom_id, student:students(id, full_name, nis, status)')
+      .limit(1000),
     supabase
       .from('exam_supervisors')
       .select('id, teacher_id, exam_date, session_name, subject_name, jtm_allocated, teacher:teachers_staff(full_name), room:exam_rooms(room_name)')
@@ -227,6 +232,7 @@ export async function GET() {
     schedules: schedules || [],
     students: students || [],
     classrooms: classrooms || [],
+    enrollments: enrollments || [],
     examSupervisors: examSupervisors || [],
     examCommittees: examCommittees || [],
     todayDate: getWibTodayDateString(),
@@ -310,6 +316,78 @@ export async function POST(request: Request) {
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ attendance: data });
+    }
+
+    if (body.action === 'RECORD_SUBJECT_STUDENT_ATTENDANCE') {
+      const schema = z.object({
+        schedule_id: z.string().uuid(),
+        classroom_id: z.string().uuid(),
+        attendance_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        records: z
+          .array(
+            z.object({
+              student_id: z.string().uuid(),
+              status: z.enum(['HADIR', 'SAKIT', 'IZIN', 'ALPA']),
+              notes: z.string().optional().nullable(),
+            })
+          )
+          .min(1),
+      });
+
+      const parsed = schema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Data absensi siswa per mata pelajaran tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const { schedule_id, classroom_id, attendance_date, records } = parsed.data;
+
+      await supabase
+        .from('student_attendances')
+        .delete()
+        .eq('schedule_id', schedule_id)
+        .eq('attendance_date', attendance_date);
+
+      const rowsToInsert = records.map((r) => ({
+        student_id: r.student_id,
+        classroom_id,
+        schedule_id,
+        attendance_date,
+        status: r.status,
+        notes: r.notes || null,
+        recorded_by: guard.session.userId,
+      }));
+
+      const { error: insErr } = await supabase.from('student_attendances').insert(rowsToInsert);
+      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+
+      const presentCount = records.filter((r) => r.status === 'HADIR').length;
+      const absentList = records.filter((r) => r.status !== 'HADIR');
+      const { data: studentNames } =
+        absentList.length > 0
+          ? await supabase
+              .from('students')
+              .select('id, full_name')
+              .in(
+                'id',
+                absentList.map((a) => a.student_id)
+              )
+          : { data: [] };
+
+      const nameMap = new Map((studentNames || []).map((s) => [s.id, s.full_name]));
+      const absentNotes = absentList
+        .map((a) => `${nameMap.get(a.student_id) || 'Siswa'} (${a.status})`)
+        .join(', ');
+
+      return NextResponse.json({
+        ok: true,
+        savedCount: rowsToInsert.length,
+        presentCount,
+        absentCount: absentList.length,
+        absentNotes,
+      });
     }
 
     if (body.action === 'TEACHER_ATTENDANCE') {

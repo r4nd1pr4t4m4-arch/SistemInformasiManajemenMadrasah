@@ -70,6 +70,7 @@ interface TeacherAttendanceRow {
   teacher?: { full_name: string } | null;
   delegation?: { jtm_transferred: number } | null;
   schedule?: {
+    classroom_id?: string;
     day_of_week: number;
     start_time: string;
     end_time: string;
@@ -123,6 +124,7 @@ interface SessionConfirmationRow {
   approved_jtm: number;
   teacher?: { full_name: string } | null;
   schedule?: {
+    classroom_id?: string;
     day_of_week: number;
     start_time: string;
     end_time: string;
@@ -168,6 +170,16 @@ export default function PresensiPage() {
   const [teachers, setTeachers] = useState<TeacherOpt[]>([]);
   const [students, setStudents] = useState<{ id: string; full_name: string; nis: string | null }[]>([]);
   const [classrooms, setClassrooms] = useState<{ id: string; name: string }[]>([]);
+  const [enrollments, setEnrollments] = useState<
+    {
+      student_id: string;
+      classroom_id: string;
+      student?: { id: string; full_name: string; nis: string | null; status: string } | null;
+    }[]
+  >([]);
+  const [subjectStudentStatuses, setSubjectStudentStatuses] = useState<
+    Record<string, 'HADIR' | 'SAKIT' | 'IZIN' | 'ALPA'>
+  >({});
   const [studentAttendances, setStudentAttendances] = useState<
     {
       id: string;
@@ -334,6 +346,7 @@ export default function PresensiPage() {
       setTeachers(bi.teachers || []);
       setStudents(pr.students || []);
       setClassrooms(pr.classrooms || []);
+      setEnrollments(pr.enrollments || []);
       setStudentAttendances(pr.studentAttendances || []);
       setSchedules(pr.schedules || []);
       setExamSupervisors(pr.examSupervisors || []);
@@ -925,12 +938,31 @@ export default function PresensiPage() {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
+              const sc = pendingJournalSessions.find(
+                (item) => item.id === journalForm.session_confirmation_id
+              );
+              const classroomId = sc?.schedule?.classroom_id;
+              if (sc?.schedule_id && classroomId && Object.keys(subjectStudentStatuses).length > 0) {
+                const records = Object.entries(subjectStudentStatuses).map(([student_id, status]) => ({
+                  student_id,
+                  status,
+                }));
+                await postPresensi({
+                  action: 'RECORD_SUBJECT_STUDENT_ATTENDANCE',
+                  schedule_id: sc.schedule_id,
+                  classroom_id: classroomId,
+                  attendance_date: sc.session_date,
+                  records,
+                });
+              }
+
               const res = await postPresensi({ action: 'SUBMIT_JOURNAL', ...journalForm });
               if (res) {
                 showToast(
                   'success',
-                  `Jurnal pembelajaran disimpan (${res.percentage ?? 100}%). +${res.jtmCredited} JTM telah dihitung.`
+                  `Jurnal pembelajaran & absensi siswa mapel disimpan (${res.percentage ?? 100}%). +${res.jtmCredited} JTM telah dihitung.`
                 );
+                setSubjectStudentStatuses({});
                 setJournalForm({
                   session_confirmation_id: '',
                   topic: '',
@@ -947,9 +979,29 @@ export default function PresensiPage() {
             <select
               required
               value={journalForm.session_confirmation_id}
-              onChange={(e) =>
-                setJournalForm({ ...journalForm, session_confirmation_id: e.target.value })
-              }
+              onChange={(e) => {
+                const nextId = e.target.value;
+                const sc = pendingJournalSessions.find((item) => item.id === nextId);
+                const classroomId = sc?.schedule?.classroom_id;
+                const classStudents = classroomId
+                  ? enrollments
+                      .filter((en) => en.classroom_id === classroomId && en.student)
+                      .map((en) => en.student!)
+                  : [];
+                const nextStatuses: Record<string, 'HADIR' | 'SAKIT' | 'IZIN' | 'ALPA'> = {};
+                for (const st of classStudents) {
+                  nextStatuses[st.id] = 'HADIR';
+                }
+                setSubjectStudentStatuses(nextStatuses);
+                setJournalForm({
+                  ...journalForm,
+                  session_confirmation_id: nextId,
+                  present_students_count:
+                    classStudents.length > 0 ? classStudents.length : journalForm.present_students_count,
+                  absent_students_count: classStudents.length > 0 ? 0 : journalForm.absent_students_count,
+                  student_attendance_notes: '',
+                });
+              }}
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
             >
               <option value="">
@@ -997,9 +1049,100 @@ export default function PresensiPage() {
 
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
               <p className="text-[11px] font-semibold text-slate-700">
-                Absensi Siswa yang Dicantumkan dalam Jurnal Pembelajaran
+                Absensi Siswa per Nama oleh Guru Mata Pelajaran (terhubung ke Jadwal)
               </p>
-              <div className="grid grid-cols-2 gap-2">
+              {(() => {
+                const sc = pendingJournalSessions.find(
+                  (item) => item.id === journalForm.session_confirmation_id
+                );
+                const classroomId = sc?.schedule?.classroom_id;
+                const classStudents = classroomId
+                  ? enrollments
+                      .filter((en) => en.classroom_id === classroomId && en.student)
+                      .map((en) => en.student!)
+                  : [];
+
+                if (!sc) {
+                  return (
+                    <p className="text-[11px] text-slate-500">
+                      Pilih jadwal mengajar di atas untuk memuat daftar siswa kelas.
+                    </p>
+                  );
+                }
+
+                if (classStudents.length === 0) {
+                  return (
+                    <p className="text-[11px] text-amber-700">
+                      Belum ada siswa terdaftar di rombel kelas ini pada tahun ajaran aktif. Anda tetap
+                      dapat mengisi jumlah kehadiran di bawah.
+                    </p>
+                  );
+                }
+
+                return (
+                  <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
+                    {classStudents.map((st) => {
+                      const current = subjectStudentStatuses[st.id] || 'HADIR';
+                      return (
+                        <div
+                          key={st.id}
+                          className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs"
+                        >
+                          <div className="truncate">
+                            <span className="font-semibold text-slate-900">{st.full_name}</span>
+                            {st.nis && <span className="text-slate-400 ml-1.5">({st.nis})</span>}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {(['HADIR', 'SAKIT', 'IZIN', 'ALPA'] as const).map((statusOpt) => (
+                              <button
+                                key={statusOpt}
+                                type="button"
+                                onClick={() => {
+                                  const next = { ...subjectStudentStatuses, [st.id]: statusOpt };
+                                  setSubjectStudentStatuses(next);
+                                  const entries = classStudents.map((item) => ({
+                                    name: item.full_name,
+                                    status: next[item.id] || 'HADIR',
+                                  }));
+                                  const presentCount = entries.filter(
+                                    (x) => x.status === 'HADIR'
+                                  ).length;
+                                  const absentEntries = entries.filter(
+                                    (x) => x.status !== 'HADIR'
+                                  );
+                                  setJournalForm((prev) => ({
+                                    ...prev,
+                                    present_students_count: presentCount,
+                                    absent_students_count: absentEntries.length,
+                                    student_attendance_notes: absentEntries
+                                      .map((x) => `${x.name} (${x.status})`)
+                                      .join(', '),
+                                  }));
+                                }}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
+                                  current === statusOpt
+                                    ? statusOpt === 'HADIR'
+                                      ? 'bg-emerald-600 text-white'
+                                      : statusOpt === 'SAKIT'
+                                      ? 'bg-amber-500 text-white'
+                                      : statusOpt === 'IZIN'
+                                      ? 'bg-sky-600 text-white'
+                                      : 'bg-rose-600 text-white'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}
+                              >
+                                {statusOpt[0]}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 <input
                   type="number"
                   min={0}

@@ -7,7 +7,8 @@ export type StorageFolder =
   | 'gallery'
   | 'ebooks'
   | 'letters'
-  | 'avatars';
+  | 'avatars'
+  | 'student-documents';
 
 export function isR2Configured(): boolean {
   return Boolean(
@@ -66,4 +67,34 @@ export async function createR2PresignedUploadUrl(params: {
   const publicUrl = publicBase ? `${publicBase}/${objectKey}` : objectKey;
 
   return { uploadUrl, objectKey, publicUrl };
+}
+
+export async function uploadBufferToR2(params: {
+  folder: StorageFolder;
+  fileName: string;
+  contentType: string;
+  body: Buffer;
+}): Promise<{ objectKey: string; publicUrl: string }> {
+  const bucket = process.env.R2_BUCKET_NAME;
+  if (!bucket) {
+    throw new Error('R2_BUCKET_NAME belum dikonfigurasi.');
+  }
+
+  const sanitizedName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const objectKey = `${params.folder}/${Date.now()}-${sanitizedName}`;
+
+  const client = getR2Client();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: objectKey,
+      ContentType: params.contentType,
+      Body: params.body,
+    })
+  );
+
+  const publicBase = process.env.R2_PUBLIC_URL?.replace(/\/$/, '') || '';
+  const publicUrl = publicBase ? `${publicBase}/${objectKey}` : objectKey;
+
+  return { objectKey, publicUrl };
 }

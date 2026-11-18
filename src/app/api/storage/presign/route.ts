@@ -3,7 +3,15 @@ import { z } from 'zod';
 import { createR2PresignedUploadUrl, isR2Configured } from '@/lib/storage/r2';
 
 const PresignSchema = z.object({
-  folder: z.enum(['ppdb', 'cms-posts', 'gallery', 'ebooks', 'letters', 'avatars']),
+  folder: z.enum([
+    'ppdb',
+    'cms-posts',
+    'gallery',
+    'ebooks',
+    'letters',
+    'avatars',
+    'student-documents',
+  ]),
   fileName: z.string().min(1).max(200),
   contentType: z.string().min(1).max(120),
 });
