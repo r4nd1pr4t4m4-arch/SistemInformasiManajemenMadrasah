@@ -57,6 +57,7 @@ export function FlipbookReader({
   const [isBlurred, setIsBlurred] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [bookSize, setBookSize] = useState<{ width: number; height: number } | null>(null);
 
   const pdfDocRef = useRef<PdfDocumentLike | null>(null);
   const flipBookHostRef = useRef<HTMLDivElement | null>(null);
@@ -334,6 +335,10 @@ export function FlipbookReader({
       const pageWidth = Math.round(baseWidth);
       const pageHeight = Math.round(pageWidth * aspect);
 
+      setBookSize({
+        width: isMobile ? pageWidth : pageWidth * 2,
+        height: pageHeight,
+      });
       pageScaleRef.current = { pageWidth, baseWidth: baseVp.width };
       canvasMapRef.current.clear();
       renderedPagesRef.current.clear();
@@ -586,12 +591,17 @@ export function FlipbookReader({
         </div>
       </div>
 
-      {/* Flipbook Stage (no-scrollbar + overscroll-contain + m-auto) */}
-      <div className="flex-1 overflow-auto no-scrollbar overscroll-contain p-4 sm:p-8 relative flex">
+      {/* Flipbook Stage */}
+      <div
+        className={`flex-1 min-h-0 min-w-0 overflow-auto overscroll-contain p-4 sm:p-8 relative flex ${
+          zoom > 1 ? 'flipbook-zoomed' : 'no-scrollbar'
+        }`}
+        style={{ touchAction: 'pan-x pan-y' }}
+      >
         {isBlurred && (
           <div
             onClick={() => setIsBlurred(false)}
-            className="absolute inset-0 z-40 bg-slate-950/95 backdrop-blur-xl flex flex-col items-center justify-center text-center p-6 cursor-pointer"
+            className="fixed inset-0 z-40 bg-slate-950/95 backdrop-blur-xl flex flex-col items-center justify-center text-center p-6 cursor-pointer"
           >
             <EyeOff className="w-10 h-10 text-amber-400 mb-3" />
             <h3 className="text-base font-bold text-white">Konten E-Book Dilindungi</h3>
@@ -628,46 +638,69 @@ export function FlipbookReader({
         )}
 
         {!loading && !error && totalPages > 0 && (
-          <div className="m-auto relative flex flex-col items-center gap-4 max-w-full">
+          <div className="m-auto shrink-0 relative flex flex-col items-center gap-3">
             <p className="text-[11px] text-slate-400 text-center">
-              Geser atau klik sudut halaman untuk membalik kertas buku
+              {zoom > 1
+                ? 'Geser area kanvas untuk menggulir halaman yang diperbesar'
+                : 'Geser atau klik sudut halaman untuk membalik kertas buku'}
             </p>
 
-            {/* StPageFlip Host Container (overflow-hidden prevents corner-hover peel from shifting viewport/scrollbars) */}
+            {/* Sized Zoom Wrapper ensures exact layout scrollWidth/scrollHeight when zoomed */}
             <div
-              ref={flipBookHostRef}
-              style={{ zoom }}
-              className="shadow-2xl rounded-xl overflow-hidden transition-all duration-150"
-            />
-
-            {/* Bottom Flipbook Page Controls */}
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 bg-slate-900/95 border border-slate-700 rounded-2xl px-3 sm:px-4 py-2 text-white text-xs">
-              <button
-                type="button"
-                onClick={handlePrev}
-                disabled={currentPage <= 1}
-                className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 font-semibold transition"
-              >
-                <ChevronLeft className="w-4 h-4" /> Sebelumnya
-              </button>
-
-              <span className="px-2 font-mono text-[11px] text-slate-300 text-center">
-                Hal. {Math.min(currentPage, totalPages)} / {totalPages}
-                {isPublicMode ? ` (Publik: maks ${maxAllowedPages})` : ''}
-              </span>
-
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={currentPage >= displayPageCount}
-                className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 font-semibold transition"
-              >
-                Berikutnya <ChevronRight className="w-4 h-4" />
-              </button>
+              style={
+                bookSize
+                  ? {
+                      width: `${Math.round(bookSize.width * zoom)}px`,
+                      height: `${Math.round(bookSize.height * zoom)}px`,
+                    }
+                  : undefined
+              }
+              className="relative shrink-0 shadow-2xl rounded-xl overflow-hidden transition-[width,height] duration-150"
+            >
+              <div
+                ref={flipBookHostRef}
+                style={{
+                  transform: `scale(${zoom})`,
+                  transformOrigin: 'top left',
+                  width: bookSize ? `${bookSize.width}px` : undefined,
+                  height: bookSize ? `${bookSize.height}px` : undefined,
+                  transition: 'transform 150ms ease',
+                }}
+              />
             </div>
           </div>
         )}
       </div>
+
+      {/* Pinned Bottom Flipbook Page Controls */}
+      {!loading && !error && totalPages > 0 && (
+        <div className="bg-slate-900/95 border-t border-slate-800 px-4 py-2.5 flex items-center justify-center shrink-0">
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-white text-xs">
+            <button
+              type="button"
+              onClick={handlePrev}
+              disabled={currentPage <= 1}
+              className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 font-semibold transition"
+            >
+              <ChevronLeft className="w-4 h-4" /> Sebelumnya
+            </button>
+
+            <span className="px-2 font-mono text-[11px] text-slate-300 text-center">
+              Hal. {Math.min(currentPage, totalPages)} / {totalPages}
+              {isPublicMode ? ` (Publik: maks ${maxAllowedPages})` : ''}
+            </span>
+
+            <button
+              type="button"
+              onClick={handleNext}
+              disabled={currentPage >= displayPageCount}
+              className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 font-semibold transition"
+            >
+              Berikutnya <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

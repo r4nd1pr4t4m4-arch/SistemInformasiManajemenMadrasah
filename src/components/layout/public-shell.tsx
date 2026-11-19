@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -27,35 +27,75 @@ const PUBLIC_NAV_LINKS = [
 
 export function PublicNavbar() {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [openPathname, setOpenPathname] = useState<string | null>(null);
+  const [menuTop, setMenuTop] = useState(64);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const mobileOpen = openPathname === pathname;
   const school = useInstitutionSettings();
+
+  function syncMenuTop() {
+    if (!headerRef.current) return;
+    const rect = headerRef.current.getBoundingClientRect();
+    setMenuTop(Math.max(0, Math.round(rect.bottom)));
+  }
+
+  function handleToggleMenu() {
+    if (!mobileOpen) {
+      syncMenuTop();
+      setOpenPathname(pathname);
+    } else {
+      setOpenPathname(null);
+    }
+  }
 
   useEffect(() => {
     if (!mobileOpen) return;
     const prevBodyOverflow = document.body.style.overflow;
-    const prevHtmlOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpenPathname(null);
+      }
+    };
+    const handleResize = () => syncMenuTop();
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleResize);
+
     return () => {
       document.body.style.overflow = prevBodyOverflow;
-      document.documentElement.style.overflow = prevHtmlOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
     };
   }, [mobileOpen]);
+
+  const isLoadingBrand = !school.name && !school.short_name;
 
   return (
     <>
       {/* Top Info Strip */}
       <div className="bg-slate-900/95 text-slate-200 text-xs py-2 px-4">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-5">
-            <span className="inline-flex items-center gap-1.5">
-              <Phone className="w-3.5 h-3.5 text-emerald-400" /> {school.phone}
-            </span>
-            <span className="hidden sm:inline-flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-emerald-400" /> {school.email}
-            </span>
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 min-w-0">
+            {school.phone ? (
+              <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
+                <Phone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="truncate">{school.phone}</span>
+              </span>
+            ) : isLoadingBrand ? (
+              <span className="h-3.5 w-28 rounded bg-slate-800 animate-pulse" />
+            ) : null}
+            {school.email ? (
+              <span className="hidden sm:inline-flex items-center gap-1.5 min-w-0 truncate">
+                <Mail className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="truncate">{school.email}</span>
+              </span>
+            ) : isLoadingBrand ? (
+              <span className="hidden sm:inline-block h-3.5 w-36 rounded bg-slate-800 animate-pulse" />
+            ) : null}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
             {school.npsn && <span className="text-slate-300">NPSN {school.npsn}</span>}
             {school.institution_type === 'MADRASAH' && school.nsm && (
               <span className="text-slate-300">• NSM {school.nsm}</span>
@@ -70,31 +110,40 @@ export function PublicNavbar() {
       </div>
 
       {/* Sticky Glassmorphic Navbar */}
-      <header className="sticky top-0 z-40 glass-nav">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4 relative z-40">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-base shadow-sm">
+      <header ref={headerRef} className="sticky top-0 z-40 glass-nav">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 sm:gap-4 relative z-40">
+          <Link href="/" className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0">
               {(school.short_name || school.name || 'S').slice(0, 1).toUpperCase()}
             </div>
-            <div>
-              <p className="font-bold text-slate-900 text-sm leading-tight tracking-tight">
-                {school.name || school.short_name || 'Memuat...'}
-              </p>
-              <p className="text-[11px] text-slate-500">
-                Website Resmi &amp; Portal Terpadu ({school.institution_type})
-              </p>
+            <div className="min-w-0">
+              {isLoadingBrand ? (
+                <div className="space-y-1.5">
+                  <div className="h-3.5 w-36 sm:w-44 rounded bg-slate-200 animate-pulse" />
+                  <div className="h-2.5 w-28 sm:w-36 rounded bg-slate-200/80 animate-pulse" />
+                </div>
+              ) : (
+                <>
+                  <p className="font-bold text-slate-900 text-sm leading-tight tracking-tight truncate">
+                    {school.name || school.short_name}
+                  </p>
+                  <p className="text-[11px] text-slate-500 truncate">
+                    Website Resmi &amp; Portal Terpadu ({school.institution_type})
+                  </p>
+                </>
+              )}
             </div>
           </Link>
 
-          <div className="flex items-center gap-2">
-            <nav className="hidden xl:flex items-center gap-1 text-sm font-medium mr-1">
+          <div className="flex items-center gap-2 shrink-0">
+            <nav className="hidden xl:flex items-center gap-1 text-sm font-medium mr-1" aria-label="Navigasi Utama">
               {PUBLIC_NAV_LINKS.slice(0, 6).map((item) => {
                 const active = pathname === item.href;
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`px-2.5 py-1.5 rounded-xl transition ${
+                    className={`px-2.5 py-1.5 rounded-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                       active
                         ? 'bg-emerald-50 text-emerald-700 font-semibold'
                         : 'text-slate-600 hover:text-emerald-700 hover:bg-white/70'
@@ -108,7 +157,7 @@ export function PublicNavbar() {
 
             <Link
               href="/portal"
-              className="hidden sm:inline-flex items-center gap-1.5 bg-slate-900 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl font-semibold text-xs transition shadow-sm"
+              className="hidden sm:inline-flex items-center gap-1.5 bg-slate-900 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl font-semibold text-xs transition shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             >
               <ShieldCheck className="w-4 h-4" />
               <span>Portal Terpadu</span>
@@ -116,8 +165,8 @@ export function PublicNavbar() {
 
             <button
               type="button"
-              onClick={() => setMobileOpen((v) => !v)}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition ${
+              onClick={handleToggleMenu}
+              className={`inline-flex items-center justify-center gap-1.5 min-h-[40px] px-3 py-2 rounded-xl border text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                 mobileOpen
                   ? 'bg-emerald-600 border-emerald-600 text-white'
                   : 'bg-white/85 hover:bg-white border-slate-200/80 text-slate-700'
@@ -130,63 +179,66 @@ export function PublicNavbar() {
             </button>
           </div>
         </div>
+      </header>
 
-        {mobileOpen && (
-          <>
-            <div
-              onClick={() => setMobileOpen(false)}
-              className="fixed inset-0 z-30 bg-slate-900/20 backdrop-blur-[1px]"
-              aria-hidden="true"
-            />
-            <div className="absolute left-0 right-0 top-full z-40 border-t border-slate-200/70 bg-white/95 backdrop-blur-md shadow-2xl">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8 space-y-3 max-h-[calc(100dvh-7.5rem)] sm:max-h-[calc(100dvh-6rem)] overflow-y-auto overscroll-contain">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Semua Halaman Publik
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setMobileOpen(false)}
-                    className="text-xs font-semibold text-slate-500 hover:text-slate-800"
-                  >
-                    Tutup
-                  </button>
-                </div>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {PUBLIC_NAV_LINKS.map((item) => {
-                    const active = pathname === item.href;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setMobileOpen(false)}
-                        className={`block px-3.5 py-2.5 rounded-2xl border transition ${
-                          active
-                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                            : 'bg-white border-slate-200/70 hover:border-emerald-300 hover:bg-emerald-50/40 text-slate-700'
-                        }`}
-                      >
-                        <p className="text-sm font-bold">{item.label}</p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
-                      </Link>
-                    );
-                  })}
-                </div>
-                <div className="sm:hidden pt-2 border-t border-slate-200/70">
-                  <Link
-                    href="/portal"
-                    onClick={() => setMobileOpen(false)}
-                    className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-emerald-700 text-white px-4 py-3 rounded-2xl font-bold text-sm transition shadow-sm"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    Masuk Portal Terpadu
-                  </Link>
-                </div>
+      {mobileOpen && (
+        <>
+          <div
+            onClick={() => setOpenPathname(null)}
+            className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-[1px]"
+            aria-hidden="true"
+          />
+          <div
+            style={{ top: `${menuTop}px`, maxHeight: `calc(100dvh - ${menuTop}px)` }}
+            className="fixed left-0 right-0 z-50 border-t border-slate-200/70 bg-white/95 backdrop-blur-md shadow-2xl overflow-y-auto overscroll-contain"
+          >
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Semua Halaman Publik
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setOpenPathname(null)}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg"
+                >
+                  Tutup
+                </button>
+              </div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {PUBLIC_NAV_LINKS.map((item) => {
+                  const active = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setOpenPathname(null)}
+                      className={`block px-3.5 py-2.5 rounded-2xl border transition ${
+                        active
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : 'bg-white border-slate-200/70 hover:border-emerald-300 hover:bg-emerald-50/40 text-slate-700'
+                      }`}
+                    >
+                      <p className="text-sm font-bold">{item.label}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
+                    </Link>
+                  );
+                })}
+              </div>
+              <div className="sm:hidden pt-2 border-t border-slate-200/70">
+                <Link
+                  href="/portal"
+                  onClick={() => setOpenPathname(null)}
+                  className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-emerald-700 text-white px-4 py-3 rounded-2xl font-bold text-sm transition shadow-sm"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  Masuk Portal Terpadu
+                </Link>
               </div>
             </div>
-          </>
-        )}
-      </header>
+          </div>
+        </>
+      )}
     </>
   );
 }
