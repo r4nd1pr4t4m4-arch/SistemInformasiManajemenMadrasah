@@ -12,6 +12,8 @@ import {
   BookOpen,
   Loader2,
   EyeOff,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 
 interface FlipbookReaderProps {
@@ -38,19 +40,81 @@ export function FlipbookReader({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [totalPages, setTotalPages] = useState(0);
-  const [currentSpreadStart, setCurrentSpreadStart] = useState(1); // 1, 3, 5, ...
+  const [currentSpreadStart, setCurrentSpreadStart] = useState(1); // 1, 3, 5... (desktop) or 1, 2, 3... (mobile)
   const [zoom, setZoom] = useState(1);
   const [zoomTooltipOpen, setZoomTooltipOpen] = useState(false);
   const [flipDirection, setFlipDirection] = useState<'next' | 'prev' | null>(null);
   const [isBlurred, setIsBlurred] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
   const pdfDocRef = useRef<unknown>(null);
   const leftCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rightCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   const maxAllowedPages =
     isPublicMode && totalPages > 0 ? Math.max(1, Math.ceil(totalPages * 0.1)) : totalPages;
+
+  // Detect mobile viewport (single-page flipbook on mobile, 2-page spread on desktop)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
+  function playPageFlipSound() {
+    if (!soundEnabled) return;
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioCtx();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      const duration = 0.16;
+      const sampleRate = ctx.sampleRate;
+      const bufferSize = Math.floor(sampleRate * duration);
+      const buffer = ctx.createBuffer(1, bufferSize, sampleRate);
+      const data = buffer.getChannelData(0);
+
+      // Synthesize crisp paper-flip rustle envelope
+      for (let i = 0; i < bufferSize; i++) {
+        const t = i / bufferSize;
+        const env = Math.sin(Math.PI * t) * Math.pow(1 - t, 0.7);
+        data[i] = (Math.random() * 2 - 1) * env * 0.35;
+      }
+
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1400, ctx.currentTime);
+      filter.frequency.exponentialRampToValueAtTime(650, ctx.currentTime + duration);
+      filter.Q.value = 0.9;
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.55, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      noise.start();
+    } catch {
+      // Ignore Web Audio errors if blocked
+    }
+  }
 
   // Anti-screenshot, anti-save, anti-print, anti-browser-zoom listeners
   useEffect(() => {
@@ -186,31 +250,37 @@ export function FlipbookReader({
 
     if (!loading && !error && totalPages > 0) {
       renderPageToCanvas(currentSpreadStart, leftCanvasRef.current);
-      renderPageToCanvas(currentSpreadStart + 1, rightCanvasRef.current);
+      if (!isMobile) {
+        renderPageToCanvas(currentSpreadStart + 1, rightCanvasRef.current);
+      }
     }
 
     return () => {
       cancelled = true;
     };
-  }, [loading, error, totalPages, maxAllowedPages, currentSpreadStart, zoom]);
+  }, [loading, error, totalPages, maxAllowedPages, currentSpreadStart, zoom, isMobile]);
+
+  const stepSize = isMobile ? 1 : 2;
 
   function handlePrevSpread() {
     if (currentSpreadStart <= 1) return;
+    playPageFlipSound();
     setFlipDirection('prev');
     setTimeout(() => setFlipDirection(null), 260);
-    setCurrentSpreadStart((p) => Math.max(1, p - 2));
+    setCurrentSpreadStart((p) => Math.max(1, p - stepSize));
   }
 
   function handleNextSpread() {
-    if (currentSpreadStart + 2 > maxAllowedPages) return;
+    if (currentSpreadStart + stepSize > maxAllowedPages) return;
+    playPageFlipSound();
     setFlipDirection('next');
     setTimeout(() => setFlipDirection(null), 260);
-    setCurrentSpreadStart((p) => p + 2);
+    setCurrentSpreadStart((p) => p + stepSize);
   }
 
   const rightPageNumber = currentSpreadStart + 1;
   const isRightPageLocked = rightPageNumber > maxAllowedPages;
-  const canGoNext = currentSpreadStart + 2 <= maxAllowedPages;
+  const canGoNext = currentSpreadStart + stepSize <= maxAllowedPages;
 
   return (
     <div
@@ -249,8 +319,26 @@ export function FlipbookReader({
           </div>
         </div>
 
-        {/* Tooltip-Only Zoom Control + Close */}
+        {/* Sound Toggle + Tooltip-Only Zoom Control + Close */}
         <div className="flex items-center gap-2 relative">
+          <button
+            type="button"
+            onClick={() => setSoundEnabled((s) => !s)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition ${
+              soundEnabled
+                ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'
+                : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
+            }`}
+            title={soundEnabled ? 'Nonaktifkan Suara Balik Halaman' : 'Aktifkan Suara Balik Halaman'}
+          >
+            {soundEnabled ? (
+              <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+            )}
+            <span className="hidden sm:inline">{soundEnabled ? 'Suara Aktif' : 'Suara Mati'}</span>
+          </button>
+
           <div className="relative">
             <button
               type="button"
@@ -322,8 +410,8 @@ export function FlipbookReader({
         </div>
       </div>
 
-      {/* Flipbook Stage */}
-      <div className="flex-1 overflow-auto flex items-center justify-center p-4 sm:p-6 relative">
+      {/* Flipbook Stage (items-start + m-auto ensures top of ebook is NEVER clipped and always scrollable) */}
+      <div className="flex-1 overflow-auto p-3 sm:p-6 relative flex">
         {isBlurred && (
           <div
             onClick={() => setIsBlurred(false)}
@@ -338,14 +426,14 @@ export function FlipbookReader({
         )}
 
         {loading && (
-          <div className="flex flex-col items-center gap-2 text-slate-300 text-sm">
+          <div className="m-auto flex flex-col items-center gap-2 text-slate-300 text-sm">
             <Loader2 className="w-6 h-6 animate-spin text-emerald-400" />
             <span>Menyiapkan Flipbook E-Book...</span>
           </div>
         )}
 
         {error && (
-          <div className="max-w-md rounded-3xl bg-slate-900 border border-rose-500/40 p-6 text-center space-y-3 text-white">
+          <div className="m-auto max-w-md rounded-3xl bg-slate-900 border border-rose-500/40 p-6 text-center space-y-3 text-white">
             <ShieldAlert className="w-9 h-9 text-rose-400 mx-auto" />
             <h3 className="text-sm font-bold">
               {error.toLowerCase().includes('izin') || error.toLowerCase().includes('premium')
@@ -364,10 +452,10 @@ export function FlipbookReader({
         )}
 
         {!loading && !error && totalPages > 0 && (
-          <div className="relative flex flex-col items-center gap-4">
-            {/* 2-page Flipbook Spread */}
+          <div className="m-auto relative flex flex-col items-center gap-4 max-w-full">
+            {/* 1-page Flipbook on Mobile, 2-page Spread on Desktop */}
             <div
-              className={`relative flex flex-col md:flex-row items-stretch bg-slate-800/70 p-2 sm:p-3 rounded-2xl shadow-2xl border border-slate-700/80 transition-transform duration-200 ${
+              className={`relative flex items-stretch bg-slate-800/70 p-2 sm:p-3 rounded-2xl shadow-2xl border border-slate-700/80 transition-transform duration-200 ${
                 flipDirection === 'next'
                   ? '-rotate-y-3 scale-[0.99]'
                   : flipDirection === 'prev'
@@ -376,69 +464,90 @@ export function FlipbookReader({
               }`}
               style={{ perspective: '1400px' }}
             >
-              {/* Left Page */}
-              <div className="relative bg-white rounded-l-lg overflow-hidden shadow-inner border-r border-slate-300">
-                <canvas ref={leftCanvasRef} className="block max-w-full h-auto pointer-events-none" />
+              {/* Primary / Left Page */}
+              <div
+                className={`relative bg-white overflow-hidden shadow-inner ${
+                  isMobile ? 'rounded-lg' : 'rounded-l-lg border-r border-slate-300'
+                }`}
+              >
+                <canvas
+                  ref={leftCanvasRef}
+                  className="block max-w-full h-auto pointer-events-none"
+                />
                 <WatermarkOverlay />
                 <div className="absolute bottom-2 left-3 px-2 py-0.5 rounded bg-slate-900/70 text-white text-[10px] font-mono">
                   Hal. {currentSpreadStart}
                 </div>
               </div>
 
-              {/* Center Spine */}
-              <div className="hidden md:block w-2 bg-gradient-to-r from-slate-400/50 via-slate-600/70 to-slate-400/50" />
-
-              {/* Right Page (or 10% Public Lock Panel) */}
-              <div className="relative bg-white rounded-r-lg overflow-hidden shadow-inner min-w-[260px] flex items-center justify-center">
-                {isRightPageLocked ? (
-                  <div className="p-8 text-center max-w-xs space-y-3">
-                    <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
-                      <Lock className="w-6 h-6" />
-                    </div>
-                    <h4 className="text-sm font-black text-slate-900">
-                      Batas Pratinjau Publik (10%)
-                    </h4>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      Pengunjung publik hanya dapat membaca maksimal{' '}
-                      <strong>{maxAllowedPages} halaman</strong> (10% dari {totalPages} halaman).
-                      Silakan masuk ke Portal Terpadu untuk membaca buku secara penuh.
-                    </p>
+              {/* Center Spine & Right Page (Desktop Only) */}
+              {!isMobile && (
+                <>
+                  <div className="w-2 bg-gradient-to-r from-slate-400/50 via-slate-600/70 to-slate-400/50" />
+                  <div className="relative bg-white rounded-r-lg overflow-hidden shadow-inner min-w-[260px] flex items-center justify-center">
+                    {isRightPageLocked ? (
+                      <div className="p-8 text-center max-w-xs space-y-3">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+                          <Lock className="w-6 h-6" />
+                        </div>
+                        <h4 className="text-sm font-black text-slate-900">
+                          Batas Pratinjau Publik (10%)
+                        </h4>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          Pengunjung publik hanya dapat membaca maksimal{' '}
+                          <strong>{maxAllowedPages} halaman</strong> (10% dari {totalPages} halaman).
+                          Silakan masuk ke Portal Terpadu untuk membaca buku secara penuh.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <canvas
+                          ref={rightCanvasRef}
+                          className="block max-w-full h-auto pointer-events-none"
+                        />
+                        <WatermarkOverlay />
+                        <div className="absolute bottom-2 right-3 px-2 py-0.5 rounded bg-slate-900/70 text-white text-[10px] font-mono">
+                          Hal. {rightPageNumber}
+                        </div>
+                      </>
+                    )}
                   </div>
-                ) : (
-                  <>
-                    <canvas ref={rightCanvasRef} className="block max-w-full h-auto pointer-events-none" />
-                    <WatermarkOverlay />
-                    <div className="absolute bottom-2 right-3 px-2 py-0.5 rounded bg-slate-900/70 text-white text-[10px] font-mono">
-                      Hal. {rightPageNumber}
-                    </div>
-                  </>
-                )}
-              </div>
+                </>
+              )}
             </div>
 
+            {isMobile && isPublicMode && currentSpreadStart >= maxAllowedPages && (
+              <div className="rounded-2xl bg-amber-950/70 border border-amber-500/40 px-4 py-2.5 text-center text-[11px] text-amber-200 max-w-sm">
+                <Lock className="w-3.5 h-3.5 inline mr-1 text-amber-400" />
+                Batas pratinjau publik 10% tercapai ({maxAllowedPages} dari {totalPages} hal.). Masuk ke Portal untuk membaca penuh.
+              </div>
+            )}
+
             {/* Bottom Flipbook Page Controls */}
-            <div className="flex items-center gap-3 bg-slate-900/95 border border-slate-700 rounded-2xl px-4 py-2 text-white text-xs">
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 bg-slate-900/95 border border-slate-700 rounded-2xl px-3 sm:px-4 py-2 text-white text-xs">
               <button
                 type="button"
                 onClick={handlePrevSpread}
                 disabled={currentSpreadStart <= 1}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 font-semibold transition"
+                className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 font-semibold transition"
               >
                 <ChevronLeft className="w-4 h-4" /> Sebelumnya
               </button>
 
-              <span className="px-2 font-mono text-[11px] text-slate-300">
-                Halaman {currentSpreadStart}
-                {!isRightPageLocked && rightPageNumber <= totalPages ? `–${rightPageNumber}` : ''} dari{' '}
-                {totalPages}
-                {isPublicMode ? ` (Batas Publik: ${maxAllowedPages} hal.)` : ''}
+              <span className="px-2 font-mono text-[11px] text-slate-300 text-center">
+                Hal. {currentSpreadStart}
+                {!isMobile && !isRightPageLocked && rightPageNumber <= totalPages
+                  ? `–${rightPageNumber}`
+                  : ''}{' '}
+                / {totalPages}
+                {isPublicMode ? ` (Publik: maks ${maxAllowedPages})` : ''}
               </span>
 
               <button
                 type="button"
                 onClick={handleNextSpread}
                 disabled={!canGoNext}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 font-semibold transition"
+                className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 font-semibold transition"
               >
                 Berikutnya <ChevronRight className="w-4 h-4" />
               </button>
