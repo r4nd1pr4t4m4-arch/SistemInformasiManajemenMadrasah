@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   AlertTriangle,
   BookOpen,
+  Camera,
   CheckCircle2,
   Clock,
   FileSignature,
@@ -22,6 +23,22 @@ import { PERMISSIONS } from '@/lib/auth/rbac';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 
 type AccountStatus = 'PENDING' | 'AKTIF' | 'NONAKTIF' | 'DITOLAK' | 'DITOLAK_PERMANEN';
+
+interface AvatarChangeRequest {
+  id: string;
+  profile_id: string;
+  old_avatar_url: string | null;
+  new_avatar_url: string;
+  status: 'MENUNGGU' | 'DISETUJUI' | 'DITOLAK';
+  review_notes: string | null;
+  created_at: string;
+  profile?: {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    primary_role: string | null;
+  } | null;
+}
 
 interface NameChangeRequest {
   id: string;
@@ -98,12 +115,15 @@ export default function ManajemenPenggunaPage() {
     rejected: 0,
   });
   const [smtpConfigured, setSmtpConfigured] = useState(true);
-  const [activeTab, setActiveTab] = useState<'users' | 'name_changes'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'name_changes' | 'avatar_changes'>('users');
   const [nameRequests, setNameRequests] = useState<NameChangeRequest[]>([]);
+  const [avatarRequests, setAvatarRequests] = useState<AvatarChangeRequest[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [filterNameStatus, setFilterNameStatus] = useState<'ALL' | 'MENUNGGU' | 'DISETUJUI' | 'DITOLAK'>('ALL');
   const [rejectNameModalReq, setRejectNameModalReq] = useState<NameChangeRequest | null>(null);
   const [nameRejectNotes, setNameRejectNotes] = useState('');
+  const [rejectAvatarModalReq, setRejectAvatarModalReq] = useState<AvatarChangeRequest | null>(null);
+  const [avatarRejectNotes, setAvatarRejectNotes] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | AccountStatus>('ALL');
   const [search, setSearch] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -154,10 +174,56 @@ export default function ManajemenPenggunaPage() {
     }
   }, []);
 
+  const loadAvatarRequests = useCallback(async () => {
+    try {
+      const res = await fetch('/api/akun/avatar/persetujuan');
+      const data = await res.json();
+      if (res.ok) {
+        setAvatarRequests(data.requests || []);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     loadUsers();
     loadNameRequests();
-  }, [loadUsers, loadNameRequests]);
+    loadAvatarRequests();
+  }, [loadUsers, loadNameRequests, loadAvatarRequests]);
+
+  async function handleReviewAvatarChange(
+    id: string,
+    action: 'APPROVE' | 'REJECT',
+    notes?: string
+  ) {
+    setBusyId(id);
+    try {
+      const res = await fetch('/api/akun/avatar/persetujuan', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action, review_notes: notes || null }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(
+          'success',
+          action === 'APPROVE'
+            ? 'Foto profil disetujui dan langsung diterapkan ke profil serta kartu pengguna.'
+            : 'Pengajuan foto profil ditolak.'
+        );
+        await Promise.all([loadAvatarRequests(), loadUsers()]);
+        setRejectAvatarModalReq(null);
+        setAvatarRejectNotes('');
+      } else {
+        showToast('error', data.error || 'Gagal memproses persetujuan foto profil.');
+      }
+    } catch {
+      showToast('error', 'Gagal memproses persetujuan foto profil.');
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function handleReviewNameChange(
     id: string,
@@ -405,6 +471,27 @@ export default function ManajemenPenggunaPage() {
           ) : (
             <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 border border-slate-200">
               {nameRequests.length}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('avatar_changes')}
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition ${
+            activeTab === 'avatar_changes'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+          }`}
+        >
+          <Camera className="w-4 h-4" />
+          Persetujuan Foto Profil
+          {avatarRequests.filter((r) => r.status === 'MENUNGGU').length > 0 ? (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+              {avatarRequests.filter((r) => r.status === 'MENUNGGU').length} Menunggu
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 border border-slate-200">
+              {avatarRequests.length}
             </span>
           )}
         </button>
@@ -919,6 +1006,152 @@ export default function ManajemenPenggunaPage() {
                 className="px-4 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 text-white text-xs font-semibold disabled:opacity-50"
               >
                 {busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak Permanen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {activeTab === 'avatar_changes' && (
+        <div className="glass-card rounded-3xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">
+                Pengajuan Perubahan Foto Profil ({avatarRequests.length})
+              </h2>
+              <p className="text-xs text-slate-500">
+                Setujui atau tolak foto profil yang diunggah pengguna sebelum tampil di profil dan kartu digital.
+              </p>
+            </div>
+          </div>
+
+          {avatarRequests.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-500">
+              <Camera className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              Belum ada pengajuan perubahan foto profil.
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-4">
+              {avatarRequests.map((req) => (
+                <div
+                  key={req.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 truncate">
+                        {req.profile?.full_name || 'Pengguna'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {req.profile?.email} • {req.profile?.primary_role || '-'}
+                      </p>
+                    </div>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                        req.status === 'MENUNGGU'
+                          ? 'bg-amber-100 text-amber-800'
+                          : req.status === 'DISETUJUI'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}
+                    >
+                      {req.status}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-4 bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <div className="text-center space-y-1">
+                      <p className="text-[10px] text-slate-400 font-semibold">Foto Lama</p>
+                      {req.old_avatar_url ? (
+                        <img
+                          src={req.old_avatar_url}
+                          alt="Foto lama"
+                          className="w-16 h-16 rounded-xl object-cover border border-slate-200"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl bg-slate-200 text-slate-500 text-[10px] flex items-center justify-center">
+                          Kosong
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-slate-400 font-bold">→</span>
+                    <div className="text-center space-y-1">
+                      <p className="text-[10px] text-emerald-700 font-semibold">Foto Baru</p>
+                      <img
+                        src={req.new_avatar_url}
+                        alt="Foto baru"
+                        className="w-16 h-16 rounded-xl object-cover border-2 border-emerald-400 shadow-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {req.review_notes && (
+                    <p className="text-[11px] text-slate-600 bg-slate-50 rounded-lg px-2.5 py-1.5">
+                      Catatan: {req.review_notes}
+                    </p>
+                  )}
+
+                  {canManage && req.status === 'MENUNGGU' && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        disabled={busyId === req.id}
+                        onClick={() => handleReviewAvatarChange(req.id, 'APPROVE')}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Setujui
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === req.id}
+                        onClick={() => {
+                          setRejectAvatarModalReq(req);
+                          setAvatarRejectNotes('');
+                        }}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold disabled:opacity-50"
+                      >
+                        <XCircle className="w-3.5 h-3.5" /> Tolak
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {rejectAvatarModalReq && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <h3 className="text-sm font-bold text-slate-900">Tolak Pengajuan Foto Profil</h3>
+            <p className="text-xs text-slate-600">
+              Tolak pengajuan foto profil dari{' '}
+              <strong>{rejectAvatarModalReq.profile?.full_name || 'Pengguna'}</strong>?
+            </p>
+            <textarea
+              rows={3}
+              value={avatarRejectNotes}
+              onChange={(e) => setAvatarRejectNotes(e.target.value)}
+              placeholder="Alasan penolakan (mis. foto buram, bukan pas foto, dll)..."
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectAvatarModalReq(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={busyId === rejectAvatarModalReq.id}
+                onClick={() =>
+                  handleReviewAvatarChange(rejectAvatarModalReq.id, 'REJECT', avatarRejectNotes)
+                }
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
+              >
+                Tolak Foto
               </button>
             </div>
           </div>

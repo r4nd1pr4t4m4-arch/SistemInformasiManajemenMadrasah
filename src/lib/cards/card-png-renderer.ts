@@ -41,6 +41,8 @@ export interface LibraryCardData {
   address?: string | null;
   status?: string | null;
   joined_at?: string | null;
+  avatar_url?: string | null;
+  photo_url?: string | null;
 }
 
 const CARD_WIDTH = 1012;

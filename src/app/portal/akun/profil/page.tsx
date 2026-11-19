@@ -34,6 +34,18 @@ interface AccountProfile {
   avatarUpdatedAt?: string | null;
   nextAvatarChangeAt?: string | null;
   remainingDays?: number;
+  pendingAvatarRequest?: {
+    id: string;
+    new_avatar_url: string;
+    status: string;
+    created_at: string;
+  } | null;
+  latestAvatarRequest?: {
+    id: string;
+    status: string;
+    review_notes?: string | null;
+    reviewed_at?: string | null;
+  } | null;
   pendingNameRequest?: {
     id: string;
     old_full_name: string;
@@ -101,6 +113,8 @@ export default function AkunProfilPage() {
           avatarUpdatedAt: data.profile.avatarUpdatedAt || null,
           nextAvatarChangeAt: data.profile.nextAvatarChangeAt || null,
           remainingDays: data.profile.remainingDays ?? 0,
+          pendingAvatarRequest: data.profile.pendingAvatarRequest || null,
+          latestAvatarRequest: data.profile.latestAvatarRequest || null,
           pendingNameRequest: data.profile.pendingNameRequest || null,
           lastRejectedNameRequest: data.profile.lastRejectedNameRequest || null,
           canRequestNameChange: data.profile.canRequestNameChange ?? true,
@@ -193,6 +207,13 @@ export default function AkunProfilPage() {
     e.target.value = '';
     if (!file) return;
 
+    if (profile.pendingAvatarRequest) {
+      showToast(
+        'err',
+        'Pengajuan foto profil Anda sedang menunggu persetujuan Admin. Anda tidak dapat mengunggah foto kembali sebelum pengajuan diproses.'
+      );
+      return;
+    }
     if (!profile.canChangeAvatar) {
       showToast(
         'err',
@@ -218,17 +239,16 @@ export default function AkunProfilPage() {
 
       setUploadingAvatar(true);
       try {
-        const res = await fetch('/api/akun/profil', {
-          method: 'PATCH',
+        const res = await fetch('/api/akun/avatar', {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            phone: profile.phone,
             avatar_url: dataUrl,
           }),
         });
         const data = await res.json();
         if (res.ok) {
-          showToast('ok', 'Foto profil berhasil diperbarui dan disinkronkan.');
+          showToast('ok', 'Foto profil berhasil diunggah dan menunggu persetujuan Admin.');
           await loadProfile();
         } else {
           showToast('err', data.error || 'Gagal mengunggah foto profil.');
@@ -388,7 +408,21 @@ export default function AkunProfilPage() {
               />
             </label>
 
-            {!profile.canChangeAvatar && nextChangeFormatted ? (
+            {profile.pendingAvatarRequest ? (
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 space-y-2 text-[11px] text-amber-900">
+                <div className="flex items-start gap-2">
+                  <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                  <span>
+                    <strong>Menunggu Persetujuan Admin:</strong> Foto yang Anda unggah sedang ditinjau. Anda tidak dapat mengunggah foto kembali sebelum pengajuan ini disetujui atau ditolak.
+                  </span>
+                </div>
+                <img
+                  src={profile.pendingAvatarRequest.new_avatar_url}
+                  alt="Pratinjau pengajuan foto"
+                  className="w-12 h-12 rounded-xl object-cover border border-amber-300"
+                />
+              </div>
+            ) : !profile.canChangeAvatar && nextChangeFormatted ? (
               <div className="flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 p-2.5 text-[11px] text-amber-900">
                 <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
                 <span>
@@ -396,9 +430,20 @@ export default function AkunProfilPage() {
                 </span>
               </div>
             ) : (
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                Format JPG, PNG, atau WebP. Setelah diganti, foto profil baru baru dapat diubah kembali setelah <strong>45 hari</strong>.
-              </p>
+              <div className="space-y-2">
+                {profile.latestAvatarRequest?.status === 'DITOLAK' && (
+                  <div className="rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-[11px] text-rose-800">
+                    Pengajuan foto profil sebelumnya <strong>ditolak</strong>
+                    {profile.latestAvatarRequest.review_notes
+                      ? `: ${profile.latestAvatarRequest.review_notes}`
+                      : '.'}{' '}
+                    Silakan unggah foto baru yang sesuai.
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Format JPG, PNG, atau WebP. Foto profil baru memerlukan <strong>persetujuan Admin</strong> sebelum aktif (cooldown 45 hari setelah disetujui).
+                </p>
+              </div>
             )}
           </div>
 

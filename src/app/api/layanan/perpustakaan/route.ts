@@ -79,7 +79,13 @@ export async function GET(request: NextRequest) {
     supabase.from('library_books').select('*').order('title'),
     isPublicMode
       ? Promise.resolve({ data: [] })
-      : supabase.from('library_members').select('*').order('joined_at', { ascending: false }).limit(100),
+      : supabase
+          .from('library_members')
+          .select(
+            '*, profile:profiles(avatar_url), student:students(photo_url), teacher:teachers_staff(photo_url)'
+          )
+          .order('joined_at', { ascending: false })
+          .limit(100),
     isPublicMode
       ? Promise.resolve({ data: [] })
       : supabase
@@ -157,6 +163,16 @@ export async function GET(request: NextRequest) {
     users = allUsers || [];
   }
 
+  const enrichedMembers = (members || []).map((m) => {
+    const prof = Array.isArray(m.profile) ? m.profile[0] : m.profile;
+    const stud = Array.isArray(m.student) ? m.student[0] : m.student;
+    const teach = Array.isArray(m.teacher) ? m.teacher[0] : m.teacher;
+    return {
+      ...m,
+      avatar_url: prof?.avatar_url || stud?.photo_url || teach?.photo_url || null,
+    };
+  });
+
   if (!canViewAllMembers) {
     const myTeacherId = session.teacherAssignments?.teacherId || null;
     const { data: myStudent } = session.roles.includes('SISWA')
@@ -167,7 +183,7 @@ export async function GET(request: NextRequest) {
           .maybeSingle()
       : { data: null };
 
-    const myMembers = (members || []).filter(
+    const myMembers = enrichedMembers.filter(
       (m) =>
         m.profile_id === session.userId ||
         (myTeacherId && m.teacher_id === myTeacherId) ||
@@ -189,7 +205,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     books: sanitizedBooks,
-    members: members || [],
+    members: enrichedMembers,
     loans: loans || [],
     myGrants,
     grants,

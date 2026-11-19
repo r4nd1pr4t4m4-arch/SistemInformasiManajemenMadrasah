@@ -88,6 +88,8 @@ export function DigitalStudentCard({
   const [viewMode, setViewMode] = useState<'both' | 'front' | 'back'>('both');
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [downloading, setDownloading] = useState<'front' | 'back' | 'both' | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const hasProfilePhoto = Boolean(student.photo_url?.trim());
 
   useEffect(() => {
     if (institutionProp) {
@@ -108,6 +110,13 @@ export function DigitalStudentCard({
   }, [student.id, student.nis, student.nisn, student.qr_token]);
 
   async function handleDownload(side: 'front' | 'back' | 'both') {
+    if (!hasProfilePhoto) {
+      setDownloadError(
+        'Unduhan ditolak: Pengguna belum memiliki foto profil yang disetujui Admin. Silakan unggah foto profil di halaman Profil Akun dan tunggu persetujuan Admin terlebih dahulu.'
+      );
+      return;
+    }
+    setDownloadError(null);
     setDownloading(side);
     try {
       const slug = sanitizeFileSlug(student.full_name || 'siswa');
@@ -133,6 +142,12 @@ export function DigitalStudentCard({
   return (
     <div className="space-y-3">
       {/* Toolbar View & Download */}
+      {(!hasProfilePhoto || downloadError) && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+          {downloadError ||
+            'Foto profil yang disetujui Admin wajib tersedia sebelum Kartu Pelajar dapat diunduh.'}
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="inline-flex rounded-xl bg-slate-100 p-1 text-[11px] font-semibold">
           <button
@@ -395,6 +410,8 @@ export function DigitalLibraryCard({
   const [viewMode, setViewMode] = useState<'both' | 'front' | 'back'>('both');
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [downloading, setDownloading] = useState<'front' | 'back' | 'both' | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const hasProfilePhoto = Boolean(member.avatar_url?.trim() || member.photo_url?.trim());
 
   useEffect(() => {
     if (institutionProp) {
@@ -415,6 +432,13 @@ export function DigitalLibraryCard({
   }, [member.id, member.member_code]);
 
   async function handleDownload(side: 'front' | 'back' | 'both') {
+    if (!hasProfilePhoto) {
+      setDownloadError(
+        'Unduhan ditolak: Pengguna belum memiliki foto profil yang disetujui Admin. Silakan unggah foto profil di halaman Profil Akun dan tunggu persetujuan Admin terlebih dahulu.'
+      );
+      return;
+    }
+    setDownloadError(null);
     setDownloading(side);
     try {
       const slug = sanitizeFileSlug(member.full_name || member.member_code || 'anggota');
@@ -440,6 +464,12 @@ export function DigitalLibraryCard({
   return (
     <div className="space-y-3">
       {/* Toolbar View & Download */}
+      {(!hasProfilePhoto || downloadError) && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+          {downloadError ||
+            'Foto profil yang disetujui Admin wajib tersedia sebelum Kartu Anggota Perpustakaan dapat diunduh.'}
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="inline-flex rounded-xl bg-slate-100 p-1 text-[11px] font-semibold">
           <button

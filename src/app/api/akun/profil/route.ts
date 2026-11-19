@@ -65,21 +65,30 @@ export async function GET() {
   }
 
   const supabase = createSupabaseAdminClient();
-  const [{ data }, { data: authUserRes }, { data: factorRes }] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select('id, full_name, email, phone, avatar_url, primary_role, created_at')
-      .eq('id', session.userId)
-      .maybeSingle(),
-    supabase.auth.admin.getUserById(session.userId),
-    supabase.auth.admin.mfa.listFactors({ userId: session.userId }),
-  ]);
+  const [{ data }, { data: authUserRes }, { data: factorRes }, { data: avatarReqs }] =
+    await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, full_name, email, phone, avatar_url, primary_role, created_at')
+        .eq('id', session.userId)
+        .maybeSingle(),
+      supabase.auth.admin.getUserById(session.userId),
+      supabase.auth.admin.mfa.listFactors({ userId: session.userId }),
+      supabase
+        .from('profile_avatar_change_requests')
+        .select('id, new_avatar_url, status, review_notes, reviewed_at, created_at')
+        .eq('profile_id', session.userId)
+        .order('created_at', { ascending: false })
+        .limit(5),
+    ]);
 
   const avatarUpdatedAt =
     (authUserRes?.user?.user_metadata?.avatar_updated_at as string | undefined) || null;
   const cooldown = computeAvatarCooldown(avatarUpdatedAt);
   const mfaEnabled = (factorRes?.factors || []).some((f) => f.status === 'verified');
   const nameStatus = await getNameChangeStatus(supabase, session.userId);
+  const pendingAvatarRequest = (avatarReqs || []).find((r) => r.status === 'MENUNGGU') || null;
+  const latestAvatarRequest = (avatarReqs || [])[0] || null;
 
   return NextResponse.json({
     profile: {
@@ -88,6 +97,9 @@ export async function GET() {
       roles: session.roles,
       mfaEnabled,
       ...cooldown,
+      canChangeAvatar: cooldown.canChangeAvatar && !pendingAvatarRequest,
+      pendingAvatarRequest,
+      latestAvatarRequest,
       ...nameStatus,
     },
   });
@@ -124,36 +136,14 @@ export async function PATCH(request: Request) {
       updated_at: new Date().toISOString(),
     };
 
-    let nextCooldown = computeAvatarCooldown(existingAvatarUpdatedAt);
-
     if (parsed.data.avatar_url) {
-      if (!nextCooldown.canChangeAvatar) {
-        return NextResponse.json(
-          {
-            error: `Foto profil hanya dapat diganti setiap ${AVATAR_COOLDOWN_DAYS} hari sekali. Silakan coba lagi dalam ${nextCooldown.remainingDays} hari.`,
-          },
-          { status: 400 }
-        );
-      }
-
-      const nowIso = new Date().toISOString();
-      updatePayload.avatar_url = parsed.data.avatar_url;
-
-      await supabase.auth.admin.updateUserById(session.userId, {
-        user_metadata: {
-          ...currentMeta,
-          avatar_updated_at: nowIso,
-        },
-      });
-
-      // Sinkronkan juga ke Direktori GTK (teachers_staff) jika akun terkait GTK
-      await supabase
-        .from('teachers_staff')
-        .update({ photo_url: parsed.data.avatar_url })
-        .eq('user_id', session.userId);
-
-      nextCooldown = computeAvatarCooldown(nowIso);
+      return NextResponse.json(
+        { error: 'Unggah foto profil wajib melalui pengajuan persetujuan Admin (/api/akun/avatar).' },
+        { status: 400 }
+      );
     }
+
+    const nextCooldown = computeAvatarCooldown(existingAvatarUpdatedAt);
 
     const { data, error } = await supabase
       .from('profiles')
