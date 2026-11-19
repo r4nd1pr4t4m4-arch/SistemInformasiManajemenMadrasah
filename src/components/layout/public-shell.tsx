@@ -58,8 +58,8 @@ export function PublicNavbar() {
       </div>
 
       {/* Sticky Glassmorphic Navbar */}
-      <header className="sticky top-0 z-30 glass-nav">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-40 glass-nav">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4 relative z-40">
           <Link href="/" className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-base shadow-sm">
               {(school.short_name || school.name || 'S').slice(0, 1).toUpperCase()}
@@ -121,42 +121,49 @@ export function PublicNavbar() {
         </div>
 
         {mobileOpen && (
-          <div className="border-t border-slate-200/70 bg-white/95 backdrop-blur-md shadow-lg">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Semua Halaman Publik
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setMobileOpen(false)}
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-800"
-                >
-                  Tutup
-                </button>
-              </div>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {PUBLIC_NAV_LINKS.map((item) => {
-                  const active = pathname === item.href;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMobileOpen(false)}
-                      className={`block px-3.5 py-2.5 rounded-2xl border transition ${
-                        active
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                          : 'bg-white border-slate-200/70 hover:border-emerald-300 hover:bg-emerald-50/40 text-slate-700'
-                      }`}
-                    >
-                      <p className="text-sm font-bold">{item.label}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
-                    </Link>
-                  );
-                })}
+          <>
+            <div
+              onClick={() => setMobileOpen(false)}
+              className="fixed inset-0 z-30 bg-slate-900/20 backdrop-blur-[1px]"
+              aria-hidden="true"
+            />
+            <div className="absolute left-0 right-0 top-full z-40 border-t border-slate-200/70 bg-white/95 backdrop-blur-md shadow-2xl">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 space-y-3 max-h-[calc(100vh-5rem)] overflow-y-auto">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Semua Halaman Publik
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setMobileOpen(false)}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-800"
+                  >
+                    Tutup
+                  </button>
+                </div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {PUBLIC_NAV_LINKS.map((item) => {
+                    const active = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setMobileOpen(false)}
+                        className={`block px-3.5 py-2.5 rounded-2xl border transition ${
+                          active
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            : 'bg-white border-slate-200/70 hover:border-emerald-300 hover:bg-emerald-50/40 text-slate-700'
+                        }`}
+                      >
+                        <p className="text-sm font-bold">{item.label}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
+          </>
         )}
       </header>
     </>
