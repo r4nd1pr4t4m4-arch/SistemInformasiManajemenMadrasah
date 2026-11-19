@@ -260,7 +260,7 @@ export async function GET(request: NextRequest) {
   if (wants('honorarium') && scope === 'gtk' && activeTeacher?.id) {
     const { data } = await supabase
       .from('teacher_honorariums')
-      .select('*')
+      .select('*, items:teacher_honorarium_duty_items(*)')
       .eq('teacher_id', activeTeacher.id as string)
       .order('period_year', { ascending: false })
       .order('period_month', { ascending: false })

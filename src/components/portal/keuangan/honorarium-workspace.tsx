@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Coins, Loader2, Settings2 } from 'lucide-react';
+import { CheckCircle2, Coins, Download, Loader2, Settings2 } from 'lucide-react';
 import { formatRupiah } from '@/lib/domain/honorarium';
 import type { AdditionalDutyType } from '@/types/database';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
+import { HonorariumSlipModal } from './honorarium-slip-modal';
+import type { HonorariumDutyItem, HonorariumSlipData } from '@/lib/cards/honorarium-slip-png';
 
 interface TeacherOption {
   id: string;
@@ -17,13 +19,23 @@ interface HonorariumRow {
   id: string;
   period_month: number;
   period_year: number;
+  teaching_jtm?: number;
+  substitute_jtm?: number;
+  exam_supervisor_jtm?: number;
+  exam_committee_jtm?: number;
+  event_jtm?: number;
+  picket_jtm?: number;
+  ceremony_jtm?: number;
+  paid_holiday_jtm?: number;
   total_jtm: number;
+  rate_per_jtm?: number;
   jtm_honorarium_amount: number;
   additional_duty_allowance: number;
   transport_allowance?: number;
   total_amount: number;
   status: string;
-  teacher?: { full_name: string } | null;
+  teacher?: { full_name: string; nip?: string | null; home_distance_km?: number | null } | null;
+  items?: HonorariumDutyItem[];
 }
 
 interface DailyHourRow {
@@ -43,6 +55,7 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [teachers, setTeachers] = useState<TeacherOption[]>([]);
+  const [activeHonorSlip, setActiveHonorSlip] = useState<HonorariumSlipData | null>(null);
   const [ratePerJtm, setRatePerJtm] = useState(25000);
   const [transportRatePerKm, setTransportRatePerKm] = useState(2000);
   const [schoolStartTime, setSchoolStartTime] = useState('07:30');
@@ -544,10 +557,43 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
                       {formatRupiah(Number(h.transport_allowance ?? 0))})
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-emerald-700 text-sm">
                       {formatRupiah(Number(h.total_amount))}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveHonorSlip({
+                          id: h.id,
+                          teacherName: h.teacher?.full_name || 'GTK',
+                          teacherNip: h.teacher?.nip || null,
+                          homeDistanceKm: h.teacher?.home_distance_km ?? null,
+                          periodMonth: h.period_month,
+                          periodYear: h.period_year,
+                          teachingJtm: Number(h.teaching_jtm) || 0,
+                          substituteJtm: Number(h.substitute_jtm) || 0,
+                          examSupervisorJtm: Number(h.exam_supervisor_jtm) || 0,
+                          examCommitteeJtm: Number(h.exam_committee_jtm) || 0,
+                          eventJtm: Number(h.event_jtm) || 0,
+                          picketJtm: Number(h.picket_jtm) || 0,
+                          ceremonyJtm: Number(h.ceremony_jtm) || 0,
+                          paidHolidayJtm: Number(h.paid_holiday_jtm) || 0,
+                          totalJtm: Number(h.total_jtm) || 0,
+                          ratePerJtm: Number(h.rate_per_jtm) || ratePerJtm,
+                          jtmHonorariumAmount: Number(h.jtm_honorarium_amount) || 0,
+                          additionalDutyAllowance: Number(h.additional_duty_allowance) || 0,
+                          transportAllowance: Number(h.transport_allowance) || 0,
+                          totalAmount: Number(h.total_amount) || 0,
+                          status: h.status,
+                          dutyItems: h.items || [],
+                        })
+                      }
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                      title="Lihat & Unduh Slip PNG / PDF"
+                    >
+                      <Download className="w-3 h-3" /> Slip
+                    </button>
                     {canManage ? (
                       <select
                         value={h.status}
@@ -579,6 +625,10 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
             </div>
           </div>
         </div>
+      )}
+
+      {activeHonorSlip && (
+        <HonorariumSlipModal slip={activeHonorSlip} onClose={() => setActiveHonorSlip(null)} />
       )}
     </div>
   );

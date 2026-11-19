@@ -24,6 +24,8 @@ import { SavingsSlipModal } from '@/components/portal/keuangan/savings-slip-moda
 import type { SavingsSlipData } from '@/lib/cards/savings-slip-png';
 import { SppSlipModal } from '@/components/portal/keuangan/spp-slip-modal';
 import type { SppSlipData } from '@/lib/cards/spp-slip-png';
+import { HonorariumSlipModal } from '@/components/portal/keuangan/honorarium-slip-modal';
+import type { HonorariumDutyItem, HonorariumSlipData } from '@/lib/cards/honorarium-slip-png';
 
 export type PersonalScope = 'siswa' | 'orang-tua' | 'gtk' | 'umum';
 export type PersonalSection =
@@ -201,6 +203,7 @@ export function PersonalWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [activeSlip, setActiveSlip] = useState<SavingsSlipData | null>(null);
   const [activeSppSlip, setActiveSppSlip] = useState<SppSlipData | null>(null);
+  const [activeHonorSlip, setActiveHonorSlip] = useState<HonorariumSlipData | null>(null);
 
   const todayDay = getTodayIsoDay();
 
@@ -1008,7 +1011,7 @@ export function PersonalWorkspace({
                           Periode {String(h.period_month)}/{String(h.period_year)}
                         </span>
                         <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                          {String(h.payment_status || 'DRAFT')}
+                          {String(h.status || 'DRAFT')}
                         </span>
                       </div>
                       <div className="space-y-1 text-xs text-slate-600">
@@ -1018,22 +1021,53 @@ export function PersonalWorkspace({
                         </div>
                         <div className="flex justify-between">
                           <span>Honor JTM:</span>
-                          <strong>{formatRupiah(Number(h.jtm_honor_amount) || 0)}</strong>
+                          <strong>{formatRupiah(Number(h.jtm_honorarium_amount) || 0)}</strong>
                         </div>
                         <div className="flex justify-between">
                           <span>Tunjangan Tugas &amp; Transport:</span>
                           <strong>
                             {formatRupiah(
-                              (Number(h.duty_allowance_amount) || 0) +
-                                (Number(h.transport_allowance_amount) || 0)
+                              (Number(h.additional_duty_allowance) || 0) +
+                                (Number(h.transport_allowance) || 0)
                             )}
                           </strong>
                         </div>
                         <div className="flex justify-between pt-2 border-t border-slate-100 text-sm font-black text-emerald-800">
                           <span>Total Diterima Bersih:</span>
-                          <span>{formatRupiah(Number(h.total_net_amount) || 0)}</span>
+                          <span>{formatRupiah(Number(h.total_amount) || 0)}</span>
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveHonorSlip({
+                            id: String(h.id),
+                            teacherName: data.teacher?.full_name || data.profile.fullName,
+                            teacherNip: data.teacher?.nip || null,
+                            periodMonth: Number(h.period_month) || 1,
+                            periodYear: Number(h.period_year) || new Date().getFullYear(),
+                            teachingJtm: Number(h.teaching_jtm) || 0,
+                            substituteJtm: Number(h.substitute_jtm) || 0,
+                            examSupervisorJtm: Number(h.exam_supervisor_jtm) || 0,
+                            examCommitteeJtm: Number(h.exam_committee_jtm) || 0,
+                            eventJtm: Number(h.event_jtm) || 0,
+                            picketJtm: Number(h.picket_jtm) || 0,
+                            ceremonyJtm: Number(h.ceremony_jtm) || 0,
+                            paidHolidayJtm: Number(h.paid_holiday_jtm) || 0,
+                            totalJtm: Number(h.total_jtm) || 0,
+                            ratePerJtm: Number(h.rate_per_jtm) || 0,
+                            jtmHonorariumAmount: Number(h.jtm_honorarium_amount) || 0,
+                            additionalDutyAllowance: Number(h.additional_duty_allowance) || 0,
+                            transportAllowance: Number(h.transport_allowance) || 0,
+                            totalAmount: Number(h.total_amount) || 0,
+                            status: String(h.status || 'DRAFT'),
+                            dutyItems: (h.items as HonorariumDutyItem[]) || [],
+                          })
+                        }
+                        className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold py-2 px-3 text-xs transition"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip (PNG / PDF)
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -1116,6 +1150,9 @@ export function PersonalWorkspace({
       )}
       {activeSppSlip && (
         <SppSlipModal slip={activeSppSlip} onClose={() => setActiveSppSlip(null)} />
+      )}
+      {activeHonorSlip && (
+        <HonorariumSlipModal slip={activeHonorSlip} onClose={() => setActiveHonorSlip(null)} />
       )}
     </div>
   );

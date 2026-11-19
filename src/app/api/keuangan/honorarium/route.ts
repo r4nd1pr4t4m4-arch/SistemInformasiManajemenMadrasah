@@ -121,7 +121,9 @@ export async function GET() {
       .eq('is_active', true),
     supabase
       .from('teacher_honorariums')
-      .select('*, teacher:teachers_staff(full_name), items:teacher_honorarium_duty_items(*)')
+      .select(
+        '*, teacher:teachers_staff(full_name, nip, home_distance_km), items:teacher_honorarium_duty_items(*)'
+      )
       .order('period_year', { ascending: false })
       .order('period_month', { ascending: false })
       .limit(100),
