@@ -108,11 +108,10 @@ export function PublicNavbar() {
 
             <Link
               href="/portal"
-              className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl font-semibold text-xs transition shadow-sm"
+              className="hidden sm:inline-flex items-center gap-1.5 bg-slate-900 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl font-semibold text-xs transition shadow-sm"
             >
               <ShieldCheck className="w-4 h-4" />
-              <span className="hidden sm:inline">Portal Terpadu</span>
-              <span className="sm:hidden">Portal</span>
+              <span>Portal Terpadu</span>
             </Link>
 
             <button
@@ -172,6 +171,16 @@ export function PublicNavbar() {
                       </Link>
                     );
                   })}
+                </div>
+                <div className="sm:hidden pt-2 border-t border-slate-200/70">
+                  <Link
+                    href="/portal"
+                    onClick={() => setMobileOpen(false)}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-emerald-700 text-white px-4 py-3 rounded-2xl font-bold text-sm transition shadow-sm"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Masuk Portal Terpadu
+                  </Link>
                 </div>
               </div>
             </div>
