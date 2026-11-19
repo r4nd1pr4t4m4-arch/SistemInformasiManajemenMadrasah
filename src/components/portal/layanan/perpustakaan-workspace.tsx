@@ -21,6 +21,9 @@ interface BookRow {
   id: string;
   title: string;
   author: string;
+  category?: string | null;
+  cover_url?: string | null;
+  description?: string | null;
   book_format: string;
   available_copies: number;
   total_copies: number;
@@ -79,9 +82,12 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
   const [bookForm, setBookForm] = useState({
     title: '',
     author: '',
+    category: '',
     book_format: 'KEDUANYA' as 'FISIK' | 'EBOOK' | 'KEDUANYA',
     total_copies: 3,
     ebook_file_url: '',
+    cover_url: '',
+    description: '',
     is_premium: false,
   });
   const [grantForm, setGrantForm] = useState({
@@ -167,7 +173,16 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                     { action: 'ADD_BOOK', ...bookForm },
                     'Buku berhasil ditambahkan ke katalog.'
                   );
-                  setBookForm({ ...bookForm, title: '', author: '', ebook_file_url: '' });
+                  setBookForm({
+                    ...bookForm,
+                    title: '',
+                    author: '',
+                    category: '',
+                    ebook_file_url: '',
+                    cover_url: '',
+                    description: '',
+                    is_premium: false,
+                  });
                 }}
                 className="space-y-2.5"
               >
@@ -211,9 +226,28 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                   />
                 </div>
                 <input
+                  placeholder="Kategori (mis. Pelajaran, Fiksi, Referensi)"
+                  value={bookForm.category}
+                  onChange={(e) => setBookForm({ ...bookForm, category: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                />
+                <input
+                  placeholder="URL Cover Buku (JPG/PNG)"
+                  value={bookForm.cover_url}
+                  onChange={(e) => setBookForm({ ...bookForm, cover_url: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                />
+                <input
                   placeholder="URL E-Book PDF"
                   value={bookForm.ebook_file_url}
                   onChange={(e) => setBookForm({ ...bookForm, ebook_file_url: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                />
+                <textarea
+                  rows={2}
+                  placeholder="Deskripsi singkat buku (opsional)"
+                  value={bookForm.description}
+                  onChange={(e) => setBookForm({ ...bookForm, description: e.target.value })}
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
                 />
                 <label className="flex items-center gap-2 text-xs text-slate-700 font-medium py-1 cursor-pointer">
@@ -252,21 +286,35 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                     key={b.id}
                     className="modular-card rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs"
                   >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="font-bold text-slate-900">{b.title}</p>
-                        {b.is_premium && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
-                            <Crown className="w-3 h-3" /> PREMIUM
-                          </span>
-                        )}
+                    <div className="flex items-center gap-3 min-w-0">
+                      {b.cover_url ? (
+                        <img
+                          src={b.cover_url}
+                          alt={b.title}
+                          className="w-10 h-14 rounded-lg object-cover border border-slate-200 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-14 rounded-lg bg-emerald-900 text-white text-[9px] font-bold flex items-center justify-center p-1 text-center shrink-0">
+                          BUKU
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-bold text-slate-900">{b.title}</p>
+                          {b.is_premium && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                              <Crown className="w-3 h-3" /> PREMIUM
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-slate-500">
+                          {b.author} • {b.book_format}
+                          {b.category ? ` • ${b.category}` : ''}
+                          {b.grant_expires_at
+                            ? ` • Izin s/d ${new Date(b.grant_expires_at).toLocaleString('id-ID')}`
+                            : ''}
+                        </p>
                       </div>
-                      <p className="text-slate-500">
-                        {b.author} • {b.book_format}
-                        {b.grant_expires_at
-                          ? ` • Izin s/d ${new Date(b.grant_expires_at).toLocaleString('id-ID')}`
-                          : ''}
-                      </p>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
@@ -299,7 +347,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                             onClick={() => setReadingBook(b)}
                             className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
                           >
-                            <BookOpen className="w-3 h-3" /> Baca Flipbook
+                            <BookOpen className="w-3 h-3" /> Baca Buku
                           </button>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-semibold text-[11px]">

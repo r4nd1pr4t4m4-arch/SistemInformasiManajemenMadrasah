@@ -409,11 +409,6 @@ export function FlipbookReader({
                   PREMIUM
                 </span>
               )}
-              {isPublicMode && (
-                <span className="px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/40 text-sky-300 text-[10px] font-bold shrink-0">
-                  PRATINJAU PUBLIK 10%
-                </span>
-              )}
             </div>
             <p className="text-[11px] text-slate-400 truncate">
               Penulis: {author}
