@@ -139,7 +139,7 @@ export function PublicNavbar() {
               aria-hidden="true"
             />
             <div className="absolute left-0 right-0 top-full z-40 border-t border-slate-200/70 bg-white/95 backdrop-blur-md shadow-2xl">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 space-y-3 max-h-[calc(100vh-5rem)] overflow-y-auto overscroll-contain">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-8 space-y-3 max-h-[calc(100dvh-7.5rem)] sm:max-h-[calc(100dvh-6rem)] overflow-y-auto overscroll-contain">
                 <div className="flex items-center justify-between">
                   <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                     Semua Halaman Publik
