@@ -347,7 +347,11 @@ export function FlipbookReader({
         {error && (
           <div className="max-w-md rounded-3xl bg-slate-900 border border-rose-500/40 p-6 text-center space-y-3 text-white">
             <ShieldAlert className="w-9 h-9 text-rose-400 mx-auto" />
-            <h3 className="text-sm font-bold">Akses E-Book Dibatasi</h3>
+            <h3 className="text-sm font-bold">
+              {error.toLowerCase().includes('izin') || error.toLowerCase().includes('premium')
+                ? 'Akses E-Book Dibatasi'
+                : 'Gagal Memuat Dokumen E-Book'}
+            </h3>
             <p className="text-xs text-slate-300 leading-relaxed">{error}</p>
             <button
               type="button"

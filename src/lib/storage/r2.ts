@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export type StorageFolder =
@@ -97,4 +97,22 @@ export async function uploadBufferToR2(params: {
   const publicUrl = publicBase ? `${publicBase}/${objectKey}` : objectKey;
 
   return { objectKey, publicUrl };
+}
+
+export async function getR2ObjectBuffer(objectKey: string): Promise<Uint8Array> {
+  const bucket = process.env.R2_BUCKET_NAME;
+  if (!bucket) {
+    throw new Error('R2_BUCKET_NAME belum dikonfigurasi.');
+  }
+  const client = getR2Client();
+  const res = await client.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: objectKey,
+    })
+  );
+  if (!res.Body) {
+    throw new Error('Objek E-Book kosong di R2.');
+  }
+  return res.Body.transformToByteArray();
 }
