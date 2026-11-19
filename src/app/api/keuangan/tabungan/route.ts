@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import {
+  calculateWithdrawalFee,
+  DEFAULT_WITHDRAWAL_FEE_TIERS,
+  type SavingsFeeTier,
+} from '@/lib/domain/tabungan-fee';
 
 const OpenAccountSchema = z.object({
   action: z.literal('OPEN_ACCOUNT'),
@@ -22,6 +27,21 @@ const TransactionSchema = z.object({
   notes: z.string().optional().nullable(),
 });
 
+const UpdateFeeTiersSchema = z.object({
+  action: z.literal('UPDATE_FEE_TIERS'),
+  tiers: z.array(
+    z.object({
+      id: z.string().uuid().optional().nullable(),
+      tier_order: z.number().int().min(1),
+      label: z.string().optional().nullable(),
+      min_amount: z.number().min(0),
+      max_amount: z.number().min(0).nullable().optional(),
+      fee_percentage: z.number().min(0).max(100),
+      is_active: z.boolean().default(true),
+    })
+  ),
+});
+
 export async function GET() {
   const guard = await requireApiRoles(PERMISSIONS.TABUNGAN_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
@@ -34,6 +54,7 @@ export async function GET() {
       teachers: [],
       tuStaff: [],
       publicUsers: [],
+      feeTiers: DEFAULT_WITHDRAWAL_FEE_TIERS,
     });
   }
 
@@ -45,6 +66,7 @@ export async function GET() {
     { data: gtkRows },
     { data: publicProfiles },
     { data: publicLibMembers },
+    { data: feeTiers },
   ] = await Promise.all([
     supabase.from('savings_accounts').select('*').order('created_at', { ascending: false }),
     supabase
@@ -73,6 +95,10 @@ export async function GET() {
       .select('id, full_name, phone, email, member_code, member_type')
       .eq('member_type', 'UMUM')
       .order('full_name'),
+    supabase
+      .from('savings_withdrawal_fee_tiers')
+      .select('*')
+      .order('tier_order', { ascending: true }),
   ]);
 
   const teachers = (gtkRows || []).filter((g) => g.staff_type === 'GURU');
@@ -112,6 +138,7 @@ export async function GET() {
     teachers,
     tuStaff,
     publicUsers: Array.from(publicUsersMap.values()),
+    feeTiers: feeTiers && feeTiers.length > 0 ? feeTiers : DEFAULT_WITHDRAWAL_FEE_TIERS,
   });
 }
 
@@ -206,15 +233,39 @@ export async function POST(request: Request) {
           ? currentBalance + parsed.data.amount
           : currentBalance - parsed.data.amount;
 
+      let feePercentage = 0;
+      let feeAmount = 0;
+      let netAmount = parsed.data.amount;
+
+      if (parsed.data.transaction_type === 'TARIK') {
+        const { data: tiersData } = await supabase
+          .from('savings_withdrawal_fee_tiers')
+          .select('*')
+          .order('tier_order', { ascending: true });
+
+        const feeCalc = calculateWithdrawalFee(
+          parsed.data.amount,
+          tiersData && tiersData.length > 0 ? (tiersData as SavingsFeeTier[]) : DEFAULT_WITHDRAWAL_FEE_TIERS
+        );
+
+        feePercentage = feeCalc.feePercentage;
+        feeAmount = feeCalc.feeAmount;
+        netAmount = feeCalc.netAmount;
+      }
+
       const { data: trx, error: trxErr } = await supabase
         .from('savings_transactions')
         .insert({
           account_id: account.id,
           transaction_type: parsed.data.transaction_type,
           amount: parsed.data.amount,
+          fee_percentage: feePercentage,
+          fee_amount: feeAmount,
+          net_amount: netAmount,
           balance_after: newBalance,
           reference_number: `TRX-${Date.now().toString().slice(-8)}`,
           notes: parsed.data.notes || null,
+          recorded_by: guard.session.userId,
         })
         .select('*')
         .single();
@@ -226,7 +277,79 @@ export async function POST(request: Request) {
         .update({ balance: newBalance, updated_at: new Date().toISOString() })
         .eq('id', account.id);
 
-      return NextResponse.json({ transaction: trx, balance: newBalance });
+      return NextResponse.json({
+        transaction: trx,
+        balance: newBalance,
+        fee_percentage: feePercentage,
+        fee_amount: feeAmount,
+        net_amount: netAmount,
+      });
+    }
+
+    if (body.action === 'UPDATE_FEE_TIERS') {
+      const parsed = UpdateFeeTiersSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data aturan fee tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      // Hapus tier lama dan perbarui dengan tier yang baru diatur oleh admin / pengelola
+      await supabase
+        .from('savings_withdrawal_fee_tiers')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      const insertRows = parsed.data.tiers.map((t, idx) => ({
+        tier_order: idx + 1,
+        label: t.label?.trim() || null,
+        min_amount: t.min_amount,
+        max_amount: t.max_amount != null && t.max_amount > 0 ? t.max_amount : null,
+        fee_percentage: t.fee_percentage,
+        is_active: t.is_active ?? true,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { data: updatedTiers, error: upErr } = await supabase
+        .from('savings_withdrawal_fee_tiers')
+        .insert(insertRows)
+        .select('*')
+        .order('tier_order', { ascending: true });
+
+      if (upErr) {
+        return NextResponse.json({ error: upErr.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ feeTiers: updatedTiers });
+    }
+
+    if (body.action === 'RESET_FEE_TIERS') {
+      await supabase
+        .from('savings_withdrawal_fee_tiers')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      const { data: resetTiers, error: resetErr } = await supabase
+        .from('savings_withdrawal_fee_tiers')
+        .insert(
+          DEFAULT_WITHDRAWAL_FEE_TIERS.map((t) => ({
+            tier_order: t.tier_order,
+            label: t.label,
+            min_amount: t.min_amount,
+            max_amount: t.max_amount,
+            fee_percentage: t.fee_percentage,
+            is_active: t.is_active,
+          }))
+        )
+        .select('*')
+        .order('tier_order', { ascending: true });
+
+      if (resetErr) {
+        return NextResponse.json({ error: resetErr.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ feeTiers: resetTiers });
     }
 
     return NextResponse.json({ error: 'Aksi tabungan tidak dikenal.' }, { status: 400 });

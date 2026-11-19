@@ -580,6 +580,7 @@ const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
   '/portal/keuangan/spp/terbitkan': PERMISSIONS.SPP_MANAGE,
   '/portal/keuangan/tabungan/buka-rekening': PERMISSIONS.TABUNGAN_MANAGE,
   '/portal/keuangan/tabungan/transaksi': PERMISSIONS.TABUNGAN_MANAGE,
+  '/portal/keuangan/tabungan/aturan-fee': PERMISSIONS.TABUNGAN_MANAGE,
   '/portal/layanan/perpustakaan/anggota': PERMISSIONS.PERPUSTAKAAN_ANGGOTA_VIEW,
   '/portal/cms/ppdb': PERMISSIONS.CMS_PPDB_VIEW,
   '/portal/cms/manajemen-ppdb': PERMISSIONS.CMS_PPDB_VIEW,
