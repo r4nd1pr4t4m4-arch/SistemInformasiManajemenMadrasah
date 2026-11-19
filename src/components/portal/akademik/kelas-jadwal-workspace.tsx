@@ -1,7 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { BookOpen, BookOpenCheck, CheckCircle2, Loader2, Pencil, Users, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  BookOpen,
+  BookOpenCheck,
+  CheckCircle2,
+  Loader2,
+  Pencil,
+  Search,
+  Trash2,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 
@@ -10,6 +21,22 @@ export type KelasJadwalSection = 'rombel' | 'mapel' | 'jadwal';
 interface TeacherOpt {
   id: string;
   full_name: string;
+}
+
+interface StudentOpt {
+  id: string;
+  full_name: string;
+  nis?: string | null;
+  nisn?: string | null;
+  status?: string | null;
+}
+
+interface EnrollmentRow {
+  id: string;
+  student_id: string;
+  classroom_id: string;
+  student?: { full_name: string; nis?: string | null; nisn?: string | null } | null;
+  classroom?: { name: string } | null;
 }
 
 interface ClassroomRow {
@@ -46,9 +73,17 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [teachers, setTeachers] = useState<TeacherOpt[]>([]);
+  const [students, setStudents] = useState<StudentOpt[]>([]);
+  const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([]);
   const [classrooms, setClassrooms] = useState<ClassroomRow[]>([]);
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
+
+  const [selectedClassroomId, setSelectedClassroomId] = useState<string>('');
+  const [studentSearch, setStudentSearch] = useState('');
+  const [onlyUnassigned, setOnlyUnassigned] = useState(true);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [enrolling, setEnrolling] = useState(false);
 
   const [editingClassroomId, setEditingClassroomId] = useState<string | null>(null);
   const [classForm, setClassForm] = useState({
@@ -82,9 +117,17 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
       const bi = await biRes.json();
       const kj = await kjRes.json();
       setTeachers(bi.teachers || []);
-      setClassrooms(kj.classrooms || []);
+      setStudents((bi.students || []).filter((s: StudentOpt) => !s.status || s.status === 'AKTIF'));
+      const loadedClassrooms: ClassroomRow[] = kj.classrooms || [];
+      setClassrooms(loadedClassrooms);
+      setEnrollments(kj.enrollments || []);
       setSubjects(kj.subjects || []);
       setSchedules(kj.schedules || []);
+      setSelectedClassroomId((prev) =>
+        prev && loadedClassrooms.some((c) => c.id === prev)
+          ? prev
+          : loadedClassrooms[0]?.id || ''
+      );
     } finally {
       setLoading(false);
     }
@@ -109,6 +152,52 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
     await loadData();
     return true;
   }
+
+  const enrollmentByStudentId = useMemo(() => {
+    const map = new Map<string, EnrollmentRow>();
+    for (const en of enrollments) {
+      map.set(en.student_id, en);
+    }
+    return map;
+  }, [enrollments]);
+
+  const countByClassroomId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const en of enrollments) {
+      map.set(en.classroom_id, (map.get(en.classroom_id) || 0) + 1);
+    }
+    return map;
+  }, [enrollments]);
+
+  const selectedClassroom = useMemo(
+    () => classrooms.find((c) => c.id === selectedClassroomId) || null,
+    [classrooms, selectedClassroomId]
+  );
+
+  const selectedRoomEnrollments = useMemo(
+    () =>
+      enrollments
+        .filter((en) => en.classroom_id === selectedClassroomId)
+        .sort((a, b) =>
+          (a.student?.full_name || '').localeCompare(b.student?.full_name || '', 'id')
+        ),
+    [enrollments, selectedClassroomId]
+  );
+
+  const availableStudentsForRombel = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    return students.filter((st) => {
+      const en = enrollmentByStudentId.get(st.id);
+      if (en?.classroom_id === selectedClassroomId) return false;
+      if (onlyUnassigned && en) return false;
+      if (!q) return true;
+      return (
+        st.full_name.toLowerCase().includes(q) ||
+        (st.nis || '').toLowerCase().includes(q) ||
+        (st.nisn || '').toLowerCase().includes(q)
+      );
+    });
+  }, [students, enrollmentByStudentId, selectedClassroomId, onlyUnassigned, studentSearch]);
 
   if (loading) {
     return (
@@ -229,11 +318,13 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
             {classrooms.map((c) => {
               const isEditingThis = editingClassroomId === c.id;
+              const isSelectedForMembers = selectedClassroomId === c.id;
+              const memberCount = countByClassroomId.get(c.id) || 0;
               return (
                 <div
                   key={c.id}
                   className={`modular-card rounded-2xl p-4 flex flex-col justify-between gap-2.5 text-xs border transition ${
-                    isEditingThis
+                    isEditingThis || isSelectedForMembers
                       ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/30'
                       : 'border-slate-200/80'
                   }`}
@@ -247,14 +338,31 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
                           {c.homeroom_teacher?.full_name || 'Belum ditetapkan'}
                         </strong>
                       </p>
+                      <p className="text-[11px] text-emerald-700 font-semibold mt-1">
+                        {memberCount} Siswa terdaftar
+                      </p>
                     </div>
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold shrink-0">
                       Tingkat {c.grade_level}
                     </span>
                   </div>
 
-                  {canManage && (
-                    <div className="pt-2 border-t border-slate-100 flex justify-end">
+                  <div className="pt-2 border-t border-slate-100 flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedClassroomId(c.id);
+                        setSelectedStudentIds([]);
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-semibold text-[11px] transition ${
+                        isSelectedForMembers
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                      }`}
+                    >
+                      <Users className="w-3 h-3" /> Kelola Anggota ({memberCount})
+                    </button>
+                    {canManage && (
                       <button
                         type="button"
                         onClick={() => {
@@ -270,12 +378,223 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
                       >
                         <Pencil className="w-3 h-3" /> Edit Rombel / Wali Kelas
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
+
+          {classrooms.length > 0 && (
+            <div className="mt-4 pt-5 border-t border-slate-200/80 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <UserPlus className="w-4 h-4 text-emerald-700" /> Penempatan &amp; Anggota Siswa Rombel
+                  </h2>
+                  <p className="text-[11px] text-slate-500">
+                    Pilih rombel lalu tambahkan siswa aktif ke dalam rombel tersebut pada tahun ajaran berjalan.
+                  </p>
+                </div>
+                <select
+                  value={selectedClassroomId}
+                  onChange={(e) => {
+                    setSelectedClassroomId(e.target.value);
+                    setSelectedStudentIds([]);
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800"
+                >
+                  {classrooms.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} (Tingkat {c.grade_level}) — {countByClassroomId.get(c.id) || 0} Siswa
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className={`grid gap-4 ${canManage ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
+                {canManage && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-slate-800">
+                        Tambah Siswa ke {selectedClassroom?.name || 'Rombel'}
+                      </p>
+                      <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={onlyUnassigned}
+                          onChange={(e) => setOnlyUnassigned(e.target.checked)}
+                          className="rounded border-slate-300 text-emerald-600"
+                        />
+                        Hanya siswa belum punya rombel
+                      </label>
+                    </div>
+
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Cari nama siswa / NIS / NISN..."
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 bg-white pl-8 pr-3 py-2 text-xs"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-600">
+                      <span>{availableStudentsForRombel.length} siswa tersedia</span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedStudentIds(availableStudentsForRombel.map((s) => s.id))
+                          }
+                          className="text-emerald-700 font-semibold hover:underline"
+                        >
+                          Pilih Semua
+                        </button>
+                        {selectedStudentIds.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStudentIds([])}
+                            className="text-slate-500 hover:underline"
+                          >
+                            Reset ({selectedStudentIds.length})
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+                      {availableStudentsForRombel.length === 0 ? (
+                        <p className="text-xs text-slate-500 text-center py-6">
+                          Tidak ada siswa yang sesuai filter.
+                        </p>
+                      ) : (
+                        availableStudentsForRombel.map((st) => {
+                          const checked = selectedStudentIds.includes(st.id);
+                          const currentEn = enrollmentByStudentId.get(st.id);
+                          return (
+                            <label
+                              key={st.id}
+                              className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-xs cursor-pointer transition ${
+                                checked
+                                  ? 'bg-emerald-50 border-emerald-300'
+                                  : 'bg-white border-slate-200 hover:border-slate-300'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setSelectedStudentIds((prev) =>
+                                      prev.includes(st.id)
+                                        ? prev.filter((id) => id !== st.id)
+                                        : [...prev, st.id]
+                                    )
+                                  }
+                                  className="rounded border-slate-300 text-emerald-600"
+                                />
+                                <div className="truncate">
+                                  <span className="font-semibold text-slate-900">{st.full_name}</span>
+                                  {(st.nis || st.nisn) && (
+                                    <span className="text-slate-400 ml-1.5">
+                                      ({st.nis || st.nisn})
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {currentEn?.classroom?.name && (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold shrink-0">
+                                  Pindah dari {currentEn.classroom.name}
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={enrolling || selectedStudentIds.length === 0 || !selectedClassroomId}
+                      onClick={async () => {
+                        setEnrolling(true);
+                        try {
+                          const ok = await postAction(
+                            {
+                              action: 'ENROLL_STUDENTS_BATCH',
+                              classroom_id: selectedClassroomId,
+                              student_ids: selectedStudentIds,
+                            },
+                            `${selectedStudentIds.length} siswa berhasil ditambahkan ke rombel ${selectedClassroom?.name || ''}.`
+                          );
+                          if (ok) setSelectedStudentIds([]);
+                        } finally {
+                          setEnrolling(false);
+                        }
+                      }}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2 px-4 rounded-xl text-xs transition"
+                    >
+                      {enrolling
+                        ? 'Menyimpan...'
+                        : `Tambahkan ke Rombel (${selectedStudentIds.length} Siswa)`}
+                    </button>
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-800">
+                      Anggota {selectedClassroom?.name || 'Rombel'} ({selectedRoomEnrollments.length})
+                    </p>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto space-y-1.5 pr-1">
+                    {selectedRoomEnrollments.length === 0 ? (
+                      <p className="text-xs text-slate-500 text-center py-8">
+                        Belum ada siswa di rombel ini.
+                      </p>
+                    ) : (
+                      selectedRoomEnrollments.map((en, idx) => (
+                        <div
+                          key={en.id}
+                          className="flex items-center justify-between gap-2 p-2 rounded-xl border border-slate-200/80 text-xs"
+                        >
+                          <div className="truncate">
+                            <span className="text-slate-400 mr-1.5">{idx + 1}.</span>
+                            <span className="font-semibold text-slate-900">
+                              {en.student?.full_name || 'Siswa'}
+                            </span>
+                            {(en.student?.nis || en.student?.nisn) && (
+                              <span className="text-slate-400 ml-1.5">
+                                ({en.student?.nis || en.student?.nisn})
+                              </span>
+                            )}
+                          </div>
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                postAction(
+                                  { action: 'UNENROLL_STUDENT', enrollment_id: en.id },
+                                  `Siswa ${en.student?.full_name || ''} dikeluarkan dari rombel.`
+                                )
+                              }
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-semibold shrink-0 transition"
+                              title="Keluarkan dari rombel"
+                            >
+                              <Trash2 className="w-3 h-3" /> Keluarkan
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

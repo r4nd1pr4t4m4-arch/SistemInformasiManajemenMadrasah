@@ -101,6 +101,20 @@ const SubstituteCommitteeSchema = z.object({
   reason: z.string().optional().nullable(),
 });
 
+const AssignExamRoomStudentsSchema = z.object({
+  action: z.literal('ASSIGN_EXAM_ROOM_STUDENTS'),
+  exam_period_id: z.string().uuid(),
+  exam_room_id: z.string().uuid(),
+  student_ids: z.array(z.string().uuid()).min(1, 'Pilih minimal 1 siswa.'),
+});
+
+const RemoveExamRoomStudentSchema = z.object({
+  action: z.literal('REMOVE_EXAM_ROOM_STUDENT'),
+  exam_room_student_id: z.string().uuid().optional(),
+  exam_period_id: z.string().uuid().optional(),
+  student_id: z.string().uuid().optional(),
+});
+
 export async function GET() {
   const guard = await requireApiRoles(PERMISSIONS.UJIAN_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
@@ -119,6 +133,7 @@ export async function GET() {
       dailyGeofenceAttendances: [],
       supervisorSessionConfirmations: [],
       students: [],
+      examRoomStudents: [],
       canManageCommittees: false,
       geofenceEnabled: true,
     });
@@ -141,6 +156,7 @@ export async function GET() {
     { data: classrooms },
     { data: enrollments },
     { data: settingsRow },
+    { data: examRoomStudents },
   ] = await Promise.all([
     supabase.from('exam_periods').select('*').order('start_date', { ascending: false }),
     supabase.from('exam_rooms').select('*, period:exam_periods(name)'),
@@ -203,6 +219,10 @@ export async function GET() {
       .select('student_id, classroom_id, student:students(id, full_name, nis, status)')
       .limit(1000),
     supabase.from('institution_settings').select('geofence_enabled').limit(1).maybeSingle(),
+    supabase
+      .from('exam_room_students')
+      .select('*, student:students(id, full_name, nis, status), room:exam_rooms(id, room_name, exam_period_id)')
+      .limit(2000),
   ]);
 
   const canManageCommittees = hasAnyRole(guard.session, PERMISSIONS.ADMIN_CONFIRM);
@@ -290,6 +310,7 @@ export async function GET() {
     students: students || [],
     classrooms: classrooms || [],
     enrollments: enrollments || [],
+    examRoomStudents: examRoomStudents || [],
     canManageCommittees,
     geofenceEnabled: settingsRow?.geofence_enabled ?? true,
   });
@@ -311,6 +332,8 @@ export async function POST(request: Request) {
     if (
       (body.action === 'CREATE_PERIOD' ||
         body.action === 'CREATE_ROOM' ||
+        body.action === 'ASSIGN_EXAM_ROOM_STUDENTS' ||
+        body.action === 'REMOVE_EXAM_ROOM_STUDENT' ||
         body.action === 'ASSIGN_SUPERVISOR' ||
         body.action === 'ASSIGN_COMMITTEE') &&
       !canManageExam
@@ -350,6 +373,65 @@ export async function POST(request: Request) {
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ room: data });
+    }
+
+    if (body.action === 'ASSIGN_EXAM_ROOM_STUDENTS') {
+      const parsed = AssignExamRoomStudentsSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Pilih periode ujian, ruang ujian, dan minimal 1 siswa.' },
+          { status: 400 }
+        );
+      }
+      const { data: roomRow, error: roomErr } = await supabase
+        .from('exam_rooms')
+        .select('id, exam_period_id')
+        .eq('id', parsed.data.exam_room_id)
+        .maybeSingle();
+
+      if (roomErr || !roomRow || roomRow.exam_period_id !== parsed.data.exam_period_id) {
+        return NextResponse.json(
+          { error: 'Ruang ujian tidak sesuai dengan periode ujian yang dipilih.' },
+          { status: 400 }
+        );
+      }
+
+      const rows = parsed.data.student_ids.map((student_id) => ({
+        exam_period_id: parsed.data.exam_period_id,
+        exam_room_id: parsed.data.exam_room_id,
+        student_id,
+      }));
+      const { data, error } = await supabase
+        .from('exam_room_students')
+        .upsert(rows, { onConflict: 'exam_period_id,student_id' })
+        .select('*');
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ examRoomStudents: data || [], count: rows.length });
+    }
+
+    if (body.action === 'REMOVE_EXAM_ROOM_STUDENT') {
+      const parsed = RemoveExamRoomStudentSchema.safeParse(body);
+      if (
+        !parsed.success ||
+        (!parsed.data.exam_room_student_id &&
+          !(parsed.data.exam_period_id && parsed.data.student_id))
+      ) {
+        return NextResponse.json(
+          { error: 'Parameter keluarkan peserta ruang ujian tidak valid.' },
+          { status: 400 }
+        );
+      }
+      let delQuery = supabase.from('exam_room_students').delete();
+      if (parsed.data.exam_room_student_id) {
+        delQuery = delQuery.eq('id', parsed.data.exam_room_student_id);
+      } else if (parsed.data.exam_period_id && parsed.data.student_id) {
+        delQuery = delQuery
+          .eq('exam_period_id', parsed.data.exam_period_id)
+          .eq('student_id', parsed.data.student_id);
+      }
+      const { error } = await delQuery;
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
     }
 
     if (body.action === 'ASSIGN_SUPERVISOR') {

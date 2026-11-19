@@ -2,7 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CheckCircle2, ClipboardCheck, Loader2, MapPin, UserCheck } from 'lucide-react';
+import {
+  CheckCircle2,
+  ClipboardCheck,
+  DoorOpen,
+  Loader2,
+  MapPin,
+  Search,
+  Trash2,
+  UserCheck,
+  UserPlus,
+  Users,
+} from 'lucide-react';
 import { calculateLateJtm, getWibTodayDateString, isSundayDate } from '@/lib/domain/jtm-late-penalty';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
@@ -164,7 +175,37 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
     reason: string;
   } | null>(null);
   const [students, setStudents] = useState<{ id: string; full_name: string; nis: string | null }[]>([]);
-  const [rooms, setRooms] = useState<{ id: string; room_name: string }[]>([]);
+  const [rooms, setRooms] = useState<
+    {
+      id: string;
+      exam_period_id: string;
+      room_name: string;
+      capacity: number;
+      period?: { name: string } | null;
+    }[]
+  >([]);
+  const [examRoomStudents, setExamRoomStudents] = useState<
+    {
+      id: string;
+      exam_period_id: string;
+      exam_room_id: string;
+      student_id: string;
+      student?: { id: string; full_name: string; nis: string | null; status?: string | null } | null;
+      room?: { id: string; room_name: string; exam_period_id: string } | null;
+    }[]
+  >([]);
+  const [roomForm, setRoomForm] = useState({
+    exam_period_id: '',
+    room_name: '',
+    capacity: 30,
+  });
+  const [selectedExamPeriodId, setSelectedExamPeriodId] = useState('');
+  const [selectedExamRoomId, setSelectedExamRoomId] = useState('');
+  const [examRoomClassroomFilter, setExamRoomClassroomFilter] = useState('');
+  const [examRoomSearch, setExamRoomSearch] = useState('');
+  const [examRoomOnlyUnassigned, setExamRoomOnlyUnassigned] = useState(true);
+  const [selectedExamStudentIds, setSelectedExamStudentIds] = useState<string[]>([]);
+  const [assigningExamStudents, setAssigningExamStudents] = useState(false);
   const [examStudentAttendances, setExamStudentAttendances] = useState<
     {
       id: string;
@@ -237,7 +278,30 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
       setStudents(uj.students || []);
       setClassrooms(uj.classrooms || []);
       setEnrollments(uj.enrollments || []);
-      setRooms(uj.rooms || []);
+      const loadedPeriods: ExamPeriodRow[] = uj.periods || [];
+      const loadedRooms: {
+        id: string;
+        exam_period_id: string;
+        room_name: string;
+        capacity: number;
+        period?: { name: string } | null;
+      }[] = uj.rooms || [];
+      setRooms(loadedRooms);
+      setExamRoomStudents(uj.examRoomStudents || []);
+
+      const activePeriodId =
+        selectedExamPeriodId && loadedPeriods.some((p) => p.id === selectedExamPeriodId)
+          ? selectedExamPeriodId
+          : loadedPeriods[0]?.id || '';
+      setSelectedExamPeriodId(activePeriodId);
+      setRoomForm((prev) =>
+        prev.exam_period_id ? prev : { ...prev, exam_period_id: activePeriodId }
+      );
+      const periodRooms = loadedRooms.filter((r) => r.exam_period_id === activePeriodId);
+      setSelectedExamRoomId((prev) =>
+        prev && periodRooms.some((r) => r.id === prev) ? prev : periodRooms[0]?.id || ''
+      );
+
       setExamStudentAttendances(uj.studentAttendances || []);
       setCanManageCommittees(Boolean(uj.canManageCommittees));
       setGeofenceEnabled(uj.geofenceEnabled ?? true);
@@ -259,11 +323,94 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
     const data = await res.json();
     if (!res.ok) {
       showToast(data.error || 'Terjadi kesalahan.');
-      return;
+      return false;
     }
     showToast(msg);
     await loadData();
+    return true;
   }
+
+  const studentClassroomMap = useMemo(() => {
+    const clsNameById = new Map(classrooms.map((c) => [c.id, c.name]));
+    const map = new Map<string, { classroom_id: string; classroom_name: string }>();
+    for (const en of enrollments) {
+      map.set(en.student_id, {
+        classroom_id: en.classroom_id,
+        classroom_name: clsNameById.get(en.classroom_id) || '-',
+      });
+    }
+    return map;
+  }, [classrooms, enrollments]);
+
+  const roomsForSelectedPeriod = useMemo(
+    () =>
+      selectedExamPeriodId
+        ? rooms.filter((r) => r.exam_period_id === selectedExamPeriodId)
+        : rooms,
+    [rooms, selectedExamPeriodId]
+  );
+
+  const countByExamRoomId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of examRoomStudents) {
+      map.set(row.exam_room_id, (map.get(row.exam_room_id) || 0) + 1);
+    }
+    return map;
+  }, [examRoomStudents]);
+
+  const examAssignmentByStudentInPeriod = useMemo(() => {
+    const map = new Map<string, { exam_room_id: string; room_name: string }>();
+    for (const row of examRoomStudents) {
+      if (row.exam_period_id === selectedExamPeriodId) {
+        map.set(row.student_id, {
+          exam_room_id: row.exam_room_id,
+          room_name: row.room?.room_name || '-',
+        });
+      }
+    }
+    return map;
+  }, [examRoomStudents, selectedExamPeriodId]);
+
+  const selectedExamRoom = useMemo(
+    () => rooms.find((r) => r.id === selectedExamRoomId) || null,
+    [rooms, selectedExamRoomId]
+  );
+
+  const selectedExamRoomMembers = useMemo(
+    () =>
+      examRoomStudents
+        .filter((row) => row.exam_room_id === selectedExamRoomId)
+        .sort((a, b) =>
+          (a.student?.full_name || '').localeCompare(b.student?.full_name || '', 'id')
+        ),
+    [examRoomStudents, selectedExamRoomId]
+  );
+
+  const availableStudentsForExamRoom = useMemo(() => {
+    const q = examRoomSearch.trim().toLowerCase();
+    return students.filter((st) => {
+      const assigned = examAssignmentByStudentInPeriod.get(st.id);
+      if (assigned?.exam_room_id === selectedExamRoomId) return false;
+      if (examRoomOnlyUnassigned && assigned) return false;
+      if (examRoomClassroomFilter) {
+        const rombel = studentClassroomMap.get(st.id);
+        if (!rombel || rombel.classroom_id !== examRoomClassroomFilter) return false;
+      }
+      if (!q) return true;
+      return (
+        st.full_name.toLowerCase().includes(q) ||
+        (st.nis || '').toLowerCase().includes(q)
+      );
+    });
+  }, [
+    students,
+    examAssignmentByStudentInPeriod,
+    selectedExamRoomId,
+    examRoomOnlyUnassigned,
+    examRoomClassroomFilter,
+    studentClassroomMap,
+    examRoomSearch,
+  ]);
 
   const bapSupervisorIds = useMemo(
     () => new Set(bapReports.map((b) => b.exam_supervisor_id)),
@@ -394,74 +541,477 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
       </div>
 
       {section === 'periode' && (
-        <div className="grid lg:grid-cols-12 gap-6">
-          {canManageUjian && (
-          <div className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-3 h-fit">
-            <h1 className="text-sm font-bold text-slate-900">Buat Periode Ujian</h1>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await postUjian(
-                  { action: 'CREATE_PERIOD', ...periodForm },
-                  'Periode ujian dibuat.'
-                );
-              }}
-              className="space-y-2.5"
-            >
-              <input
-                required
-                value={periodForm.name}
-                onChange={(e) => setPeriodForm({ ...periodForm, name: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  value={periodForm.start_date}
-                  onChange={(e) => setPeriodForm({ ...periodForm, start_date: e.target.value })}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-                />
-                <input
-                  type="date"
-                  value={periodForm.end_date}
-                  onChange={(e) => setPeriodForm({ ...periodForm, end_date: e.target.value })}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 text-white font-semibold py-2 rounded-xl text-xs"
+        <div className="space-y-6">
+          <div className="grid lg:grid-cols-12 gap-6">
+            {canManageUjian && (
+            <div className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-3 h-fit">
+              <h1 className="text-sm font-bold text-slate-900">Buat Periode Ujian</h1>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  await postUjian(
+                    { action: 'CREATE_PERIOD', ...periodForm },
+                    'Periode ujian dibuat.'
+                  );
+                }}
+                className="space-y-2.5"
               >
-                Simpan Periode Ujian
-              </button>
-            </form>
-          </div>
-          )}
+                <input
+                  required
+                  value={periodForm.name}
+                  onChange={(e) => setPeriodForm({ ...periodForm, name: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={periodForm.start_date}
+                    onChange={(e) => setPeriodForm({ ...periodForm, start_date: e.target.value })}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  />
+                  <input
+                    type="date"
+                    value={periodForm.end_date}
+                    onChange={(e) => setPeriodForm({ ...periodForm, end_date: e.target.value })}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 text-white font-semibold py-2 rounded-xl text-xs"
+                >
+                  Simpan Periode Ujian
+                </button>
+              </form>
+            </div>
+            )}
 
-          <div className={`${canManageUjian ? 'lg:col-span-7' : 'lg:col-span-12'} glass-card rounded-3xl p-6 space-y-3`}>
-            <h2 className="text-base font-bold text-slate-900">
-              Daftar Periode Ujian ({examPeriods.length})
-            </h2>
-            {examPeriods.length === 0 ? (
-              <p className="text-xs text-slate-500 py-6 text-center">
-                Belum ada periode ujian yang dibuat.
-              </p>
-            ) : (
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {examPeriods.map((p) => (
-                  <div
-                    key={p.id}
-                    className="modular-card rounded-xl p-3 flex items-center justify-between text-xs"
+            <div className={`${canManageUjian ? 'lg:col-span-7' : 'lg:col-span-12'} glass-card rounded-3xl p-6 space-y-3`}>
+              <h2 className="text-base font-bold text-slate-900">
+                Daftar Periode Ujian ({examPeriods.length})
+              </h2>
+              {examPeriods.length === 0 ? (
+                <p className="text-xs text-slate-500 py-6 text-center">
+                  Belum ada periode ujian yang dibuat.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {examPeriods.map((p) => (
+                    <div
+                      key={p.id}
+                      onClick={() => {
+                        setSelectedExamPeriodId(p.id);
+                        setRoomForm((prev) => ({ ...prev, exam_period_id: p.id }));
+                        const firstRoom = rooms.find((r) => r.exam_period_id === p.id);
+                        setSelectedExamRoomId(firstRoom?.id || '');
+                        setSelectedExamStudentIds([]);
+                      }}
+                      className={`modular-card rounded-xl p-3 flex items-center justify-between text-xs cursor-pointer border transition ${
+                        selectedExamPeriodId === p.id
+                          ? 'border-emerald-500 bg-emerald-50/40'
+                          : 'border-slate-200/80'
+                      }`}
+                    >
+                      <span className="font-bold text-slate-900">{p.name}</span>
+                      <span className="text-slate-500">
+                        {p.start_date} s.d. {p.end_date}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid lg:grid-cols-12 gap-6">
+            {canManageUjian && (
+              <div className="lg:col-span-5 glass-card rounded-3xl p-6 space-y-3 h-fit">
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <DoorOpen className="w-4 h-4 text-emerald-700" /> Buat Ruang Ujian
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Ruang ujian terpisah dari rombel reguler (dapat berisi campuran siswa dari beberapa rombel).
+                </p>
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const ok = await postUjian(
+                      {
+                        action: 'CREATE_ROOM',
+                        exam_period_id: roomForm.exam_period_id || selectedExamPeriodId,
+                        room_name: roomForm.room_name,
+                        capacity: Number(roomForm.capacity) || 30,
+                      },
+                      'Ruang ujian berhasil ditambahkan.'
+                    );
+                    if (ok) {
+                      setRoomForm((prev) => ({ ...prev, room_name: '', capacity: 30 }));
+                    }
+                  }}
+                  className="space-y-2.5"
+                >
+                  <select
+                    required
+                    value={roomForm.exam_period_id || selectedExamPeriodId}
+                    onChange={(e) => {
+                      setRoomForm({ ...roomForm, exam_period_id: e.target.value });
+                      setSelectedExamPeriodId(e.target.value);
+                    }}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
                   >
-                    <span className="font-bold text-slate-900">{p.name}</span>
-                    <span className="text-slate-500">
-                      {p.start_date} s.d. {p.end_date}
-                    </span>
+                    <option value="">-- Pilih Periode Ujian --</option>
+                    {examPeriods.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="grid grid-cols-3 gap-2">
+                    <input
+                      required
+                      placeholder="Nama Ruang (cth: Ruang 01)"
+                      value={roomForm.room_name}
+                      onChange={(e) => setRoomForm({ ...roomForm, room_name: e.target.value })}
+                      className="col-span-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      required
+                      placeholder="Kapasitas"
+                      value={roomForm.capacity}
+                      onChange={(e) =>
+                        setRoomForm({ ...roomForm, capacity: Number(e.target.value) })
+                      }
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                      title="Kapasitas Ruang"
+                    />
                   </div>
-                ))}
+                  <button
+                    type="submit"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-xl text-xs transition"
+                  >
+                    Simpan Ruang Ujian
+                  </button>
+                </form>
               </div>
             )}
+
+            <div className={`${canManageUjian ? 'lg:col-span-7' : 'lg:col-span-12'} glass-card rounded-3xl p-6 space-y-3`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <DoorOpen className="w-4 h-4 text-emerald-700" /> Daftar Ruang Ujian ({roomsForSelectedPeriod.length})
+                </h2>
+                <select
+                  value={selectedExamPeriodId}
+                  onChange={(e) => {
+                    const pid = e.target.value;
+                    setSelectedExamPeriodId(pid);
+                    const firstRoom = rooms.find((r) => r.exam_period_id === pid);
+                    setSelectedExamRoomId(firstRoom?.id || '');
+                    setSelectedExamStudentIds([]);
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold"
+                >
+                  {examPeriods.length === 0 ? (
+                    <option value="">Belum ada periode</option>
+                  ) : (
+                    examPeriods.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              {roomsForSelectedPeriod.length === 0 ? (
+                <p className="text-xs text-slate-500 py-6 text-center">
+                  Belum ada ruang ujian pada periode ini. Silakan buat ruang ujian terlebih dahulu.
+                </p>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto">
+                  {roomsForSelectedPeriod.map((r) => {
+                    const count = countByExamRoomId.get(r.id) || 0;
+                    const isSelected = selectedExamRoomId === r.id;
+                    return (
+                      <div
+                        key={r.id}
+                        className={`modular-card rounded-2xl p-3.5 flex items-center justify-between gap-2 text-xs border transition ${
+                          isSelected
+                            ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/40'
+                            : 'border-slate-200/80'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-900 truncate">{r.room_name}</p>
+                          <p className="text-[11px] text-slate-500">
+                            Peserta: <strong className="text-emerald-700">{count}</strong> / {r.capacity} kursi
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedExamRoomId(r.id);
+                            setSelectedExamStudentIds([]);
+                          }}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-semibold text-[11px] shrink-0 transition ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                          }`}
+                        >
+                          <Users className="w-3 h-3" /> Kelola Peserta
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
+
+          {roomsForSelectedPeriod.length > 0 && (
+            <div className="glass-card rounded-3xl p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <UserPlus className="w-4 h-4 text-emerald-700" /> Penempatan Siswa ke Ruang Ujian
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Masukkan siswa ke ruang ujian pada periode terpilih. Siswa dapat diambil dari rombel mana saja (tidak terikat rombel).
+                  </p>
+                </div>
+                <select
+                  value={selectedExamRoomId}
+                  onChange={(e) => {
+                    setSelectedExamRoomId(e.target.value);
+                    setSelectedExamStudentIds([]);
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800"
+                >
+                  {roomsForSelectedPeriod.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.room_name} ({countByExamRoomId.get(r.id) || 0}/{r.capacity} Siswa)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className={`grid gap-4 ${canManageUjian ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
+                {canManageUjian && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-slate-800">
+                        Pilih Siswa untuk {selectedExamRoom?.room_name || 'Ruang Ujian'}
+                      </p>
+                      <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={examRoomOnlyUnassigned}
+                          onChange={(e) => setExamRoomOnlyUnassigned(e.target.checked)}
+                          className="rounded border-slate-300 text-emerald-600"
+                        />
+                        Belum dapat ruang di periode ini
+                      </label>
+                    </div>
+
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      <select
+                        value={examRoomClassroomFilter}
+                        onChange={(e) => setExamRoomClassroomFilter(e.target.value)}
+                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                      >
+                        <option value="">-- Filter Rombel Asal (Semua) --</option>
+                        {classrooms.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            Rombel {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          placeholder="Cari nama siswa / NIS..."
+                          value={examRoomSearch}
+                          onChange={(e) => setExamRoomSearch(e.target.value)}
+                          className="w-full rounded-xl border border-slate-300 bg-white pl-8 pr-3 py-2 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-600">
+                      <span>{availableStudentsForExamRoom.length} siswa tersedia</span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedExamStudentIds(availableStudentsForExamRoom.map((s) => s.id))
+                          }
+                          className="text-emerald-700 font-semibold hover:underline"
+                        >
+                          Pilih Semua
+                        </button>
+                        {selectedExamStudentIds.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedExamStudentIds([])}
+                            className="text-slate-500 hover:underline"
+                          >
+                            Reset ({selectedExamStudentIds.length})
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+                      {availableStudentsForExamRoom.length === 0 ? (
+                        <p className="text-xs text-slate-500 text-center py-6">
+                          Tidak ada siswa yang sesuai filter.
+                        </p>
+                      ) : (
+                        availableStudentsForExamRoom.map((st) => {
+                          const checked = selectedExamStudentIds.includes(st.id);
+                          const rombel = studentClassroomMap.get(st.id);
+                          const currentRoom = examAssignmentByStudentInPeriod.get(st.id);
+                          return (
+                            <label
+                              key={st.id}
+                              className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-xs cursor-pointer transition ${
+                                checked
+                                  ? 'bg-emerald-50 border-emerald-300'
+                                  : 'bg-white border-slate-200 hover:border-slate-300'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setSelectedExamStudentIds((prev) =>
+                                      prev.includes(st.id)
+                                        ? prev.filter((id) => id !== st.id)
+                                        : [...prev, st.id]
+                                    )
+                                  }
+                                  className="rounded border-slate-300 text-emerald-600"
+                                />
+                                <div className="truncate">
+                                  <span className="font-semibold text-slate-900">{st.full_name}</span>
+                                  {st.nis && <span className="text-slate-400 ml-1.5">({st.nis})</span>}
+                                  {rombel && (
+                                    <span className="ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]">
+                                      {rombel.classroom_name}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {currentRoom && (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold shrink-0">
+                                  Pindah dari {currentRoom.room_name}
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={
+                        assigningExamStudents ||
+                        selectedExamStudentIds.length === 0 ||
+                        !selectedExamRoomId ||
+                        !selectedExamPeriodId
+                      }
+                      onClick={async () => {
+                        setAssigningExamStudents(true);
+                        try {
+                          const ok = await postUjian(
+                            {
+                              action: 'ASSIGN_EXAM_ROOM_STUDENTS',
+                              exam_period_id: selectedExamPeriodId,
+                              exam_room_id: selectedExamRoomId,
+                              student_ids: selectedExamStudentIds,
+                            },
+                            `${selectedExamStudentIds.length} siswa berhasil ditempatkan ke ${selectedExamRoom?.room_name || 'ruang ujian'}.`
+                          );
+                          if (ok) setSelectedExamStudentIds([]);
+                        } finally {
+                          setAssigningExamStudents(false);
+                        }
+                      }}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2 px-4 rounded-xl text-xs transition"
+                    >
+                      {assigningExamStudents
+                        ? 'Menyimpan...'
+                        : `Masukkan ke Ruang Ujian (${selectedExamStudentIds.length} Siswa)`}
+                    </button>
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-800">
+                      Peserta {selectedExamRoom?.room_name || 'Ruang Ujian'} ({selectedExamRoomMembers.length} / {selectedExamRoom?.capacity ?? '-'})
+                    </p>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto space-y-1.5 pr-1">
+                    {selectedExamRoomMembers.length === 0 ? (
+                      <p className="text-xs text-slate-500 text-center py-8">
+                        Belum ada siswa ditempatkan di ruang ujian ini.
+                      </p>
+                    ) : (
+                      selectedExamRoomMembers.map((member, idx) => {
+                        const rombel = studentClassroomMap.get(member.student_id);
+                        return (
+                          <div
+                            key={member.id}
+                            className="flex items-center justify-between gap-2 p-2 rounded-xl border border-slate-200/80 text-xs"
+                          >
+                            <div className="truncate">
+                              <span className="text-slate-400 mr-1.5">{idx + 1}.</span>
+                              <span className="font-semibold text-slate-900">
+                                {member.student?.full_name || 'Siswa'}
+                              </span>
+                              {member.student?.nis && (
+                                <span className="text-slate-400 ml-1.5">({member.student.nis})</span>
+                              )}
+                              {rombel && (
+                                <span className="ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]">
+                                  {rombel.classroom_name}
+                                </span>
+                              )}
+                            </div>
+                            {canManageUjian && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  postUjian(
+                                    {
+                                      action: 'REMOVE_EXAM_ROOM_STUDENT',
+                                      exam_room_student_id: member.id,
+                                    },
+                                    `Siswa ${member.student?.full_name || ''} dikeluarkan dari ruang ujian.`
+                                  )
+                                }
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-semibold shrink-0 transition"
+                                title="Keluarkan dari ruang ujian"
+                              >
+                                <Trash2 className="w-3 h-3" /> Keluarkan
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

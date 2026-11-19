@@ -80,6 +80,18 @@ const EnrollSchema = z.object({
   classroom_id: z.string().uuid(),
 });
 
+const EnrollBatchSchema = z.object({
+  action: z.literal('ENROLL_STUDENTS_BATCH'),
+  classroom_id: z.string().uuid(),
+  student_ids: z.array(z.string().uuid()).min(1, 'Pilih minimal 1 siswa.'),
+});
+
+const UnenrollSchema = z.object({
+  action: z.literal('UNENROLL_STUDENT'),
+  enrollment_id: z.string().uuid().optional(),
+  student_id: z.string().uuid().optional(),
+});
+
 export async function GET() {
   const guard = await requireApiRoles(PERMISSIONS.KELAS_JADWAL_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
@@ -120,7 +132,7 @@ export async function GET() {
       .order('day_of_week'),
     supabase
       .from('student_enrollments')
-      .select('*, student:students(full_name, nisn), classroom:classrooms(name)'),
+      .select('*, student:students(full_name, nis, nisn), classroom:classrooms(name)'),
   ]);
 
   const isGlobalViewer = hasAnyRole(guard.session, [
@@ -293,6 +305,42 @@ export async function POST(request: Request) {
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ enrollment: data });
+    }
+
+    if (body.action === 'ENROLL_STUDENTS_BATCH') {
+      const parsed = EnrollBatchSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Pilih rombel dan minimal 1 siswa.' }, { status: 400 });
+      }
+      const rows = parsed.data.student_ids.map((student_id) => ({
+        student_id,
+        classroom_id: parsed.data.classroom_id,
+        academic_year_id: academicYearId,
+      }));
+      const { data, error } = await supabase
+        .from('student_enrollments')
+        .upsert(rows, { onConflict: 'student_id,academic_year_id' })
+        .select('*');
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ enrollments: data || [], count: rows.length });
+    }
+
+    if (body.action === 'UNENROLL_STUDENT') {
+      const parsed = UnenrollSchema.safeParse(body);
+      if (!parsed.success || (!parsed.data.enrollment_id && !parsed.data.student_id)) {
+        return NextResponse.json({ error: 'Parameter keluarkan siswa tidak valid.' }, { status: 400 });
+      }
+      let query = supabase.from('student_enrollments').delete();
+      if (parsed.data.enrollment_id) {
+        query = query.eq('id', parsed.data.enrollment_id);
+      } else if (parsed.data.student_id) {
+        query = query
+          .eq('student_id', parsed.data.student_id)
+          .eq('academic_year_id', academicYearId);
+      }
+      const { error } = await query;
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ error: 'Aksi tidak dikenal.' }, { status: 400 });
