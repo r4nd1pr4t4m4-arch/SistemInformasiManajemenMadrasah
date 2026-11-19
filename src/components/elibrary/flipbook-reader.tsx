@@ -81,6 +81,18 @@ export function FlipbookReader({
   const hasPublicLockPage = isPublicMode && totalPages > maxAllowedPages;
   const displayPageCount = hasPublicLockPage ? maxAllowedPages + 1 : maxAllowedPages;
 
+  // Lock background page scroll while Flipbook is open
+  useEffect(() => {
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, []);
+
   // Detect mobile viewport (1 page on mobile, 2 pages spread on desktop)
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)');
@@ -574,8 +586,8 @@ export function FlipbookReader({
         </div>
       </div>
 
-      {/* Flipbook Stage (m-auto ensures top of ebook is never clipped and always scrollable) */}
-      <div className="flex-1 overflow-auto p-3 sm:p-6 relative flex">
+      {/* Flipbook Stage (no-scrollbar + overscroll-contain + m-auto) */}
+      <div className="flex-1 overflow-auto no-scrollbar overscroll-contain p-4 sm:p-8 relative flex">
         {isBlurred && (
           <div
             onClick={() => setIsBlurred(false)}
@@ -621,11 +633,11 @@ export function FlipbookReader({
               Geser atau klik sudut halaman untuk membalik kertas buku
             </p>
 
-            {/* StPageFlip Host Container scaled via CSS zoom without destroying canvases */}
+            {/* StPageFlip Host Container (overflow-hidden prevents corner-hover peel from shifting viewport/scrollbars) */}
             <div
               ref={flipBookHostRef}
               style={{ zoom }}
-              className="shadow-2xl rounded-xl overflow-visible transition-all duration-150"
+              className="shadow-2xl rounded-xl overflow-hidden transition-all duration-150"
             />
 
             {/* Bottom Flipbook Page Controls */}
