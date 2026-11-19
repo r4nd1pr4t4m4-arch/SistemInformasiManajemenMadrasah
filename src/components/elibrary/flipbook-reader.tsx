@@ -56,10 +56,12 @@ export function FlipbookReader({
   const [zoomTooltipOpen, setZoomTooltipOpen] = useState(false);
   const [isBlurred, setIsBlurred] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [mobileViewportWidth, setMobileViewportWidth] = useState<number>(360);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [bookSize, setBookSize] = useState<{ width: number; height: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
 
+  const zoomContainerRef = useRef<HTMLDivElement | null>(null);
   const pdfDocRef = useRef<PdfDocumentLike | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const panStateRef = useRef<{
@@ -81,8 +83,13 @@ export function FlipbookReader({
     baseWidth: 400,
   });
 
-  soundEnabledRef.current = soundEnabled;
-  currentPageRef.current = currentPage;
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
 
   const maxAllowedPages =
     isPublicMode && totalPages > 0 ? Math.max(1, Math.ceil(totalPages * 0.1)) : totalPages;
@@ -102,13 +109,75 @@ export function FlipbookReader({
     };
   }, []);
 
-  // Detect mobile viewport (1 page on mobile, 2 pages spread on desktop)
+  // Detect mobile viewport (1 page on mobile, 2 pages spread on desktop) & handle orientation/resize
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)');
-    const sync = () => setIsMobile(mq.matches);
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const sync = () => {
+      setIsMobile(mq.matches);
+      if (mq.matches) {
+        setMobileViewportWidth(window.innerWidth);
+      }
+    };
+    const handleResize = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(sync, 180);
+    };
+
     sync();
     mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      mq.removeEventListener('change', sync);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
+
+  // Close zoom tooltip on outside click & handle Escape / Arrow keys
+  useEffect(() => {
+    function handlePointerDown(e: PointerEvent) {
+      if (
+        zoomTooltipOpen &&
+        zoomContainerRef.current &&
+        !zoomContainerRef.current.contains(e.target as Node)
+      ) {
+        setZoomTooltipOpen(false);
+      }
+    }
+    function handleNavKeys(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        if (zoomTooltipOpen) {
+          setZoomTooltipOpen(false);
+        } else {
+          onClose();
+        }
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        pageFlipInstanceRef.current?.flipPrev();
+      } else if (e.key === 'ArrowRight') {
+        pageFlipInstanceRef.current?.flipNext();
+      }
+    }
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleNavKeys);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleNavKeys);
+    };
+  }, [zoomTooltipOpen, onClose]);
+
+  // Clean up Web AudioContext on unmount
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+      }
+    };
   }, []);
 
   function playPageFlipSound() {
@@ -338,7 +407,7 @@ export function FlipbookReader({
       host.appendChild(stageEl);
 
       const baseWidth = isMobile
-        ? Math.min(340, Math.max(250, window.innerWidth - 40))
+        ? Math.min(360, Math.max(250, mobileViewportWidth - 40))
         : 400;
       const pageWidth = Math.round(baseWidth);
       const pageHeight = Math.round(pageWidth * aspect);
@@ -458,7 +527,7 @@ export function FlipbookReader({
       if (host) host.innerHTML = '';
       pageFlipInstanceRef.current = null;
     };
-  }, [loading, error, totalPages, maxAllowedPages, hasPublicLockPage, isMobile]);
+  }, [loading, error, totalPages, maxAllowedPages, hasPublicLockPage, isMobile, mobileViewportWidth]);
 
   // Ensure nearby pages stay rendered when currentPage updates
   useEffect(() => {
@@ -485,8 +554,8 @@ export function FlipbookReader({
       className="flipbook-protected-root fixed inset-0 z-50 bg-slate-950/92 backdrop-blur-md flex flex-col select-none print:hidden"
     >
       {/* Top Toolbar */}
-      <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-white">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="bg-slate-900 border-b border-slate-800 px-3 sm:px-4 py-3 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 text-white">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
           <div className="w-9 h-9 rounded-xl bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
             <BookOpen className="w-4 h-4 text-emerald-400" />
           </div>
@@ -509,7 +578,7 @@ export function FlipbookReader({
         </div>
 
         {/* Sound Toggle + Tooltip-Only Zoom Control + Close */}
-        <div className="flex items-center gap-2 relative">
+        <div className="flex items-center gap-2 relative shrink-0">
           <button
             type="button"
             onClick={() => setSoundEnabled((s) => !s)}
@@ -528,7 +597,7 @@ export function FlipbookReader({
             <span className="hidden sm:inline">{soundEnabled ? 'Suara Aktif' : 'Suara Mati'}</span>
           </button>
 
-          <div className="relative">
+          <div ref={zoomContainerRef} className="relative">
             <button
               type="button"
               onClick={() => setZoomTooltipOpen((v) => !v)}

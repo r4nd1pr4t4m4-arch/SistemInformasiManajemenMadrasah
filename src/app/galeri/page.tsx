@@ -1,11 +1,22 @@
 import { Suspense } from 'react';
-import { Image as ImageIcon, PlayCircle, Video } from 'lucide-react';
+import { Video } from 'lucide-react';
 import { connection } from 'next/server';
 import { PublicShell } from '@/components/layout/public-shell';
+import { GaleriGrid } from '@/components/galeri/galeri-grid';
 import {
   getInstitutionSettings,
   getPublicGalleryAndFacilities,
 } from '@/lib/data/public-queries';
+
+function isSafeHttpUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 async function GaleriContent() {
   await connection();
@@ -14,80 +25,65 @@ async function GaleriContent() {
     getPublicGalleryAndFacilities(),
   ]);
 
+  const youtubeUrl = isSafeHttpUrl(school.social_links?.youtube)
+    ? school.social_links.youtube
+    : null;
+
   return (
     <>
-      <div className="flex items-center justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="space-y-1 min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight break-words">
             Galeri &amp; Multimedia
           </h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
             Dokumentasi foto kegiatan, video profil lembaga, dan tautan kanal media sosial resmi.
           </p>
         </div>
-        {school.social_links?.youtube && (
+        {youtubeUrl && (
           <a
-            href={school.social_links.youtube}
+            href={youtubeUrl}
             target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full bg-rose-50 text-rose-700 border border-rose-200 shrink-0"
+            rel="noopener noreferrer"
+            className="self-start sm:self-auto inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition shrink-0"
           >
-            <Video className="w-4 h-4" /> YouTube Resmi
+            <Video className="w-4 h-4 shrink-0" /> YouTube Resmi
           </a>
         )}
       </div>
 
-      {gallery.length === 0 ? (
-        <div className="glass-card rounded-3xl p-8 text-center space-y-3">
-          <ImageIcon className="w-10 h-10 text-emerald-600 mx-auto" />
-          <p className="font-bold text-slate-900">Belum Ada Dokumentasi Terunggah</p>
-          <p className="text-sm text-slate-600 max-w-md mx-auto">
-            Dokumentasi foto dan video kegiatan akan tampil di sini setelah ditambahkan oleh tim Humas.
-          </p>
-        </div>
-      ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {gallery.map((item) => (
-            <div key={item.id} className="modular-card rounded-3xl overflow-hidden p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase px-2.5 py-1 rounded-full bg-sky-50 text-sky-700">
-                  {item.media_type.replace('_', ' ')}
-                </span>
-                {item.media_type !== 'FOTO' && (
-                  <PlayCircle className="w-4 h-4 text-rose-600" />
-                )}
-              </div>
-              <h2 className="font-bold text-slate-900 text-sm">{item.title}</h2>
-              {item.description && (
-                <p className="text-xs text-slate-600 leading-relaxed">{item.description}</p>
-              )}
-              <a
-                href={item.media_url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-block text-xs font-semibold text-emerald-700 hover:underline"
-              >
-                Buka Media →
-              </a>
-            </div>
-          ))}
-        </div>
-      )}
+      <GaleriGrid gallery={gallery} />
     </>
+  );
+}
+
+function GaleriSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="space-y-2">
+        <div className="h-8 w-64 rounded-xl bg-slate-200/80" />
+        <div className="h-4 w-96 max-w-full rounded-lg bg-slate-200/60" />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="modular-card rounded-3xl overflow-hidden h-72">
+            <div className="aspect-video bg-slate-200/70" />
+            <div className="p-5 space-y-2.5">
+              <div className="h-4 w-20 rounded-full bg-slate-200/80" />
+              <div className="h-5 w-3/4 rounded-lg bg-slate-200/80" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
 export default function GaleriPage() {
   return (
     <PublicShell>
-      <div className="max-w-6xl mx-auto py-10 px-4 sm:px-6 space-y-8">
-        <Suspense
-          fallback={
-            <div className="glass-card rounded-3xl p-8 text-center text-sm text-slate-500">
-              Memuat galeri multimedia...
-            </div>
-          }
-        >
+      <div className="max-w-6xl mx-auto py-6 sm:py-10 px-4 sm:px-6 space-y-6 sm:space-y-8">
+        <Suspense fallback={<GaleriSkeleton />}>
           <GaleriContent />
         </Suspense>
       </div>
