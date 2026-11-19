@@ -246,14 +246,17 @@ export function FlipbookReader({
       const baseVp = firstPage.getViewport({ scale: 1 });
       const aspect = baseVp.height / baseVp.width;
 
+      // Clear host & create an inner stage element so PageFlip.destroy() never detaches flipBookHostRef
+      host.innerHTML = '';
+      const stageEl = document.createElement('div');
+      host.appendChild(stageEl);
+
       const baseWidth = isMobile
         ? Math.min(340, Math.max(250, window.innerWidth - 40))
         : 400;
-      const pageWidth = Math.round(baseWidth * zoom);
+      const pageWidth = Math.round(baseWidth);
       const pageHeight = Math.round(pageWidth * aspect);
 
-      // Clear host & build page DOM elements
-      host.innerHTML = '';
       const pageElements: HTMLElement[] = [];
       const canvases: Array<{ pageNum: number; canvas: HTMLCanvasElement }> = [];
 
@@ -286,7 +289,7 @@ export function FlipbookReader({
         badge.textContent = `Hal. ${pageNum}`;
         pageDiv.appendChild(badge);
 
-        host.appendChild(pageDiv);
+        stageEl.appendChild(pageDiv);
         pageElements.push(pageDiv);
         canvases.push({ pageNum, canvas });
       }
@@ -306,7 +309,7 @@ export function FlipbookReader({
             Silakan masuk ke Portal Terpadu untuk membaca buku secara penuh.
           </p>
         `;
-        host.appendChild(lockDiv);
+        stageEl.appendChild(lockDiv);
         pageElements.push(lockDiv);
       }
 
@@ -318,7 +321,7 @@ export function FlipbookReader({
         Math.max(0, pageElements.length - 1)
       );
 
-      instance = new PageFlip(host, {
+      instance = new PageFlip(stageEl, {
         width: pageWidth,
         height: pageHeight,
         size: 'fixed',
@@ -341,7 +344,7 @@ export function FlipbookReader({
       });
       pageFlipInstanceRef.current = instance;
 
-      // Render PDF pages onto canvases sequentially (prioritizing around startIdx)
+      // Render PDF pages at high resolution (2x) so tooltip zoom stays crisp without re-mounting PageFlip
       const ordered = [...canvases].sort(
         (a, b) => Math.abs(a.pageNum - 1 - startIdx) - Math.abs(b.pageNum - 1 - startIdx)
       );
@@ -350,7 +353,7 @@ export function FlipbookReader({
         if (cancelled) break;
         const page = await pdf.getPage(item.pageNum);
         if (cancelled) break;
-        const vp = page.getViewport({ scale: (pageWidth / baseVp.width) * 1.5 });
+        const vp = page.getViewport({ scale: (pageWidth / baseVp.width) * 2 });
         const ctx = item.canvas.getContext('2d');
         if (!ctx) continue;
         item.canvas.width = vp.width;
@@ -370,9 +373,10 @@ export function FlipbookReader({
           // ignore cleanup error
         }
       }
+      if (host) host.innerHTML = '';
       pageFlipInstanceRef.current = null;
     };
-  }, [loading, error, totalPages, maxAllowedPages, hasPublicLockPage, zoom, isMobile]);
+  }, [loading, error, totalPages, maxAllowedPages, hasPublicLockPage, isMobile]);
 
   function handlePrev() {
     if (!pageFlipInstanceRef.current) return;
@@ -558,10 +562,11 @@ export function FlipbookReader({
               Geser atau klik sudut halaman untuk membalik kertas buku
             </p>
 
-            {/* StPageFlip Host Container */}
+            {/* StPageFlip Host Container scaled via CSS zoom without destroying canvases */}
             <div
               ref={flipBookHostRef}
-              className="shadow-2xl rounded-xl overflow-visible"
+              style={{ zoom }}
+              className="shadow-2xl rounded-xl overflow-visible transition-all duration-150"
             />
 
             {/* Bottom Flipbook Page Controls */}
