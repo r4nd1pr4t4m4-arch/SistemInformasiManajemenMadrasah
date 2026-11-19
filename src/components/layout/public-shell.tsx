@@ -14,15 +14,15 @@ import {
 import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 
 const PUBLIC_NAV_LINKS = [
-  { href: '/', label: 'Beranda' },
-  { href: '/profil', label: 'Profil' },
-  { href: '/berita', label: 'Berita' },
-  { href: '/galeri', label: 'Galeri' },
-  { href: '/direktori', label: 'Direktori' },
-  { href: '/e-library', label: 'E-Library' },
-  { href: '/verifikasi', label: 'Verifikasi' },
-  { href: '/ppdb', label: 'PPDB Online' },
-  { href: '/kontak', label: 'Kontak & FAQ' },
+  { href: '/', label: 'Beranda', desc: 'Halaman utama website resmi lembaga' },
+  { href: '/profil', label: 'Profil', desc: 'Visi, misi, sejarah & sarana prasarana' },
+  { href: '/berita', label: 'Berita', desc: 'Berita, pengumuman & artikel terbaru' },
+  { href: '/galeri', label: 'Galeri', desc: 'Dokumentasi foto & video kegiatan' },
+  { href: '/direktori', label: 'Direktori', desc: 'Direktori GTK & prestasi siswa' },
+  { href: '/e-library', label: 'E-Library', desc: 'Perpustakaan digital koleksi E-Book' },
+  { href: '/verifikasi', label: 'Verifikasi', desc: 'Validasi dokumen & scan QR Code' },
+  { href: '/ppdb', label: 'PPDB Online', desc: 'Pendaftaran peserta didik baru' },
+  { href: '/kontak', label: 'Kontak & FAQ', desc: 'Alamat, kontak & pertanyaan umum' },
 ];
 
 export function PublicNavbar() {
@@ -74,67 +74,88 @@ export function PublicNavbar() {
             </div>
           </Link>
 
-          <nav className="hidden lg:flex items-center gap-1.5 text-sm font-medium">
-            {PUBLIC_NAV_LINKS.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`px-3 py-1.5 rounded-xl transition ${
-                    active
-                      ? 'bg-emerald-50 text-emerald-700 font-semibold'
-                      : 'text-slate-600 hover:text-emerald-700 hover:bg-white/70'
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
+          <div className="flex items-center gap-2">
+            <nav className="hidden xl:flex items-center gap-1 text-sm font-medium mr-1">
+              {PUBLIC_NAV_LINKS.slice(0, 6).map((item) => {
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`px-2.5 py-1.5 rounded-xl transition ${
+                      active
+                        ? 'bg-emerald-50 text-emerald-700 font-semibold'
+                        : 'text-slate-600 hover:text-emerald-700 hover:bg-white/70'
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+
             <Link
               href="/portal"
-              className="ml-2 inline-flex items-center gap-1.5 bg-slate-900 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-semibold text-xs transition shadow-sm"
+              className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl font-semibold text-xs transition shadow-sm"
             >
               <ShieldCheck className="w-4 h-4" />
-              Portal Terpadu
+              <span className="hidden sm:inline">Portal Terpadu</span>
+              <span className="sm:hidden">Portal</span>
             </Link>
-          </nav>
 
-          <div className="flex lg:hidden items-center gap-2">
-            <Link
-              href="/portal"
-              className="inline-flex items-center gap-1 bg-slate-900 text-white px-3 py-1.5 rounded-xl text-xs font-semibold"
-            >
-              Portal
-            </Link>
             <button
               type="button"
               onClick={() => setMobileOpen((v) => !v)}
-              className="p-2 rounded-xl bg-white/80 border border-slate-200/80 text-slate-700"
-              aria-label="Toggle Menu"
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition ${
+                mobileOpen
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : 'bg-white/85 hover:bg-white border-slate-200/80 text-slate-700'
+              }`}
+              aria-label="Toggle Menu Semua Halaman Publik"
+              aria-expanded={mobileOpen}
             >
               {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              <span className="hidden md:inline">Menu</span>
             </button>
           </div>
         </div>
 
         {mobileOpen && (
-          <div className="lg:hidden border-t border-slate-200/70 bg-white/95 backdrop-blur px-4 py-3 space-y-1">
-            {PUBLIC_NAV_LINKS.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
+          <div className="border-t border-slate-200/70 bg-white/95 backdrop-blur-md shadow-lg">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Semua Halaman Publik
+                </p>
+                <button
+                  type="button"
                   onClick={() => setMobileOpen(false)}
-                  className={`block px-3 py-2 rounded-xl text-sm font-medium ${
-                    active ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-slate-700'
-                  }`}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-800"
                 >
-                  {item.label}
-                </Link>
-              );
-            })}
+                  Tutup
+                </button>
+              </div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {PUBLIC_NAV_LINKS.map((item) => {
+                  const active = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMobileOpen(false)}
+                      className={`block px-3.5 py-2.5 rounded-2xl border transition ${
+                        active
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : 'bg-white border-slate-200/70 hover:border-emerald-300 hover:bg-emerald-50/40 text-slate-700'
+                      }`}
+                    >
+                      <p className="text-sm font-bold">{item.label}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
       </header>
