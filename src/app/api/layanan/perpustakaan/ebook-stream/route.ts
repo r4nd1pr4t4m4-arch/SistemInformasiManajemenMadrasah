@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
-import { getR2ObjectBuffer, isR2Configured } from '@/lib/storage/r2';
+import { getR2ObjectStream, isR2Configured } from '@/lib/storage/r2';
 
 function normalizeEbookUrl(rawUrl: string, origin: string): string {
   const trimmed = rawUrl.trim();
-  // Convert Google Drive share links to direct download URLs
   const driveFileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
   if (driveFileMatch?.[1]) {
     return `https://drive.google.com/uc?export=download&id=${driveFileMatch[1]}`;
@@ -22,9 +21,8 @@ function normalizeEbookUrl(rawUrl: string, origin: string): string {
   return new URL(trimmed.startsWith('/') ? trimmed : `/${trimmed}`, origin).toString();
 }
 
-function isPdfBuffer(bytes: Uint8Array): boolean {
+function isPdfHeaderInChunk(bytes: Uint8Array): boolean {
   if (bytes.length < 5) return false;
-  // Check for "%PDF-" (0x25 0x50 0x44 0x46 0x2D) within first 1024 bytes
   const limit = Math.min(bytes.length - 5, 1024);
   for (let i = 0; i <= limit; i++) {
     if (
@@ -38,6 +36,28 @@ function isPdfBuffer(bytes: Uint8Array): boolean {
     }
   }
   return false;
+}
+
+function createPrefixedStream(
+  firstChunk: Uint8Array,
+  reader: ReadableStreamDefaultReader<Uint8Array>
+): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(firstChunk);
+    },
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+      } else if (value) {
+        controller.enqueue(value);
+      }
+    },
+    cancel() {
+      reader.cancel();
+    },
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -101,10 +121,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'File PDF E-Book belum tersedia.' }, { status: 404 });
   }
 
-  try {
-    let bytes: Uint8Array | null = null;
+  const rangeHeader = request.headers.get('range');
+  const isInitialRequest = !rangeHeader || rangeHeader.startsWith('bytes=0-');
 
-    // 1. Check if stored in Cloudflare R2 (either object key like "ebooks/..." or matching R2_PUBLIC_URL)
+  try {
+    // 1. Stream directly from Cloudflare R2 if stored there
     const r2PublicBase = process.env.R2_PUBLIC_URL?.replace(/\/$/, '') || '';
     if (isR2Configured()) {
       let r2Key: string | null = null;
@@ -115,44 +136,96 @@ export async function GET(request: NextRequest) {
       }
 
       if (r2Key) {
-        bytes = await getR2ObjectBuffer(r2Key);
+        const r2Res = await getR2ObjectStream(r2Key, rangeHeader);
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'inline',
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'private, max-age=300',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Robots-Tag': 'noindex, nofollow',
+        };
+        if (r2Res.contentLength != null) {
+          headers['Content-Length'] = String(r2Res.contentLength);
+        }
+        if (r2Res.contentRange) {
+          headers['Content-Range'] = r2Res.contentRange;
+        }
+        return new NextResponse(r2Res.stream as ReadableStream<Uint8Array>, {
+          status: r2Res.isPartial ? 206 : 200,
+          headers,
+        });
       }
     }
 
-    // 2. Otherwise fetch via HTTP(S)
-    if (!bytes) {
-      const resolvedUrl = normalizeEbookUrl(fileUrl, request.nextUrl.origin);
-      const upstream = await fetch(resolvedUrl, { cache: 'no-store', redirect: 'follow' });
-      if (!upstream.ok) {
-        return NextResponse.json(
-          {
-            error: `Gagal mengambil berkas E-Book dari URL sumber (HTTP ${upstream.status}). Pastikan URL dapat diakses langsung.`,
-          },
-          { status: 502 }
-        );
-      }
-      bytes = new Uint8Array(await upstream.arrayBuffer());
+    // 2. Otherwise stream from upstream HTTP(S) with Range pass-through
+    const resolvedUrl = normalizeEbookUrl(fileUrl, request.nextUrl.origin);
+    const upstream = await fetch(resolvedUrl, {
+      cache: 'no-store',
+      redirect: 'follow',
+      headers: rangeHeader ? { Range: rangeHeader } : undefined,
+    });
+
+    if (!upstream.ok && upstream.status !== 206) {
+      return NextResponse.json(
+        {
+          error: `Gagal mengambil berkas E-Book dari URL sumber (HTTP ${upstream.status}). Pastikan URL dapat diakses langsung.`,
+        },
+        { status: 502 }
+      );
     }
 
-    if (!isPdfBuffer(bytes)) {
+    const upstreamContentType = upstream.headers.get('content-type') || '';
+    if (upstreamContentType.includes('text/html')) {
       return NextResponse.json(
         {
           error:
-            'URL E-Book tidak mengarah ke file PDF yang valid (mungkin berupa halaman HTML, link Google Drive yang masih private, atau halaman login). Gunakan link file PDF langsung atau unggah ke penyimpanan R2.',
+            'URL E-Book mengembalikan halaman HTML, bukan file PDF. Gunakan link PDF langsung atau unggah ke penyimpanan R2.',
         },
         { status: 422 }
       );
     }
 
-    return new NextResponse(Buffer.from(bytes), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': 'inline',
-        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-        'X-Content-Type-Options': 'nosniff',
-        'X-Robots-Tag': 'noindex, nofollow',
-      },
+    if (!upstream.body) {
+      return NextResponse.json({ error: 'Respons berkas E-Book kosong.' }, { status: 502 });
+    }
+
+    let responseStream: ReadableStream<Uint8Array> = upstream.body;
+
+    // Peek at the very first chunk only on initial/bytes=0- request to verify %PDF- header without buffering the whole file
+    if (isInitialRequest) {
+      const reader = upstream.body.getReader();
+      const { done, value } = await reader.read();
+      if (done || !value || !isPdfHeaderInChunk(value)) {
+        reader.cancel();
+        return NextResponse.json(
+          {
+            error:
+              'URL E-Book tidak mengarah ke file PDF yang valid (mungkin berupa halaman HTML, link Google Drive yang masih private, atau halaman login).',
+          },
+          { status: 422 }
+        );
+      }
+      responseStream = createPrefixedStream(value, reader);
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'inline',
+      'Accept-Ranges': upstream.headers.get('accept-ranges') || 'bytes',
+      'Cache-Control': 'private, max-age=300',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Robots-Tag': 'noindex, nofollow',
+    };
+
+    const contentLength = upstream.headers.get('content-length');
+    const contentRange = upstream.headers.get('content-range');
+    if (contentLength) headers['Content-Length'] = contentLength;
+    if (contentRange) headers['Content-Range'] = contentRange;
+
+    return new NextResponse(responseStream, {
+      status: upstream.status === 206 ? 206 : 200,
+      headers,
     });
   } catch (err) {
     return NextResponse.json(

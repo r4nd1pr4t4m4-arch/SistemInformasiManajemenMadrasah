@@ -116,3 +116,27 @@ export async function getR2ObjectBuffer(objectKey: string): Promise<Uint8Array> 
   }
   return res.Body.transformToByteArray();
 }
+
+export async function getR2ObjectStream(objectKey: string, range?: string | null) {
+  const bucket = process.env.R2_BUCKET_NAME;
+  if (!bucket) {
+    throw new Error('R2_BUCKET_NAME belum dikonfigurasi.');
+  }
+  const client = getR2Client();
+  const res = await client.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: objectKey,
+      ...(range ? { Range: range } : {}),
+    })
+  );
+  if (!res.Body) {
+    throw new Error('Objek E-Book kosong di R2.');
+  }
+  return {
+    stream: res.Body.transformToWebStream(),
+    contentLength: res.ContentLength,
+    contentRange: res.ContentRange,
+    isPartial: Boolean(range && res.ContentRange),
+  };
+}

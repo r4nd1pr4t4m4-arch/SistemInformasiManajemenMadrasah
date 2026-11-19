@@ -64,6 +64,13 @@ export function FlipbookReader({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const soundEnabledRef = useRef(true);
   const currentPageRef = useRef(1);
+  const canvasMapRef = useRef<Map<number, HTMLCanvasElement>>(new Map());
+  const renderedPagesRef = useRef<Set<number>>(new Set());
+  const renderingPagesRef = useRef<Set<number>>(new Set());
+  const pageScaleRef = useRef<{ pageWidth: number; baseWidth: number }>({
+    pageWidth: 400,
+    baseWidth: 400,
+  });
 
   soundEnabledRef.current = soundEnabled;
   currentPageRef.current = currentPage;
@@ -184,37 +191,50 @@ export function FlipbookReader({
     };
   }, []);
 
-  // Fetch PDF stream via protected endpoint
+  // Stream PDF via HTTP Range Requests + local worker (no full-file wait!)
   useEffect(() => {
     let cancelled = false;
+    let loadingTask: { destroy?: () => void; promise: Promise<unknown> } | null = null;
 
     async function loadPdf() {
       setLoading(true);
       setError(null);
+      renderedPagesRef.current.clear();
+      renderingPagesRef.current.clear();
+      canvasMapRef.current.clear();
+
+      const streamUrl = `/api/layanan/perpustakaan/ebook-stream?book_id=${encodeURIComponent(bookId)}`;
+
       try {
-        const res = await fetch(
-          `/api/layanan/perpustakaan/ebook-stream?book_id=${encodeURIComponent(bookId)}`,
-          { cache: 'no-store' }
-        );
-        if (!res.ok) {
-          const errJson = await res.json().catch(() => ({}));
-          throw new Error(errJson.error || 'Gagal memuat E-Book.');
-        }
-
-        const buffer = await res.arrayBuffer();
         const pdfjsLib = await import('pdfjs-dist');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
-        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
+        loadingTask = pdfjsLib.getDocument({
+          url: streamUrl,
+          rangeChunkSize: 65536,
+          disableAutoFetch: true,
+          disableStream: false,
+        });
         const pdf = (await loadingTask.promise) as unknown as PdfDocumentLike;
         if (!cancelled) {
           pdfDocRef.current = pdf;
           setTotalPages(pdf.numPages);
           setCurrentPage(1);
         }
-      } catch (err) {
+      } catch {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Gagal membuka E-Book.');
+          // Fetch exact JSON error message from stream endpoint if available
+          try {
+            const errRes = await fetch(streamUrl, { cache: 'no-store' });
+            if (!errRes.ok) {
+              const errJson = await errRes.json().catch(() => ({}));
+              setError(errJson.error || 'Gagal memuat E-Book.');
+            } else {
+              setError('Struktur dokumen E-Book tidak dapat dibaca.');
+            }
+          } catch {
+            setError('Gagal membuka aliran E-Book.');
+          }
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -224,8 +244,53 @@ export function FlipbookReader({
     loadPdf();
     return () => {
       cancelled = true;
+      if (loadingTask?.destroy) {
+        try {
+          loadingTask.destroy();
+        } catch {
+          // ignore
+        }
+      }
     };
   }, [bookId]);
+
+  async function renderPageWindow(centerPage: number) {
+    const pdf = pdfDocRef.current;
+    if (!pdf) return;
+
+    const minPage = Math.max(1, centerPage - 2);
+    const maxPage = Math.min(maxAllowedPages, centerPage + 4);
+    const targets: number[] = [];
+
+    for (let p = minPage; p <= maxPage; p++) {
+      if (!renderedPagesRef.current.has(p) && !renderingPagesRef.current.has(p)) {
+        targets.push(p);
+        renderingPagesRef.current.add(p);
+      }
+    }
+
+    if (targets.length === 0) return;
+
+    const { pageWidth, baseWidth } = pageScaleRef.current;
+    await Promise.all(
+      targets.map(async (pageNum) => {
+        try {
+          const canvas = canvasMapRef.current.get(pageNum);
+          if (!canvas) return;
+          const page = await pdf.getPage(pageNum);
+          const vp = page.getViewport({ scale: (pageWidth / baseWidth) * 1.5 });
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          canvas.width = vp.width;
+          canvas.height = vp.height;
+          await page.render({ canvasContext: ctx, viewport: vp }).promise;
+          renderedPagesRef.current.add(pageNum);
+        } finally {
+          renderingPagesRef.current.delete(pageNum);
+        }
+      })
+    );
+  }
 
   // Mount PageFlip (StPageFlip) engine imperatively inside host container
   useEffect(() => {
@@ -257,8 +322,12 @@ export function FlipbookReader({
       const pageWidth = Math.round(baseWidth);
       const pageHeight = Math.round(pageWidth * aspect);
 
+      pageScaleRef.current = { pageWidth, baseWidth: baseVp.width };
+      canvasMapRef.current.clear();
+      renderedPagesRef.current.clear();
+      renderingPagesRef.current.clear();
+
       const pageElements: HTMLElement[] = [];
-      const canvases: Array<{ pageNum: number; canvas: HTMLCanvasElement }> = [];
 
       for (let pageNum = 1; pageNum <= maxAllowedPages; pageNum++) {
         const pageDiv = document.createElement('div');
@@ -291,7 +360,7 @@ export function FlipbookReader({
 
         stageEl.appendChild(pageDiv);
         pageElements.push(pageDiv);
-        canvases.push({ pageNum, canvas });
+        canvasMapRef.current.set(pageNum, canvas);
       }
 
       // Append 10% public lock page if applicable
@@ -339,27 +408,15 @@ export function FlipbookReader({
       instance.loadFromHTML(pageElements);
       instance.on('flip', (e) => {
         const idx = Number(e.data) || 0;
-        setCurrentPage(idx + 1);
+        const nextPage = idx + 1;
+        setCurrentPage(nextPage);
         playPageFlipSound();
+        void renderPageWindow(nextPage);
       });
       pageFlipInstanceRef.current = instance;
 
-      // Render PDF pages at high resolution (2x) so tooltip zoom stays crisp without re-mounting PageFlip
-      const ordered = [...canvases].sort(
-        (a, b) => Math.abs(a.pageNum - 1 - startIdx) - Math.abs(b.pageNum - 1 - startIdx)
-      );
-
-      for (const item of ordered) {
-        if (cancelled) break;
-        const page = await pdf.getPage(item.pageNum);
-        if (cancelled) break;
-        const vp = page.getViewport({ scale: (pageWidth / baseVp.width) * 2 });
-        const ctx = item.canvas.getContext('2d');
-        if (!ctx) continue;
-        item.canvas.width = vp.width;
-        item.canvas.height = vp.height;
-        await page.render({ canvasContext: ctx, viewport: vp }).promise;
-      }
+      // Render only the initial visible window (±3 pages) immediately
+      await renderPageWindow(startIdx + 1);
     }
 
     initFlipbook();
@@ -377,6 +434,13 @@ export function FlipbookReader({
       pageFlipInstanceRef.current = null;
     };
   }, [loading, error, totalPages, maxAllowedPages, hasPublicLockPage, isMobile]);
+
+  // Ensure nearby pages stay rendered when currentPage updates
+  useEffect(() => {
+    if (!loading && !error && totalPages > 0) {
+      void renderPageWindow(currentPage);
+    }
+  }, [currentPage, loading, error, totalPages]);
 
   function handlePrev() {
     if (!pageFlipInstanceRef.current) return;
