@@ -4,17 +4,17 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
-  Lock,
-  ShieldAlert,
   X,
   ZoomIn,
   ZoomOut,
   BookOpen,
   Loader2,
   EyeOff,
+  ShieldAlert,
   Volume2,
   VolumeX,
 } from 'lucide-react';
+import type { PageFlip } from 'page-flip';
 
 interface FlipbookReaderProps {
   bookId: string;
@@ -28,6 +28,17 @@ interface FlipbookReaderProps {
 
 const ZOOM_LEVELS = [0.75, 1, 1.25, 1.5, 1.75];
 
+interface PdfDocumentLike {
+  numPages: number;
+  getPage: (n: number) => Promise<{
+    getViewport: (opts: { scale: number }) => { width: number; height: number };
+    render: (opts: {
+      canvasContext: CanvasRenderingContext2D;
+      viewport: { width: number; height: number };
+    }) => { promise: Promise<void> };
+  }>;
+}
+
 export function FlipbookReader({
   bookId,
   bookTitle,
@@ -40,24 +51,30 @@ export function FlipbookReader({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [totalPages, setTotalPages] = useState(0);
-  const [currentSpreadStart, setCurrentSpreadStart] = useState(1); // 1, 3, 5... (desktop) or 1, 2, 3... (mobile)
+  const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [zoomTooltipOpen, setZoomTooltipOpen] = useState(false);
-  const [flipDirection, setFlipDirection] = useState<'next' | 'prev' | null>(null);
   const [isBlurred, setIsBlurred] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
-  const pdfDocRef = useRef<unknown>(null);
-  const leftCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rightCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const pdfDocRef = useRef<PdfDocumentLike | null>(null);
+  const flipBookHostRef = useRef<HTMLDivElement | null>(null);
+  const pageFlipInstanceRef = useRef<PageFlip | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const soundEnabledRef = useRef(true);
+  const currentPageRef = useRef(1);
+
+  soundEnabledRef.current = soundEnabled;
+  currentPageRef.current = currentPage;
 
   const maxAllowedPages =
     isPublicMode && totalPages > 0 ? Math.max(1, Math.ceil(totalPages * 0.1)) : totalPages;
 
-  // Detect mobile viewport (single-page flipbook on mobile, 2-page spread on desktop)
+  const hasPublicLockPage = isPublicMode && totalPages > maxAllowedPages;
+  const displayPageCount = hasPublicLockPage ? maxAllowedPages + 1 : maxAllowedPages;
+
+  // Detect mobile viewport (1 page on mobile, 2 pages spread on desktop)
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)');
     const sync = () => setIsMobile(mq.matches);
@@ -67,7 +84,7 @@ export function FlipbookReader({
   }, []);
 
   function playPageFlipSound() {
-    if (!soundEnabled) return;
+    if (!soundEnabledRef.current) return;
     try {
       const AudioCtx =
         window.AudioContext ||
@@ -81,7 +98,7 @@ export function FlipbookReader({
         ctx.resume();
       }
 
-      const duration = 0.16;
+      const duration = 0.18;
       const sampleRate = ctx.sampleRate;
       const bufferSize = Math.floor(sampleRate * duration);
       const buffer = ctx.createBuffer(1, bufferSize, sampleRate);
@@ -90,7 +107,7 @@ export function FlipbookReader({
       // Synthesize crisp paper-flip rustle envelope
       for (let i = 0; i < bufferSize; i++) {
         const t = i / bufferSize;
-        const env = Math.sin(Math.PI * t) * Math.pow(1 - t, 0.7);
+        const env = Math.sin(Math.PI * t) * Math.pow(1 - t, 0.65);
         data[i] = (Math.random() * 2 - 1) * env * 0.35;
       }
 
@@ -99,12 +116,12 @@ export function FlipbookReader({
 
       const filter = ctx.createBiquadFilter();
       filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(1400, ctx.currentTime);
-      filter.frequency.exponentialRampToValueAtTime(650, ctx.currentTime + duration);
+      filter.frequency.setValueAtTime(1500, ctx.currentTime);
+      filter.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + duration);
       filter.Q.value = 0.9;
 
       const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.55, ctx.currentTime);
+      gain.gain.setValueAtTime(0.6, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
 
       noise.connect(filter);
@@ -120,7 +137,6 @@ export function FlipbookReader({
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const key = e.key.toLowerCase();
-      // Block PrintScreen, Ctrl+S, Ctrl+P, Ctrl+U, Ctrl+Shift+I, F12
       if (
         e.key === 'PrintScreen' ||
         e.key === 'F12' ||
@@ -135,7 +151,6 @@ export function FlipbookReader({
         return;
       }
 
-      // Block keyboard zoom (Ctrl + +/-/0)
       if ((e.ctrlKey || e.metaKey) && ['+', '=', '-', '_', '0'].includes(key)) {
         e.preventDefault();
         e.stopPropagation();
@@ -169,7 +184,7 @@ export function FlipbookReader({
     };
   }, []);
 
-  // Load PDF document via protected stream endpoint (no direct URL exposure)
+  // Fetch PDF stream via protected endpoint
   useEffect(() => {
     let cancelled = false;
 
@@ -177,9 +192,10 @@ export function FlipbookReader({
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/layanan/perpustakaan/ebook-stream?book_id=${encodeURIComponent(bookId)}`, {
-          cache: 'no-store',
-        });
+        const res = await fetch(
+          `/api/layanan/perpustakaan/ebook-stream?book_id=${encodeURIComponent(bookId)}`,
+          { cache: 'no-store' }
+        );
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}));
           throw new Error(errJson.error || 'Gagal memuat E-Book.');
@@ -190,11 +206,11 @@ export function FlipbookReader({
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
         const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
-        const pdf = await loadingTask.promise;
+        const pdf = (await loadingTask.promise) as unknown as PdfDocumentLike;
         if (!cancelled) {
           pdfDocRef.current = pdf;
           setTotalPages(pdf.numPages);
-          setCurrentSpreadStart(1);
+          setCurrentPage(1);
         }
       } catch (err) {
         if (!cancelled) {
@@ -211,80 +227,165 @@ export function FlipbookReader({
     };
   }, [bookId]);
 
-  // Render current 2-page spread onto canvases
+  // Mount PageFlip (StPageFlip) engine imperatively inside host container
   useEffect(() => {
+    const host = flipBookHostRef.current;
+    const pdf = pdfDocRef.current;
+    if (loading || error || !host || !pdf || totalPages <= 0) return;
+
     let cancelled = false;
+    let instance: PageFlip | null = null;
 
-    async function renderPageToCanvas(pageNum: number, canvas: HTMLCanvasElement | null) {
-      if (!canvas || !pdfDocRef.current) return;
-      if (pageNum < 1 || pageNum > maxAllowedPages) {
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
-        return;
-      }
+    async function initFlipbook() {
+      if (!host || !pdf) return;
 
-      const pdf = pdfDocRef.current as {
-        getPage: (n: number) => Promise<{
-          getViewport: (opts: { scale: number }) => { width: number; height: number };
-          render: (opts: {
-            canvasContext: CanvasRenderingContext2D;
-            viewport: { width: number; height: number };
-          }) => { promise: Promise<void> };
-        }>;
-      };
-
-      const page = await pdf.getPage(pageNum);
+      // Determine page dimensions from PDF page 1 aspect ratio
+      const firstPage = await pdf.getPage(1);
       if (cancelled) return;
 
-      const baseScale = 1.15 * zoom;
-      const viewport = page.getViewport({ scale: baseScale });
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      const baseVp = firstPage.getViewport({ scale: 1 });
+      const aspect = baseVp.height / baseVp.width;
 
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      await page.render({ canvasContext: ctx, viewport }).promise;
-    }
+      const baseWidth = isMobile
+        ? Math.min(340, Math.max(250, window.innerWidth - 40))
+        : 400;
+      const pageWidth = Math.round(baseWidth * zoom);
+      const pageHeight = Math.round(pageWidth * aspect);
 
-    if (!loading && !error && totalPages > 0) {
-      renderPageToCanvas(currentSpreadStart, leftCanvasRef.current);
-      if (!isMobile) {
-        renderPageToCanvas(currentSpreadStart + 1, rightCanvasRef.current);
+      // Clear host & build page DOM elements
+      host.innerHTML = '';
+      const pageElements: HTMLElement[] = [];
+      const canvases: Array<{ pageNum: number; canvas: HTMLCanvasElement }> = [];
+
+      for (let pageNum = 1; pageNum <= maxAllowedPages; pageNum++) {
+        const pageDiv = document.createElement('div');
+        pageDiv.className =
+          'relative bg-white overflow-hidden shadow-md border border-slate-200 select-none';
+        pageDiv.style.width = `${pageWidth}px`;
+        pageDiv.style.height = `${pageHeight}px`;
+
+        const canvas = document.createElement('canvas');
+        canvas.className = 'block w-full h-full pointer-events-none';
+        pageDiv.appendChild(canvas);
+
+        // Diagonal watermark overlay
+        const wm = document.createElement('div');
+        wm.className =
+          'pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden opacity-[0.09]';
+        const wmText = document.createElement('span');
+        wmText.className =
+          '-rotate-30 text-slate-900 font-black text-sm tracking-widest whitespace-nowrap';
+        wmText.textContent = 'E-LIBRARY PROTECTED • NO DOWNLOAD / SCREENSHOT';
+        wm.appendChild(wmText);
+        pageDiv.appendChild(wm);
+
+        // Page number badge
+        const badge = document.createElement('div');
+        badge.className =
+          'absolute bottom-2 right-3 px-2 py-0.5 rounded bg-slate-900/70 text-white text-[10px] font-mono pointer-events-none';
+        badge.textContent = `Hal. ${pageNum}`;
+        pageDiv.appendChild(badge);
+
+        host.appendChild(pageDiv);
+        pageElements.push(pageDiv);
+        canvases.push({ pageNum, canvas });
+      }
+
+      // Append 10% public lock page if applicable
+      if (hasPublicLockPage) {
+        const lockDiv = document.createElement('div');
+        lockDiv.className =
+          'relative bg-slate-50 flex flex-col items-center justify-center p-6 text-center border border-amber-200 select-none';
+        lockDiv.style.width = `${pageWidth}px`;
+        lockDiv.style.height = `${pageHeight}px`;
+        lockDiv.innerHTML = `
+          <div style="width:48px;height:48px;border-radius:16px;background:#fef3c7;color:#b45309;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">🔒</div>
+          <h4 style="font-size:15px;font-weight:800;color:#0f172a;margin:0 0 8px;">Batas Pratinjau Publik (10%)</h4>
+          <p style="font-size:12px;color:#475569;line-height:1.6;max-width:260px;margin:0;">
+            Pengunjung publik hanya dapat membaca maksimal <strong>${maxAllowedPages} halaman</strong> (10% dari ${totalPages} halaman).
+            Silakan masuk ke Portal Terpadu untuk membaca buku secara penuh.
+          </p>
+        `;
+        host.appendChild(lockDiv);
+        pageElements.push(lockDiv);
+      }
+
+      const { PageFlip } = await import('page-flip');
+      if (cancelled) return;
+
+      const startIdx = Math.min(
+        Math.max(0, currentPageRef.current - 1),
+        Math.max(0, pageElements.length - 1)
+      );
+
+      instance = new PageFlip(host, {
+        width: pageWidth,
+        height: pageHeight,
+        size: 'fixed',
+        startPage: startIdx,
+        usePortrait: isMobile,
+        showCover: false,
+        drawShadow: true,
+        maxShadowOpacity: 0.45,
+        flippingTime: 650,
+        useMouseEvents: true,
+        mobileScrollSupport: false,
+        swipeDistance: 30,
+      });
+
+      instance.loadFromHTML(pageElements);
+      instance.on('flip', (e) => {
+        const idx = Number(e.data) || 0;
+        setCurrentPage(idx + 1);
+        playPageFlipSound();
+      });
+      pageFlipInstanceRef.current = instance;
+
+      // Render PDF pages onto canvases sequentially (prioritizing around startIdx)
+      const ordered = [...canvases].sort(
+        (a, b) => Math.abs(a.pageNum - 1 - startIdx) - Math.abs(b.pageNum - 1 - startIdx)
+      );
+
+      for (const item of ordered) {
+        if (cancelled) break;
+        const page = await pdf.getPage(item.pageNum);
+        if (cancelled) break;
+        const vp = page.getViewport({ scale: (pageWidth / baseVp.width) * 1.5 });
+        const ctx = item.canvas.getContext('2d');
+        if (!ctx) continue;
+        item.canvas.width = vp.width;
+        item.canvas.height = vp.height;
+        await page.render({ canvasContext: ctx, viewport: vp }).promise;
       }
     }
+
+    initFlipbook();
 
     return () => {
       cancelled = true;
+      if (instance) {
+        try {
+          instance.destroy();
+        } catch {
+          // ignore cleanup error
+        }
+      }
+      pageFlipInstanceRef.current = null;
     };
-  }, [loading, error, totalPages, maxAllowedPages, currentSpreadStart, zoom, isMobile]);
+  }, [loading, error, totalPages, maxAllowedPages, hasPublicLockPage, zoom, isMobile]);
 
-  const stepSize = isMobile ? 1 : 2;
-
-  function handlePrevSpread() {
-    if (currentSpreadStart <= 1) return;
-    playPageFlipSound();
-    setFlipDirection('prev');
-    setTimeout(() => setFlipDirection(null), 260);
-    setCurrentSpreadStart((p) => Math.max(1, p - stepSize));
+  function handlePrev() {
+    if (!pageFlipInstanceRef.current) return;
+    pageFlipInstanceRef.current.flipPrev();
   }
 
-  function handleNextSpread() {
-    if (currentSpreadStart + stepSize > maxAllowedPages) return;
-    playPageFlipSound();
-    setFlipDirection('next');
-    setTimeout(() => setFlipDirection(null), 260);
-    setCurrentSpreadStart((p) => p + stepSize);
+  function handleNext() {
+    if (!pageFlipInstanceRef.current) return;
+    pageFlipInstanceRef.current.flipNext();
   }
-
-  const rightPageNumber = currentSpreadStart + 1;
-  const isRightPageLocked = rightPageNumber > maxAllowedPages;
-  const canGoNext = currentSpreadStart + stepSize <= maxAllowedPages;
 
   return (
     <div
-      ref={containerRef}
       onContextMenu={(e) => e.preventDefault()}
       onDragStart={(e) => e.preventDefault()}
       style={{ touchAction: 'pan-x pan-y' }}
@@ -410,7 +511,7 @@ export function FlipbookReader({
         </div>
       </div>
 
-      {/* Flipbook Stage (items-start + m-auto ensures top of ebook is NEVER clipped and always scrollable) */}
+      {/* Flipbook Stage (m-auto ensures top of ebook is never clipped and always scrollable) */}
       <div className="flex-1 overflow-auto p-3 sm:p-6 relative flex">
         {isBlurred && (
           <div
@@ -453,100 +554,36 @@ export function FlipbookReader({
 
         {!loading && !error && totalPages > 0 && (
           <div className="m-auto relative flex flex-col items-center gap-4 max-w-full">
-            {/* 1-page Flipbook on Mobile, 2-page Spread on Desktop */}
+            <p className="text-[11px] text-slate-400 text-center">
+              Geser atau klik sudut halaman untuk membalik kertas buku
+            </p>
+
+            {/* StPageFlip Host Container */}
             <div
-              className={`relative flex items-stretch bg-slate-800/70 p-2 sm:p-3 rounded-2xl shadow-2xl border border-slate-700/80 transition-transform duration-200 ${
-                flipDirection === 'next'
-                  ? '-rotate-y-3 scale-[0.99]'
-                  : flipDirection === 'prev'
-                  ? 'rotate-y-3 scale-[0.99]'
-                  : ''
-              }`}
-              style={{ perspective: '1400px' }}
-            >
-              {/* Primary / Left Page */}
-              <div
-                className={`relative bg-white overflow-hidden shadow-inner ${
-                  isMobile ? 'rounded-lg' : 'rounded-l-lg border-r border-slate-300'
-                }`}
-              >
-                <canvas
-                  ref={leftCanvasRef}
-                  className="block max-w-full h-auto pointer-events-none"
-                />
-                <WatermarkOverlay />
-                <div className="absolute bottom-2 left-3 px-2 py-0.5 rounded bg-slate-900/70 text-white text-[10px] font-mono">
-                  Hal. {currentSpreadStart}
-                </div>
-              </div>
-
-              {/* Center Spine & Right Page (Desktop Only) */}
-              {!isMobile && (
-                <>
-                  <div className="w-2 bg-gradient-to-r from-slate-400/50 via-slate-600/70 to-slate-400/50" />
-                  <div className="relative bg-white rounded-r-lg overflow-hidden shadow-inner min-w-[260px] flex items-center justify-center">
-                    {isRightPageLocked ? (
-                      <div className="p-8 text-center max-w-xs space-y-3">
-                        <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
-                          <Lock className="w-6 h-6" />
-                        </div>
-                        <h4 className="text-sm font-black text-slate-900">
-                          Batas Pratinjau Publik (10%)
-                        </h4>
-                        <p className="text-xs text-slate-600 leading-relaxed">
-                          Pengunjung publik hanya dapat membaca maksimal{' '}
-                          <strong>{maxAllowedPages} halaman</strong> (10% dari {totalPages} halaman).
-                          Silakan masuk ke Portal Terpadu untuk membaca buku secara penuh.
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <canvas
-                          ref={rightCanvasRef}
-                          className="block max-w-full h-auto pointer-events-none"
-                        />
-                        <WatermarkOverlay />
-                        <div className="absolute bottom-2 right-3 px-2 py-0.5 rounded bg-slate-900/70 text-white text-[10px] font-mono">
-                          Hal. {rightPageNumber}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {isMobile && isPublicMode && currentSpreadStart >= maxAllowedPages && (
-              <div className="rounded-2xl bg-amber-950/70 border border-amber-500/40 px-4 py-2.5 text-center text-[11px] text-amber-200 max-w-sm">
-                <Lock className="w-3.5 h-3.5 inline mr-1 text-amber-400" />
-                Batas pratinjau publik 10% tercapai ({maxAllowedPages} dari {totalPages} hal.). Masuk ke Portal untuk membaca penuh.
-              </div>
-            )}
+              ref={flipBookHostRef}
+              className="shadow-2xl rounded-xl overflow-visible"
+            />
 
             {/* Bottom Flipbook Page Controls */}
             <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 bg-slate-900/95 border border-slate-700 rounded-2xl px-3 sm:px-4 py-2 text-white text-xs">
               <button
                 type="button"
-                onClick={handlePrevSpread}
-                disabled={currentSpreadStart <= 1}
+                onClick={handlePrev}
+                disabled={currentPage <= 1}
                 className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 font-semibold transition"
               >
                 <ChevronLeft className="w-4 h-4" /> Sebelumnya
               </button>
 
               <span className="px-2 font-mono text-[11px] text-slate-300 text-center">
-                Hal. {currentSpreadStart}
-                {!isMobile && !isRightPageLocked && rightPageNumber <= totalPages
-                  ? `–${rightPageNumber}`
-                  : ''}{' '}
-                / {totalPages}
+                Hal. {Math.min(currentPage, totalPages)} / {totalPages}
                 {isPublicMode ? ` (Publik: maks ${maxAllowedPages})` : ''}
               </span>
 
               <button
                 type="button"
-                onClick={handleNextSpread}
-                disabled={!canGoNext}
+                onClick={handleNext}
+                disabled={currentPage >= displayPageCount}
                 className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 font-semibold transition"
               >
                 Berikutnya <ChevronRight className="w-4 h-4" />
@@ -555,19 +592,6 @@ export function FlipbookReader({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function WatermarkOverlay() {
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden opacity-[0.09]"
-    >
-      <span className="-rotate-30 text-slate-900 font-black text-lg tracking-widest whitespace-nowrap">
-        E-LIBRARY PROTECTED • NO DOWNLOAD / SCREENSHOT
-      </span>
     </div>
   );
 }
