@@ -23,6 +23,7 @@ import {
   getPublishedPosts,
   getPublicGalleryAndFacilities,
 } from '@/lib/data/public-queries';
+import { PublicNavbar } from '@/components/layout/public-shell';
 
 const getCachedInstitutionSettings = cache(getInstitutionSettings);
 
@@ -436,56 +437,7 @@ function FooterSkeleton() {
 export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col simms-ambient">
-      {/* Subtle Top Info Strip */}
-      <div className="bg-slate-900/95 text-slate-200 text-xs py-2 px-4">
-        <Suspense fallback={<TopInfoStripSkeleton />}>
-          <TopInfoStripContent />
-        </Suspense>
-      </div>
-
-      {/* Glassmorphic Navbar */}
-      <header className="sticky top-0 z-30 glass-nav">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-18 flex items-center justify-between gap-4">
-          <Suspense fallback={<NavbarBrandSkeleton />}>
-            <NavbarBrand />
-          </Suspense>
-
-          <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-600">
-            <Link href="/profil" className="hover:text-emerald-700 transition">
-              Profil
-            </Link>
-            <Link href="/berita" className="hover:text-emerald-700 transition">
-              Berita
-            </Link>
-            <Link href="/galeri" className="hover:text-emerald-700 transition">
-              Galeri
-            </Link>
-            <Link href="/direktori" className="hover:text-emerald-700 transition">
-              Direktori
-            </Link>
-            <Link href="/ppdb" className="hover:text-emerald-700 transition">
-              PPDB Online
-            </Link>
-            <Link href="/kontak" className="hover:text-emerald-700 transition">
-              Kontak &amp; FAQ
-            </Link>
-            <Link
-              href="/portal"
-              className="inline-flex items-center gap-2 bg-slate-900 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-semibold transition shadow-sm"
-            >
-              <ShieldCheck className="w-4 h-4" />
-              Portal Terpadu
-            </Link>
-          </nav>
-
-          <Link
-            href="/portal"
-            className="lg:hidden inline-flex items-center gap-1.5 bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs font-semibold"
-          >
-            Portal
-          </Link>
-        </div>
-      </header>
+      <PublicNavbar />
 
       {/* Airy Hero Section with Light Glassmorphism */}
       <section className="relative pt-14 pb-16 md:pt-20 md:pb-24 px-4 sm:px-6 overflow-hidden">
