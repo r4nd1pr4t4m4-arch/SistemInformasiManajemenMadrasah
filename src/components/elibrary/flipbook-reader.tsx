@@ -58,8 +58,16 @@ export function FlipbookReader({
   const [isMobile, setIsMobile] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [bookSize, setBookSize] = useState<{ width: number; height: number } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
 
   const pdfDocRef = useRef<PdfDocumentLike | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const panStateRef = useRef<{
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
   const flipBookHostRef = useRef<HTMLDivElement | null>(null);
   const pageFlipInstanceRef = useRef<PageFlip | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -593,6 +601,7 @@ export function FlipbookReader({
 
       {/* Flipbook Stage */}
       <div
+        ref={stageRef}
         className={`flex-1 min-h-0 min-w-0 overflow-auto overscroll-contain p-4 sm:p-8 relative flex ${
           zoom > 1 ? 'flipbook-zoomed' : 'no-scrollbar'
         }`}
@@ -645,17 +654,52 @@ export function FlipbookReader({
                 : 'Geser atau klik sudut halaman untuk membalik kertas buku'}
             </p>
 
-            {/* Sized Zoom Wrapper ensures exact layout scrollWidth/scrollHeight when zoomed */}
+            {/* Sized Zoom Wrapper ensures exact layout scrollWidth/scrollHeight when zoomed and handles mouse drag-to-pan */}
             <div
-              style={
-                bookSize
+              onPointerDown={(e) => {
+                if (zoom <= 1 || e.pointerType !== 'mouse' || e.button !== 0 || !stageRef.current) {
+                  return;
+                }
+                panStateRef.current = {
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  scrollLeft: stageRef.current.scrollLeft,
+                  scrollTop: stageRef.current.scrollTop,
+                };
+                setIsPanning(true);
+                e.currentTarget.setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                if (!panStateRef.current || !stageRef.current) return;
+                stageRef.current.scrollLeft =
+                  panStateRef.current.scrollLeft - (e.clientX - panStateRef.current.startX);
+                stageRef.current.scrollTop =
+                  panStateRef.current.scrollTop - (e.clientY - panStateRef.current.startY);
+              }}
+              onPointerUp={(e) => {
+                if (!panStateRef.current) return;
+                panStateRef.current = null;
+                setIsPanning(false);
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }
+              }}
+              onPointerCancel={() => {
+                panStateRef.current = null;
+                setIsPanning(false);
+              }}
+              style={{
+                ...(bookSize
                   ? {
                       width: `${Math.round(bookSize.width * zoom)}px`,
                       height: `${Math.round(bookSize.height * zoom)}px`,
                     }
-                  : undefined
-              }
-              className="relative shrink-0 shadow-2xl rounded-xl overflow-hidden transition-[width,height] duration-150"
+                  : {}),
+                touchAction: 'pan-x pan-y',
+              }}
+              className={`relative shrink-0 shadow-2xl rounded-xl overflow-hidden transition-[width,height] duration-150 ${
+                zoom > 1 ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''
+              }`}
             >
               <div
                 ref={flipBookHostRef}
@@ -665,6 +709,7 @@ export function FlipbookReader({
                   width: bookSize ? `${bookSize.width}px` : undefined,
                   height: bookSize ? `${bookSize.height}px` : undefined,
                   transition: 'transform 150ms ease',
+                  pointerEvents: zoom > 1 ? 'none' : 'auto',
                 }}
               />
             </div>
