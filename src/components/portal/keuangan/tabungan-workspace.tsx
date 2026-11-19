@@ -499,6 +499,17 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                   showToast('err', 'Data rekening tidak ditemukan.');
                   return;
                 }
+                if (
+                  !Number.isInteger(trxForm.amount) ||
+                  trxForm.amount < 1000 ||
+                  trxForm.amount % 1000 !== 0
+                ) {
+                  showToast(
+                    'err',
+                    'Nominal transaksi minimal Rp 1.000 dan harus kelipatan Rp 1.000 (sebelum dikurangi fee penarikan).'
+                  );
+                  return;
+                }
                 if (trxForm.transaction_type === 'TARIK' && trxForm.amount > selectedAccount.balance) {
                   showToast('err', 'Saldo tabungan tidak mencukupi untuk penarikan.');
                   return;
@@ -593,7 +604,19 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                   />
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     {formatRupiah(Number(trxForm.amount) || 0)}
+                    {trxForm.transaction_type === 'TARIK' ? ' (sebelum dikurangi fee)' : ''}
                   </p>
+                  {(!Number.isInteger(trxForm.amount) ||
+                    trxForm.amount < 1000 ||
+                    trxForm.amount % 1000 !== 0) ? (
+                    <p className="text-[10px] text-rose-600 font-medium mt-0.5">
+                      Minimal Rp 1.000 dan harus kelipatan Rp 1.000.
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Minimal Rp 1.000 &amp; kelipatan Rp 1.000
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -766,6 +789,18 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
               e.preventDefault();
               if (!openAccForm.owner_name.trim()) {
                 showToast('err', 'Pilih atau masukkan nama pemilik rekening terlebih dahulu.');
+                return;
+              }
+              if (
+                openAccForm.initial_deposit > 0 &&
+                (!Number.isInteger(openAccForm.initial_deposit) ||
+                  openAccForm.initial_deposit < 1000 ||
+                  openAccForm.initial_deposit % 1000 !== 0)
+              ) {
+                showToast(
+                  'err',
+                  'Setoran awal minimal Rp 1.000 dan harus kelipatan Rp 1.000 (atau Rp 0 jika tanpa setoran awal).'
+                );
                 return;
               }
               await postTabungan(
@@ -969,13 +1004,16 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                 <input
                   type="number"
                   min={0}
-                  step={5000}
+                  step={1000}
                   value={openAccForm.initial_deposit}
                   onChange={(e) =>
                     setOpenAccForm({ ...openAccForm, initial_deposit: Number(e.target.value) })
                   }
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold"
                 />
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Rp 0 atau minimal Rp 1.000 (kelipatan Rp 1.000)
+                </p>
               </div>
             </div>
 

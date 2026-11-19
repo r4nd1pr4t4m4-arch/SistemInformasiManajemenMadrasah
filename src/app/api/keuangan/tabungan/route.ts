@@ -16,14 +16,27 @@ const OpenAccountSchema = z.object({
   owner_name: z.string().min(2),
   owner_phone: z.string().optional().nullable(),
   owner_address: z.string().optional().nullable(),
-  initial_deposit: z.number().min(0).default(0),
+  initial_deposit: z
+    .number()
+    .int('Setoran awal harus berupa bilangan bulat.')
+    .min(0, 'Setoran awal tidak boleh negatif.')
+    .refine((val) => val === 0 || (val >= 1000 && val % 1000 === 0), {
+      message: 'Setoran awal minimal Rp 1.000 dan harus kelipatan Rp 1.000 (atau Rp 0).',
+    })
+    .default(0),
 });
 
 const TransactionSchema = z.object({
   action: z.literal('TRANSACTION'),
   account_id: z.string().uuid(),
   transaction_type: z.enum(['SETOR', 'TARIK']),
-  amount: z.number().min(1),
+  amount: z
+    .number()
+    .int('Nominal transaksi harus berupa bilangan bulat.')
+    .min(1000, 'Nominal transaksi minimal Rp 1.000.')
+    .refine((val) => val % 1000 === 0, {
+      message: 'Nominal transaksi harus kelipatan Rp 1.000.',
+    }),
   notes: z.string().optional().nullable(),
 });
 
@@ -157,7 +170,10 @@ export async function POST(request: Request) {
     if (body.action === 'OPEN_ACCOUNT') {
       const parsed = OpenAccountSchema.safeParse(body);
       if (!parsed.success) {
-        return NextResponse.json({ error: 'Data pembukaan rekening tidak valid.' }, { status: 400 });
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data pembukaan rekening tidak valid.' },
+          { status: 400 }
+        );
       }
 
       const prefix =
@@ -207,7 +223,10 @@ export async function POST(request: Request) {
     if (body.action === 'TRANSACTION') {
       const parsed = TransactionSchema.safeParse(body);
       if (!parsed.success) {
-        return NextResponse.json({ error: 'Data transaksi tabungan tidak valid.' }, { status: 400 });
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data transaksi tabungan tidak valid.' },
+          { status: 400 }
+        );
       }
 
       const { data: account, error: accErr } = await supabase
