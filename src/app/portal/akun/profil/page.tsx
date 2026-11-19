@@ -8,15 +8,19 @@ import {
   Clock,
   Eye,
   EyeOff,
+  FileSignature,
   KeyRound,
   Loader2,
+  Lock,
   Mail,
   Phone,
   Save,
   Send,
   ShieldCheck,
   User,
+  XCircle,
 } from 'lucide-react';
+import { digitsOnly, PHONE_MAX } from '@/lib/validation/identity';
 
 interface AccountProfile {
   full_name: string;
@@ -30,6 +34,21 @@ interface AccountProfile {
   avatarUpdatedAt?: string | null;
   nextAvatarChangeAt?: string | null;
   remainingDays?: number;
+  pendingNameRequest?: {
+    id: string;
+    old_full_name: string;
+    new_full_name: string;
+    reason: string | null;
+    created_at: string;
+  } | null;
+  lastRejectedNameRequest?: {
+    new_full_name: string;
+    review_notes: string | null;
+    reviewed_at: string | null;
+  } | null;
+  canRequestNameChange?: boolean;
+  nextNameChangeAt?: string | null;
+  nameRemainingDays?: number;
 }
 
 export default function AkunProfilPage() {
@@ -52,6 +71,11 @@ export default function AkunProfilPage() {
 
   // State Ganti Alamat Email
   const [newEmail, setNewEmail] = useState('');
+
+  // State Pengajuan Perubahan Nama Lengkap
+  const [newFullName, setNewFullName] = useState('');
+  const [nameReason, setNameReason] = useState('');
+  const [submittingName, setSubmittingName] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -77,6 +101,11 @@ export default function AkunProfilPage() {
           avatarUpdatedAt: data.profile.avatarUpdatedAt || null,
           nextAvatarChangeAt: data.profile.nextAvatarChangeAt || null,
           remainingDays: data.profile.remainingDays ?? 0,
+          pendingNameRequest: data.profile.pendingNameRequest || null,
+          lastRejectedNameRequest: data.profile.lastRejectedNameRequest || null,
+          canRequestNameChange: data.profile.canRequestNameChange ?? true,
+          nextNameChangeAt: data.profile.nextNameChangeAt || null,
+          nameRemainingDays: data.profile.nameRemainingDays ?? 0,
         });
       }
     } finally {
@@ -101,7 +130,6 @@ export default function AkunProfilPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          full_name: profile.full_name,
           phone: profile.phone,
         }),
       });
@@ -114,6 +142,49 @@ export default function AkunProfilPage() {
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSubmitNameChange(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newFullName.trim()) {
+      showToast('err', 'Masukkan nama lengkap baru terlebih dahulu.');
+      return;
+    }
+    setSubmittingName(true);
+    try {
+      const res = await fetch('/api/akun/nama', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_full_name: newFullName.trim(), reason: nameReason.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('ok', 'Pengajuan perubahan nama terkirim dan menunggu persetujuan Admin.');
+        setNewFullName('');
+        setNameReason('');
+        await loadProfile();
+      } else {
+        showToast('err', data.error || 'Gagal mengirim pengajuan perubahan nama.');
+      }
+    } finally {
+      setSubmittingName(false);
+    }
+  }
+
+  async function handleCancelNameChange() {
+    setSubmittingName(true);
+    try {
+      const res = await fetch('/api/akun/nama', { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('ok', 'Pengajuan perubahan nama dibatalkan.');
+        await loadProfile();
+      } else {
+        showToast('err', data.error || 'Gagal membatalkan pengajuan.');
+      }
+    } finally {
+      setSubmittingName(false);
     }
   }
 
@@ -151,7 +222,6 @@ export default function AkunProfilPage() {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            full_name: profile.full_name,
             phone: profile.phone,
             avatar_url: dataUrl,
           }),
@@ -364,19 +434,26 @@ export default function AkunProfilPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Nama Lengkap
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Nama Lengkap
+                  </label>
+                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                    <Lock className="w-3 h-3 text-slate-400" /> Terkunci (Persetujuan Admin)
+                  </span>
+                </div>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                   <input
-                    required
+                    disabled
                     type="text"
                     value={profile.full_name}
-                    onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3.5 py-2.5 text-sm"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-100 text-slate-600 pl-10 pr-3.5 py-2.5 text-sm cursor-not-allowed"
                   />
                 </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Nama lengkap hanya dapat diubah melalui formulir pengajuan perubahan nama di bawah.
+                </p>
               </div>
 
               <div>
@@ -388,11 +465,17 @@ export default function AkunProfilPage() {
                   <input
                     type="tel"
                     value={profile.phone || ''}
-                    onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                    placeholder="08xxxxxxxxxx"
+                    maxLength={PHONE_MAX}
+                    onChange={(e) =>
+                      setProfile({ ...profile, phone: digitsOnly(e.target.value, PHONE_MAX) })
+                    }
+                    placeholder="08xxxxxxxxxx (Maks. 12 digit)"
                     className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3.5 py-2.5 text-sm"
                   />
                 </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Hanya angka, maksimal 12 digit. Otomatis disinkronkan ke seluruh data peran Anda.
+                </p>
               </div>
             </div>
 
@@ -402,9 +485,160 @@ export default function AkunProfilPage() {
               className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2.5 rounded-2xl text-sm transition"
             >
               <Save className="w-4 h-4" />
-              {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
+              {saving ? 'Menyimpan...' : 'Simpan Nomor Kontak'}
             </button>
           </form>
+
+          {/* Pengajuan Perubahan Nama Lengkap */}
+          <div className="glass-card rounded-3xl p-7 space-y-5">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <FileSignature className="w-4 h-4 text-emerald-700" />
+                Pengajuan Perubahan Nama Lengkap
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Perubahan nama resmi akun memerlukan persetujuan Admin Madrasah dan dibatasi 1 kali setiap 30 hari.
+              </p>
+            </div>
+
+            {/* Status: Pengajuan Sedang Menunggu Persetujuan */}
+            {profile.pendingNameRequest && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-amber-900">
+                        Pengajuan Perubahan Nama Menunggu Persetujuan
+                      </p>
+                      <p className="text-xs text-amber-800">
+                        Nama Baru:{' '}
+                        <strong className="text-slate-900">
+                          {profile.pendingNameRequest.new_full_name}
+                        </strong>
+                      </p>
+                      {profile.pendingNameRequest.reason && (
+                        <p className="text-[11px] text-amber-700">
+                          Alasan: {profile.pendingNameRequest.reason}
+                        </p>
+                      )}
+                      <p className="text-[10px] text-amber-600">
+                        Diajukan pada:{' '}
+                        {new Date(profile.pendingNameRequest.created_at).toLocaleString('id-ID')}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={submittingName}
+                    onClick={handleCancelNameChange}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-xs font-semibold transition shrink-0"
+                  >
+                    {submittingName ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-500" />
+                    )}
+                    Batalkan Pengajuan
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Status: Pengajuan Terakhir Ditolak */}
+            {!profile.pendingNameRequest && profile.lastRejectedNameRequest && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-xs text-rose-900 space-y-1.5">
+                <div className="flex items-center gap-2 font-bold">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  Pengajuan Perubahan Nama Sebelumnya Ditolak oleh Admin
+                </div>
+                <p>
+                  Nama yang diajukan: <strong>{profile.lastRejectedNameRequest.new_full_name}</strong>
+                </p>
+                {profile.lastRejectedNameRequest.review_notes && (
+                  <p className="text-[11px] text-rose-700 bg-white/60 p-2 rounded-xl border border-rose-100">
+                    Catatan Admin: {profile.lastRejectedNameRequest.review_notes}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Status: Cooldown 30 Hari */}
+            {!profile.pendingNameRequest && !profile.canRequestNameChange && profile.nextNameChangeAt && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 flex items-start gap-3 text-xs text-slate-700">
+                <Clock className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Batas Waktu Perubahan Nama (Cooldown)
+                  </p>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    Nama lengkap baru saja disetujui. Sesuai kebijakan keamanan, perubahan nama hanya dapat diajukan kembali setelah 30 hari, yaitu pada{' '}
+                    <strong>
+                      {new Date(profile.nextNameChangeAt).toLocaleDateString('id-ID', {
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                      })}
+                    </strong>{' '}
+                    (sisa <strong>{profile.nameRemainingDays}</strong> hari lagi).
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Formulir Pengajuan (bila diizinkan) */}
+            {profile.canRequestNameChange && (
+              <form onSubmit={handleSubmitNameChange} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Nama Lengkap Baru Sesuai Dokumen Resmi <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    value={newFullName}
+                    onChange={(e) => setNewFullName(e.target.value)}
+                    placeholder="Masukkan nama lengkap baru..."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Gunakan ejaan yang sesuai dengan KTP/Kartu Keluarga/Ijazah.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Alasan Perubahan Nama (Opsional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={nameReason}
+                    onChange={(e) => setNameReason(e.target.value)}
+                    placeholder="Contoh: Perbaikan ejaan sesuai Ijazah / Penambahan gelar / Pergantian nama sah..."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submittingName || !newFullName.trim()}
+                  className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white font-semibold px-5 py-2.5 rounded-2xl text-xs transition"
+                >
+                  {submittingName ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Mengirim Pengajuan...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Kirim Pengajuan Perubahan Nama
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
 
           {/* Ganti Alamat Email */}
           <form onSubmit={handleConfirmEmailChange} className="glass-card rounded-3xl p-7 space-y-5">

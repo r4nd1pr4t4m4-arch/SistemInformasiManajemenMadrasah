@@ -7,6 +7,7 @@ import {
   BookOpen,
   CheckCircle2,
   Clock,
+  FileSignature,
   Loader2,
   MailCheck,
   Search,
@@ -21,6 +22,20 @@ import { PERMISSIONS } from '@/lib/auth/rbac';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 
 type AccountStatus = 'PENDING' | 'AKTIF' | 'NONAKTIF' | 'DITOLAK' | 'DITOLAK_PERMANEN';
+
+interface NameChangeRequest {
+  id: string;
+  profile_id: string;
+  old_full_name: string;
+  new_full_name: string;
+  reason: string | null;
+  status: 'MENUNGGU' | 'DISETUJUI' | 'DITOLAK';
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
+  created_at: string;
+  profile?: { id: string; email: string | null; primary_role: string } | null;
+}
 
 interface ManagedUser {
   id: string;
@@ -83,6 +98,12 @@ export default function ManajemenPenggunaPage() {
     rejected: 0,
   });
   const [smtpConfigured, setSmtpConfigured] = useState(true);
+  const [activeTab, setActiveTab] = useState<'users' | 'name_changes'>('users');
+  const [nameRequests, setNameRequests] = useState<NameChangeRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [filterNameStatus, setFilterNameStatus] = useState<'ALL' | 'MENUNGGU' | 'DISETUJUI' | 'DITOLAK'>('ALL');
+  const [rejectNameModalReq, setRejectNameModalReq] = useState<NameChangeRequest | null>(null);
+  const [nameRejectNotes, setNameRejectNotes] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | AccountStatus>('ALL');
   const [search, setSearch] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -118,9 +139,58 @@ export default function ManajemenPenggunaPage() {
     }
   }, [showToast]);
 
+  const loadNameRequests = useCallback(async () => {
+    setLoadingRequests(true);
+    try {
+      const res = await fetch('/api/akun/nama/persetujuan');
+      const data = await res.json();
+      if (res.ok) {
+        setNameRequests(data.requests || []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingRequests(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadUsers();
-  }, [loadUsers]);
+    loadNameRequests();
+  }, [loadUsers, loadNameRequests]);
+
+  async function handleReviewNameChange(
+    id: string,
+    action: 'APPROVE' | 'REJECT',
+    notes?: string
+  ) {
+    setBusyId(id);
+    try {
+      const res = await fetch('/api/akun/nama/persetujuan', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action, review_notes: notes || null }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(
+          'success',
+          action === 'APPROVE'
+            ? 'Perubahan nama lengkap telah disetujui dan disinkronkan ke seluruh biodata pengguna.'
+            : 'Pengajuan perubahan nama ditolak.'
+        );
+        await Promise.all([loadNameRequests(), loadUsers()]);
+        setRejectNameModalReq(null);
+        setNameRejectNotes('');
+      } else {
+        showToast('error', data.error || 'Gagal memproses persetujuan perubahan nama.');
+      }
+    } catch {
+      showToast('error', 'Gagal memproses persetujuan perubahan nama.');
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function handleAction(params: {
     userId: string;
@@ -194,6 +264,22 @@ export default function ManajemenPenggunaPage() {
       );
     });
   }, [users, filterStatus, search]);
+
+  const filteredNameRequests = useMemo(() => {
+    return nameRequests.filter((r) => {
+      if (filterNameStatus !== 'ALL' && r.status !== filterNameStatus) return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const matches =
+          r.old_full_name.toLowerCase().includes(q) ||
+          r.new_full_name.toLowerCase().includes(q) ||
+          (r.profile?.email || '').toLowerCase().includes(q) ||
+          (r.reason || '').toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [nameRequests, filterNameStatus, search]);
 
   function renderStatusBadge(status: AccountStatus) {
     if (status === 'PENDING') {
@@ -284,29 +370,71 @@ export default function ManajemenPenggunaPage() {
         </Link>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <div className="glass-card rounded-2xl p-4">
-          <p className="text-[11px] font-medium text-slate-500">Total Akun</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{summary.total}</p>
-        </div>
-        <div className="glass-card rounded-2xl p-4 border border-amber-200/70 bg-amber-50/40">
-          <p className="text-[11px] font-medium text-amber-700">Menunggu Persetujuan</p>
-          <p className="text-2xl font-bold text-amber-700 mt-1">{summary.pending}</p>
-        </div>
-        <div className="glass-card rounded-2xl p-4 border border-emerald-200/70 bg-emerald-50/40">
-          <p className="text-[11px] font-medium text-emerald-700">Akun Aktif</p>
-          <p className="text-2xl font-bold text-emerald-700 mt-1">{summary.active}</p>
-        </div>
-        <div className="glass-card rounded-2xl p-4">
-          <p className="text-[11px] font-medium text-slate-500">Nonaktif</p>
-          <p className="text-2xl font-bold text-slate-700 mt-1">{summary.inactive}</p>
-        </div>
-        <div className="glass-card rounded-2xl p-4 border border-rose-200/70 bg-rose-50/40">
-          <p className="text-[11px] font-medium text-rose-700">Ditolak</p>
-          <p className="text-2xl font-bold text-rose-700 mt-1">{summary.rejected}</p>
-        </div>
+      {/* Tab Switcher: Akun Pengguna vs Perubahan Nama */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 pb-3">
+        <button
+          type="button"
+          onClick={() => setActiveTab('users')}
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition ${
+            activeTab === 'users'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          Manajemen Akun Pengguna
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-200">
+            {summary.total}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('name_changes')}
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition ${
+            activeTab === 'name_changes'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+          }`}
+        >
+          <FileSignature className="w-4 h-4" />
+          Persetujuan Perubahan Nama
+          {nameRequests.filter((r) => r.status === 'MENUNGGU').length > 0 ? (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+              {nameRequests.filter((r) => r.status === 'MENUNGGU').length} Menunggu
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 border border-slate-200">
+              {nameRequests.length}
+            </span>
+          )}
+        </button>
       </div>
+
+      {activeTab === 'users' && (
+        <>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="glass-card rounded-2xl p-4">
+              <p className="text-[11px] font-medium text-slate-500">Total Akun</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{summary.total}</p>
+            </div>
+            <div className="glass-card rounded-2xl p-4 border border-amber-200/70 bg-amber-50/40">
+              <p className="text-[11px] font-medium text-amber-700">Menunggu Persetujuan</p>
+              <p className="text-2xl font-bold text-amber-700 mt-1">{summary.pending}</p>
+            </div>
+            <div className="glass-card rounded-2xl p-4 border border-emerald-200/70 bg-emerald-50/40">
+              <p className="text-[11px] font-medium text-emerald-700">Akun Aktif</p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">{summary.active}</p>
+            </div>
+            <div className="glass-card rounded-2xl p-4">
+              <p className="text-[11px] font-medium text-slate-500">Nonaktif</p>
+              <p className="text-2xl font-bold text-slate-700 mt-1">{summary.inactive}</p>
+            </div>
+            <div className="glass-card rounded-2xl p-4 border border-rose-200/70 bg-rose-50/40">
+              <p className="text-[11px] font-medium text-rose-700">Ditolak</p>
+              <p className="text-2xl font-bold text-rose-700 mt-1">{summary.rejected}</p>
+            </div>
+          </div>
 
       {/* Filter & Search */}
       <div className="glass-card rounded-3xl p-5 space-y-4">
@@ -517,6 +645,213 @@ export default function ManajemenPenggunaPage() {
           </div>
         )}
       </div>
+      </>
+      )}
+
+      {activeTab === 'name_changes' && (
+        <div className="glass-card rounded-3xl p-5 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { key: 'ALL', label: `Semua (${nameRequests.length})` },
+                  {
+                    key: 'MENUNGGU',
+                    label: `Menunggu (${nameRequests.filter((r) => r.status === 'MENUNGGU').length})`,
+                  },
+                  {
+                    key: 'DISETUJUI',
+                    label: `Disetujui (${nameRequests.filter((r) => r.status === 'DISETUJUI').length})`,
+                  },
+                  {
+                    key: 'DITOLAK',
+                    label: `Ditolak (${nameRequests.filter((r) => r.status === 'DITOLAK').length})`,
+                  },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setFilterNameStatus(f.key)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                    filterNameStatus === f.key
+                      ? 'bg-emerald-700 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative w-full md:w-72">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Cari nama lama/baru atau email..."
+                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
+              />
+            </div>
+          </div>
+
+          {loadingRequests ? (
+            <div className="py-12 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Memuat data pengajuan perubahan nama...
+            </div>
+          ) : filteredNameRequests.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-500">
+              <FileSignature className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              Tidak ada data pengajuan perubahan nama yang sesuai filter.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredNameRequests.map((r) => {
+                const isBusy = busyId === r.id;
+                return (
+                  <div
+                    key={r.id}
+                    className="p-4 rounded-2xl bg-white border border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                  >
+                    <div className="space-y-2 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-slate-500">
+                          Nama Lama:{' '}
+                          <span className="font-semibold text-slate-700 line-through">
+                            {r.old_full_name}
+                          </span>
+                        </span>
+                        <span className="text-slate-400">→</span>
+                        <span className="text-sm font-bold text-slate-900 bg-emerald-50 text-emerald-900 border border-emerald-200 px-2.5 py-0.5 rounded-lg">
+                          {r.new_full_name}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            r.status === 'MENUNGGU'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : r.status === 'DISETUJUI'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-rose-100 text-rose-800 border border-rose-200'
+                          }`}
+                        >
+                          {r.status}
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>Email: <strong className="text-slate-800">{r.profile?.email || '-'}</strong></span>
+                        <span>•</span>
+                        <span>Role: <strong className="text-slate-800">{r.profile?.primary_role || '-'}</strong></span>
+                        <span>•</span>
+                        <span>
+                          Diajukan: {new Date(r.created_at).toLocaleString('id-ID')}
+                        </span>
+                      </div>
+
+                      {r.reason && (
+                        <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                          Alasan: <span className="text-slate-800">{r.reason}</span>
+                        </p>
+                      )}
+
+                      {r.review_notes && (
+                        <p className="text-xs text-rose-700 bg-rose-50/70 p-2 rounded-xl border border-rose-100">
+                          Catatan Review: {r.review_notes}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {r.status === 'MENUNGGU' && canManage ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleReviewNameChange(r.id, 'APPROVE')}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
+                          >
+                            {isBusy ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                            )}
+                            Setujui
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => {
+                              setRejectNameModalReq(r);
+                              setNameRejectNotes('');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition disabled:opacity-50"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            Tolak
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-slate-400">
+                          {r.status === 'DISETUJUI'
+                            ? `Disetujui pada ${r.reviewed_at ? new Date(r.reviewed_at).toLocaleDateString('id-ID') : '-'}`
+                            : r.status === 'DITOLAK'
+                            ? `Ditolak pada ${r.reviewed_at ? new Date(r.reviewed_at).toLocaleDateString('id-ID') : '-'}`
+                            : '-'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal Tolak Perubahan Nama */}
+      {canManage && rejectNameModalReq && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <h2 className="text-base font-bold text-slate-900">Tolak Pengajuan Perubahan Nama</h2>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Anda akan menolak pengajuan perubahan nama dari <strong>{rejectNameModalReq.old_full_name}</strong> menjadi{' '}
+              <strong>{rejectNameModalReq.new_full_name}</strong> ({rejectNameModalReq.profile?.email || '-'}).
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700">
+                Catatan / Alasan Penolakan (opsional)
+              </label>
+              <textarea
+                rows={3}
+                value={nameRejectNotes}
+                onChange={(e) => setNameRejectNotes(e.target.value)}
+                placeholder="Misal: Nama tidak sesuai dengan dokumen identitas / Silakan unggah bukti pendukung..."
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRejectNameModalReq(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={busyId === rejectNameModalReq.id}
+                onClick={() =>
+                  handleReviewNameChange(rejectNameModalReq.id, 'REJECT', nameRejectNotes)
+                }
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
+              >
+                {busyId === rejectNameModalReq.id ? 'Memproses...' : 'Konfirmasi Tolak'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Tolak Pendaftaran */}
       {canManage && rejectModalUser && (

@@ -30,6 +30,7 @@ import {
   ShieldCheck,
   Smartphone,
   User,
+  UserCheck,
   Users,
   Wallet,
   X,
@@ -757,14 +758,40 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
     ],
   },
   {
-    id: 'siswa',
-    label: 'Portal Siswa',
-    icon: <GraduationCap className="w-4 h-4" />,
+    id: 'akun',
+    label: 'Akun',
+    icon: <User className="w-4 h-4" />,
     items: [
       {
+        href: '/portal/akun/profil',
+        path: '/portal/akun/profil',
+        label: 'Profil',
+        icon: <User className="w-3.5 h-3.5" />,
+      },
+      {
+        id: 'gtk-biodata-dokumen',
+        label: 'Biodata & Dokumen GTK',
+        icon: <UserCheck className="w-3.5 h-3.5" />,
+        allowedRoles: PERMISSIONS.GTK_BIODATA_VIEW,
+        children: [
+          {
+            href: '/portal/gtk/biodata-dokumen/biodata',
+            path: '/portal/gtk/biodata-dokumen/biodata',
+            label: 'Biodata Lengkap',
+            icon: <User className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/gtk/biodata-dokumen/dokumen',
+            path: '/portal/gtk/biodata-dokumen/dokumen',
+            label: 'Scan Dokumen Pribadi',
+            icon: <FileText className="w-3 h-3" />,
+          },
+        ],
+      },
+      {
         id: 'siswa-biodata-dokumen',
-        label: 'Biodata & Dokumen',
-        icon: <FileText className="w-3.5 h-3.5" />,
+        label: 'Biodata & Dokumen Siswa',
+        icon: <GraduationCap className="w-3.5 h-3.5" />,
         allowedRoles: [
           'SISWA',
           'SUPERADMIN',
@@ -789,18 +816,25 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           },
         ],
       },
-    ],
-  },
-  {
-    id: 'akun',
-    label: 'Akun',
-    icon: <User className="w-4 h-4" />,
-    items: [
       {
-        href: '/portal/akun/profil',
-        path: '/portal/akun/profil',
-        label: 'Profil',
-        icon: <User className="w-3.5 h-3.5" />,
+        id: 'ortu-biodata-dokumen',
+        label: 'Biodata & Dokumen Wali',
+        icon: <HeartHandshake className="w-3.5 h-3.5" />,
+        allowedRoles: PERMISSIONS.ORTU_BIODATA_VIEW,
+        children: [
+          {
+            href: '/portal/orang-tua/biodata-dokumen/biodata',
+            path: '/portal/orang-tua/biodata-dokumen/biodata',
+            label: 'Biodata Lengkap',
+            icon: <User className="w-3 h-3" />,
+          },
+          {
+            href: '/portal/orang-tua/biodata-dokumen/dokumen',
+            path: '/portal/orang-tua/biodata-dokumen/dokumen',
+            label: 'Scan Dokumen Pribadi',
+            icon: <FileText className="w-3 h-3" />,
+          },
+        ],
       },
       {
         href: '/portal/akun/manajemen-pengguna',
@@ -900,6 +934,12 @@ const PAGE_TITLES: Record<string, string> = {
   '/portal/siswa/biodata-dokumen': 'Biodata & Dokumen Siswa',
   '/portal/siswa/biodata-dokumen/biodata': 'Biodata Lengkap Siswa',
   '/portal/siswa/biodata-dokumen/dokumen': 'Scan Dokumen Pribadi Siswa',
+  '/portal/gtk/biodata-dokumen': 'Biodata & Dokumen GTK',
+  '/portal/gtk/biodata-dokumen/biodata': 'Biodata Lengkap GTK',
+  '/portal/gtk/biodata-dokumen/dokumen': 'Scan Dokumen Pribadi GTK',
+  '/portal/orang-tua/biodata-dokumen': 'Biodata & Dokumen Orang Tua/Wali',
+  '/portal/orang-tua/biodata-dokumen/biodata': 'Biodata Lengkap Orang Tua/Wali',
+  '/portal/orang-tua/biodata-dokumen/dokumen': 'Scan Dokumen Pribadi Orang Tua/Wali',
   '/portal/akun/profil': 'Profil Akun',
   '/portal/akun/manajemen-pengguna': 'Manajemen Pengguna & Persetujuan Akun',
   '/portal/akun/kata-sandi': 'Ganti Kata Sandi',

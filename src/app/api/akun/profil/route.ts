@@ -2,13 +2,18 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getCurrentUserWithRoles } from '@/lib/auth/session';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { syncProfileContactToEntities } from '@/lib/sdm/sync';
+import { phoneSchema } from '@/lib/validation/identity';
+import { getNameChangeStatus } from '@/lib/akun/name-change';
 
 const AVATAR_COOLDOWN_DAYS = 45;
 const AVATAR_COOLDOWN_MS = AVATAR_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
 
+// Catatan: full_name TIDAK dapat diubah langsung di sini.
+// Perubahan Nama Lengkap wajib melalui pengajuan (/api/akun/nama) + persetujuan Admin.
 const UpdateProfileSchema = z.object({
-  full_name: z.string().min(2).max(120),
-  phone: z.string().max(30).optional().nullable(),
+  full_name: z.string().optional().nullable(),
+  phone: phoneSchema,
   avatar_url: z.string().max(3_000_000).optional().nullable(),
 });
 
@@ -74,6 +79,7 @@ export async function GET() {
     (authUserRes?.user?.user_metadata?.avatar_updated_at as string | undefined) || null;
   const cooldown = computeAvatarCooldown(avatarUpdatedAt);
   const mfaEnabled = (factorRes?.factors || []).some((f) => f.status === 'verified');
+  const nameStatus = await getNameChangeStatus(supabase, session.userId);
 
   return NextResponse.json({
     profile: {
@@ -82,6 +88,7 @@ export async function GET() {
       roles: session.roles,
       mfaEnabled,
       ...cooldown,
+      ...nameStatus,
     },
   });
 }
@@ -100,7 +107,10 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const parsed = UpdateProfileSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Data profil tidak valid.' }, { status: 400 });
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message || 'Data profil tidak valid.' },
+        { status: 400 }
+      );
     }
 
     const supabase = createSupabaseAdminClient();
@@ -110,7 +120,6 @@ export async function PATCH(request: Request) {
       (currentMeta.avatar_updated_at as string | undefined) || null;
 
     const updatePayload: Record<string, unknown> = {
-      full_name: parsed.data.full_name.trim(),
       phone: parsed.data.phone?.trim() || null,
       updated_at: new Date().toISOString(),
     };
@@ -154,6 +163,10 @@ export async function PATCH(request: Request) {
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    await syncProfileContactToEntities(supabase, session.userId, {
+      phone: data.phone,
+    });
 
     return NextResponse.json({
       profile: {

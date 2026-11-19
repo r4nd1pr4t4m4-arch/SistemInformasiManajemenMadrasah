@@ -2,7 +2,36 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { isR2Configured, uploadBufferToR2 } from '@/lib/storage/r2';
+import { syncGuardianDocToStudent, syncStudentDocToGuardians } from '@/lib/sdm/sync';
+
+async function isSelfOwnerOfSdmEntity(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  userId: string,
+  entityType: string,
+  entityId: string
+): Promise<boolean> {
+  if (entityType === 'GTK') {
+    const { data } = await supabase
+      .from('teachers_staff')
+      .select('id')
+      .eq('id', entityId)
+      .eq('profile_id', userId)
+      .maybeSingle();
+    return Boolean(data);
+  }
+  if (entityType === 'ORANG_TUA') {
+    const { data } = await supabase
+      .from('student_guardians')
+      .select('id')
+      .eq('id', entityId)
+      .eq('profile_id', userId)
+      .maybeSingle();
+    return Boolean(data);
+  }
+  return false;
+}
 
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
@@ -59,8 +88,10 @@ async function uploadFileToStorage(
 }
 
 export async function POST(request: NextRequest) {
-  const guard = await requireApiRoles(PERMISSIONS.SDM_MANAGE);
-  if (guard.errorResponse) return guard.errorResponse;
+  const session = await getCurrentUserWithRoles();
+  if (!session) {
+    return NextResponse.json({ error: 'Silakan login terlebih dahulu.' }, { status: 401 });
+  }
 
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
@@ -79,6 +110,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Target entitas dokumen tidak valid.' }, { status: 400 });
     }
 
+    const supabase = createSupabaseAdminClient();
+    const canManageSdm = hasAnyRole(session, PERMISSIONS.SDM_MANAGE);
+    if (!canManageSdm) {
+      const isOwner = await isSelfOwnerOfSdmEntity(supabase, session.userId, entityType, entityId);
+      if (!isOwner) {
+        return NextResponse.json(
+          { error: 'Anda tidak memiliki izin untuk mengunggah dokumen ini.' },
+          { status: 403 }
+        );
+      }
+    }
+
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'File dokumen wajib dipilih.' }, { status: 400 });
     }
@@ -94,7 +137,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ukuran file maksimal 5 MB.' }, { status: 400 });
     }
 
-    const supabase = createSupabaseAdminClient();
     const { fileUrl, objectKey } = await uploadFileToStorage(
       supabase,
       file,
@@ -113,7 +155,7 @@ export async function POST(request: NextRequest) {
         mime_type: file.type,
         file_size: file.size,
         verification_status: 'TERVERIFIKASI',
-        uploaded_by: guard.session.userId,
+        uploaded_by: session.userId,
         updated_at: new Date().toISOString(),
       };
 
@@ -133,6 +175,18 @@ export async function POST(request: NextRequest) {
             .select('*')
             .single();
           if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+          await syncStudentDocToGuardians(supabase, {
+            studentId: entityId,
+            documentType,
+            documentTitle,
+            documentNumber,
+            fileName: file.name,
+            fileUrl,
+            objectKey,
+            mimeType: file.type,
+            fileSize: file.size,
+            uploadedBy: session.userId,
+          });
           return NextResponse.json({ document: data });
         }
       }
@@ -143,6 +197,18 @@ export async function POST(request: NextRequest) {
         .select('*')
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      await syncStudentDocToGuardians(supabase, {
+        studentId: entityId,
+        documentType,
+        documentTitle,
+        documentNumber,
+        fileName: file.name,
+        fileUrl,
+        objectKey,
+        mimeType: file.type,
+        fileSize: file.size,
+        uploadedBy: session.userId,
+      });
       return NextResponse.json({ document: data }, { status: 201 });
     }
 
@@ -159,12 +225,26 @@ export async function POST(request: NextRequest) {
         object_key: objectKey,
         mime_type: file.type,
         file_size: file.size,
-        uploaded_by: guard.session.userId,
+        uploaded_by: session.userId,
       })
       .select('*')
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (entityType === 'ORANG_TUA') {
+      await syncGuardianDocToStudent(supabase, {
+        guardianId: entityId,
+        documentType,
+        documentTitle,
+        documentNumber,
+        fileName: file.name,
+        fileUrl,
+        objectKey,
+        mimeType: file.type,
+        fileSize: file.size,
+        uploadedBy: session.userId,
+      });
+    }
     return NextResponse.json({ document: data }, { status: 201 });
   } catch (err) {
     return NextResponse.json(
@@ -215,8 +295,10 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const guard = await requireApiRoles(PERMISSIONS.SDM_MANAGE);
-  if (guard.errorResponse) return guard.errorResponse;
+  const session = await getCurrentUserWithRoles();
+  if (!session) {
+    return NextResponse.json({ error: 'Silakan login terlebih dahulu.' }, { status: 401 });
+  }
 
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
@@ -232,7 +314,54 @@ export async function DELETE(request: NextRequest) {
     entityType === 'SISWA' || entityType === 'ALUMNI' ? 'student_documents' : 'sdm_documents';
 
   const supabase = createSupabaseAdminClient();
+  const canManageSdm = hasAnyRole(session, PERMISSIONS.SDM_MANAGE);
+
+  if (!canManageSdm) {
+    if (table !== 'sdm_documents') {
+      return NextResponse.json({ error: 'Anda tidak memiliki izin untuk menghapus dokumen ini.' }, { status: 403 });
+    }
+    const { data: docRow } = await supabase
+      .from('sdm_documents')
+      .select('id, entity_type, entity_id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (
+      !docRow ||
+      !(await isSelfOwnerOfSdmEntity(
+        supabase,
+        session.userId,
+        String(docRow.entity_type || ''),
+        String(docRow.entity_id || '')
+      ))
+    ) {
+      return NextResponse.json({ error: 'Anda tidak memiliki izin untuk menghapus dokumen ini.' }, { status: 403 });
+    }
+  }
+
+  const { data: targetRow } = await supabase
+    .from(table)
+    .select('id, file_url, object_key')
+    .eq('id', id)
+    .maybeSingle();
+
   const { error } = await supabase.from(table).delete().eq('id', id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (targetRow?.object_key) {
+    const [{ count: sdmRefCount }, { count: studentRefCount }] = await Promise.all([
+      supabase
+        .from('sdm_documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('object_key', targetRow.object_key),
+      supabase
+        .from('student_documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('object_key', targetRow.object_key),
+    ]);
+    if ((sdmRefCount || 0) === 0 && (studentRefCount || 0) === 0 && !isR2Configured()) {
+      await supabase.storage.from('student-documents').remove([targetRow.object_key]);
+    }
+  }
   return NextResponse.json({ ok: true });
 }

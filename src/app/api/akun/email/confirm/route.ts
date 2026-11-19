@@ -5,6 +5,7 @@ import { getCurrentUserWithRoles } from '@/lib/auth/session';
 import { verifySignedOtpToken } from '@/lib/auth/otp-token';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { syncProfileContactToEntities } from '@/lib/sdm/sync';
 import { EMAIL_CHANGE_OTP_COOKIE } from '../send-otp/route';
 
 const ConfirmEmailChangeSchema = z.object({
@@ -126,6 +127,10 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', session.userId);
+
+    await syncProfileContactToEntities(admin, session.userId, {
+      email: normalizedNewEmail,
+    });
 
     const response = NextResponse.json({
       ok: true,

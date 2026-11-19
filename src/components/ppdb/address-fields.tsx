@@ -9,6 +9,8 @@ interface RegionItem {
 }
 
 const EMSIFA_BASE = 'https://www.emsifa.com/api-wilayah-indonesia/api';
+const RT_RW_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(3, '0'));
+const LAINNYA_VALUE = '__LAINNYA__';
 
 interface IndonesianAddressFieldsProps {
   onAddressChange: (fullAddress: string, isComplete: boolean) => void;
@@ -27,6 +29,8 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
 
   const [rt, setRt] = useState('');
   const [rw, setRw] = useState('');
+  const [rtCustomMode, setRtCustomMode] = useState(false);
+  const [rwCustomMode, setRwCustomMode] = useState(false);
   const [street, setStreet] = useState('');
 
   useEffect(() => {
@@ -200,30 +204,80 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
 
         <div>
           <label className="block text-[11px] font-semibold text-slate-700 mb-1">RT</label>
-          <input
+          <select
             required
-            type="text"
-            inputMode="numeric"
-            maxLength={3}
-            value={rt}
-            onChange={(e) => setRt(e.target.value.replace(/\D/g, '').slice(0, 3))}
-            placeholder="001"
+            value={rtCustomMode ? LAINNYA_VALUE : rt}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === LAINNYA_VALUE) {
+                setRtCustomMode(true);
+                setRt('');
+              } else {
+                setRtCustomMode(false);
+                setRt(v);
+              }
+            }}
             className="w-full rounded-xl border border-slate-300/90 bg-white px-3 py-2 text-xs font-mono"
-          />
+          >
+            <option value="">-- Pilih RT --</option>
+            {RT_RW_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+            <option value={LAINNYA_VALUE}>Lainnya</option>
+          </select>
+          {rtCustomMode && (
+            <input
+              required
+              type="text"
+              inputMode="numeric"
+              maxLength={3}
+              value={rt}
+              onChange={(e) => setRt(e.target.value.replace(/\D/g, '').slice(0, 3))}
+              placeholder="Nomor RT (cth: 013)"
+              className="mt-1.5 w-full rounded-xl border border-slate-300/90 bg-white px-3 py-2 text-xs font-mono"
+            />
+          )}
         </div>
 
         <div>
           <label className="block text-[11px] font-semibold text-slate-700 mb-1">RW</label>
-          <input
+          <select
             required
-            type="text"
-            inputMode="numeric"
-            maxLength={3}
-            value={rw}
-            onChange={(e) => setRw(e.target.value.replace(/\D/g, '').slice(0, 3))}
-            placeholder="002"
+            value={rwCustomMode ? LAINNYA_VALUE : rw}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === LAINNYA_VALUE) {
+                setRwCustomMode(true);
+                setRw('');
+              } else {
+                setRwCustomMode(false);
+                setRw(v);
+              }
+            }}
             className="w-full rounded-xl border border-slate-300/90 bg-white px-3 py-2 text-xs font-mono"
-          />
+          >
+            <option value="">-- Pilih RW --</option>
+            {RT_RW_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+            <option value={LAINNYA_VALUE}>Lainnya</option>
+          </select>
+          {rwCustomMode && (
+            <input
+              required
+              type="text"
+              inputMode="numeric"
+              maxLength={3}
+              value={rw}
+              onChange={(e) => setRw(e.target.value.replace(/\D/g, '').slice(0, 3))}
+              placeholder="Nomor RW (cth: 013)"
+              className="mt-1.5 w-full rounded-xl border border-slate-300/90 bg-white px-3 py-2 text-xs font-mono"
+            />
+          )}
         </div>
       </div>
 

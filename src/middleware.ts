@@ -104,9 +104,10 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    const [{ data: extraRoles }, { data: teacherRow }] = await Promise.all([
+    const [{ data: extraRoles }, { data: teacherRow }, { data: guardianRows }] = await Promise.all([
       supabase.from('user_roles').select('role').eq('user_id', user.id),
       supabase.from('teachers_staff').select('id').eq('profile_id', user.id).maybeSingle(),
+      supabase.from('student_guardians').select('id').eq('profile_id', user.id).limit(1),
     ]);
 
     const primaryRole =
@@ -114,6 +115,9 @@ export async function middleware(request: NextRequest) {
     const roleSet = new Set<AppRole>([primaryRole]);
     for (const r of extraRoles || []) {
       if (r.role) roleSet.add(r.role as AppRole);
+    }
+    if ((guardianRows || []).length > 0) {
+      roleSet.add('ORANG_TUA');
     }
 
     if (teacherRow?.id) {

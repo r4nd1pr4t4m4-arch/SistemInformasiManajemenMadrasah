@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   CheckCircle2,
   CreditCard,
@@ -17,6 +18,14 @@ import { PERMISSIONS } from '@/lib/auth/rbac';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { DigitalStudentCard } from '@/components/portal/cards/digital-card-viewer';
 import type { StudentCardData } from '@/lib/cards/card-png-renderer';
+import { StructuredAddressFields } from '@/components/sdm/structured-address-fields';
+import {
+  digitsOnly,
+  NIK_MAX,
+  PHONE_MAX,
+  RELIGION_OPTIONS,
+  COUNT_OPTIONS_1_TO_12,
+} from '@/lib/validation/identity';
 
 type DocumentType =
   | 'KK'
@@ -124,11 +133,14 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
   const [savingBiodata, setSavingBiodata] = useState(false);
   const [uploadingType, setUploadingType] = useState<string | null>(null);
   const [isStaff, setIsStaff] = useState(false);
+  const [isOfficialEditor, setIsOfficialEditor] = useState(false);
   const [studentsList, setStudentsList] = useState<StudentRef[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [studentId, setStudentId] = useState<string | null>(null);
   const [studentRecord, setStudentRecord] = useState<StudentCardData | null>(null);
   const [biodata, setBiodata] = useState(EMPTY_BIODATA);
+  const [isCustomChildOrder, setIsCustomChildOrder] = useState(false);
+  const [isCustomSiblingsCount, setIsCustomSiblingsCount] = useState(false);
   const [documents, setDocuments] = useState<StudentDocument[]>([]);
   const [docNumbers, setDocNumbers] = useState<Record<string, string>>({});
   const [otherTitle, setOtherTitle] = useState('');
@@ -143,12 +155,17 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
       if (!res.ok) throw new Error(data.error || 'Gagal memuat biodata & dokumen.');
 
       setIsStaff(Boolean(data.isStaff));
+      setIsOfficialEditor(Boolean(data.isOfficialEditor));
       setStudentsList(data.studentsList || []);
       const s = data.student;
       if (s) {
         setStudentId(s.id);
         setStudentRecord(s);
         setSelectedStudentId(s.id);
+        const coStr = s.child_order != null ? String(s.child_order) : '';
+        const scStr = s.siblings_count != null ? String(s.siblings_count) : '';
+        setIsCustomChildOrder(Boolean(coStr && !COUNT_OPTIONS_1_TO_12.includes(coStr)));
+        setIsCustomSiblingsCount(Boolean(scStr && !COUNT_OPTIONS_1_TO_12.includes(scStr)));
         setBiodata({
           full_name: s.full_name || '',
           nis: s.nis || '',
@@ -160,8 +177,8 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
           birth_place: s.birth_place || '',
           birth_date: s.birth_date || '',
           religion: s.religion || 'Islam',
-          child_order: s.child_order != null ? String(s.child_order) : '',
-          siblings_count: s.siblings_count != null ? String(s.siblings_count) : '',
+          child_order: coStr,
+          siblings_count: scStr,
           phone: s.phone || '',
           email: s.email || data.profile?.email || '',
           address: s.address || '',
@@ -413,35 +430,69 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
             </h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
               <div className="sm:col-span-2 lg:col-span-1">
-                <label className="block font-semibold text-slate-600 mb-1">Nama Lengkap *</label>
+                <label className="block font-semibold text-slate-600 mb-1">
+                  Nama Lengkap *{' '}
+                  {!isOfficialEditor && (
+                    <Link
+                      href="/portal/akun/profil"
+                      className="text-[10px] text-emerald-700 hover:underline font-normal"
+                    >
+                      (Ubah di Halaman Profil)
+                    </Link>
+                  )}
+                </label>
                 <input
                   required
                   value={biodata.full_name}
+                  disabled={!isOfficialEditor}
                   onChange={(e) => setBiodata({ ...biodata, full_name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
+                  title={
+                    !isOfficialEditor
+                      ? 'Nama lengkap hanya dapat diubah melalui Halaman Profil dengan persetujuan Admin'
+                      : undefined
+                  }
+                  className={`w-full px-3 py-2 rounded-xl border border-slate-300 ${
+                    !isOfficialEditor ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'
+                  }`}
                 />
               </div>
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">NIS</label>
+                <label className="block font-semibold text-slate-600 mb-1">
+                  NIS {!isOfficialEditor && <span className="text-[10px] text-slate-400">(Terkunci)</span>}
+                </label>
                 <input
                   value={biodata.nis}
+                  disabled={!isOfficialEditor}
                   onChange={(e) => setBiodata({ ...biodata, nis: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
+                  title={!isOfficialEditor ? 'NIS hanya dapat diubah oleh Admin/TU' : undefined}
+                  className={`w-full px-3 py-2 rounded-xl border border-slate-300 ${
+                    !isOfficialEditor ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'
+                  }`}
                 />
               </div>
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">NISN</label>
+                <label className="block font-semibold text-slate-600 mb-1">
+                  NISN {!isOfficialEditor && <span className="text-[10px] text-slate-400">(Terkunci)</span>}
+                </label>
                 <input
                   value={biodata.nisn}
+                  disabled={!isOfficialEditor}
                   onChange={(e) => setBiodata({ ...biodata, nisn: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
+                  title={!isOfficialEditor ? 'NISN hanya dapat diubah oleh Admin/TU' : undefined}
+                  className={`w-full px-3 py-2 rounded-xl border border-slate-300 ${
+                    !isOfficialEditor ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'
+                  }`}
                 />
               </div>
               <div>
                 <label className="block font-semibold text-slate-600 mb-1">NIK Siswa</label>
                 <input
                   value={biodata.nik}
-                  onChange={(e) => setBiodata({ ...biodata, nik: e.target.value })}
+                  maxLength={NIK_MAX}
+                  onChange={(e) =>
+                    setBiodata({ ...biodata, nik: digitsOnly(e.target.value, NIK_MAX) })
+                  }
+                  placeholder="16 digit angka"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
                 />
               </div>
@@ -449,7 +500,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                 <label className="block font-semibold text-slate-600 mb-1">Nomor KK</label>
                 <input
                   value={biodata.kk_number}
-                  onChange={(e) => setBiodata({ ...biodata, kk_number: e.target.value })}
+                  maxLength={NIK_MAX}
+                  onChange={(e) =>
+                    setBiodata({ ...biodata, kk_number: digitsOnly(e.target.value, NIK_MAX) })
+                  }
+                  placeholder="16 digit angka"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
                 />
               </div>
@@ -493,47 +548,159 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
               </div>
               <div>
                 <label className="block font-semibold text-slate-600 mb-1">Agama</label>
-                <input
-                  value={biodata.religion}
+                <select
+                  value={biodata.religion || 'Islam'}
                   onChange={(e) => setBiodata({ ...biodata, religion: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                />
+                >
+                  {RELIGION_OPTIONS.map((rel) => (
+                    <option key={rel} value={rel}>
+                      {rel}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block font-semibold text-slate-600 mb-1">Anak Ke-</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={biodata.child_order}
-                  onChange={(e) => setBiodata({ ...biodata, child_order: e.target.value })}
+                <select
+                  value={isCustomChildOrder ? 'OTHER' : (biodata.child_order || '')}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === 'OTHER') {
+                      setIsCustomChildOrder(true);
+                      if (COUNT_OPTIONS_1_TO_12.includes(biodata.child_order)) {
+                        setBiodata({ ...biodata, child_order: '' });
+                      }
+                    } else {
+                      setIsCustomChildOrder(false);
+                      setBiodata({ ...biodata, child_order: v });
+                    }
+                  }}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                />
+                >
+                  <option value="">-- Pilih --</option>
+                  {COUNT_OPTIONS_1_TO_12.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                  <option value="OTHER">Lainnya...</option>
+                </select>
+                {isCustomChildOrder && (
+                  <div className="mt-1.5">
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      placeholder="Masukkan urutan anak..."
+                      value={biodata.child_order}
+                      onChange={(e) => setBiodata({ ...biodata, child_order: e.target.value })}
+                      className="w-full px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs"
+                    />
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block font-semibold text-slate-600 mb-1">Jumlah Saudara</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={biodata.siblings_count}
-                  onChange={(e) => setBiodata({ ...biodata, siblings_count: e.target.value })}
+                <select
+                  value={isCustomSiblingsCount ? 'OTHER' : (biodata.siblings_count || '')}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === 'OTHER') {
+                      setIsCustomSiblingsCount(true);
+                      if (COUNT_OPTIONS_1_TO_12.includes(biodata.siblings_count)) {
+                        setBiodata({ ...biodata, siblings_count: '' });
+                      }
+                    } else {
+                      setIsCustomSiblingsCount(false);
+                      setBiodata({ ...biodata, siblings_count: v });
+                    }
+                  }}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                />
+                >
+                  <option value="">-- Pilih --</option>
+                  {COUNT_OPTIONS_1_TO_12.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                  <option value="OTHER">Lainnya...</option>
+                </select>
+                {isCustomSiblingsCount && (
+                  <div className="mt-1.5">
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      placeholder="Masukkan jumlah saudara..."
+                      value={biodata.siblings_count}
+                      onChange={(e) => setBiodata({ ...biodata, siblings_count: e.target.value })}
+                      className="w-full px-3 py-1.5 rounded-xl border border-slate-300 bg-white text-xs"
+                    />
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Jumlah Saudara tersebut juga termasuk anda.
+                </p>
               </div>
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">No. HP / WhatsApp</label>
+                <label className="block font-semibold text-slate-600 mb-1">
+                  No. HP / WhatsApp{' '}
+                  {!isOfficialEditor && (
+                    <Link
+                      href="/portal/akun/profil"
+                      className="text-[10px] text-emerald-700 hover:underline font-normal"
+                    >
+                      (Ubah di Halaman Profil)
+                    </Link>
+                  )}
+                </label>
                 <input
                   value={biodata.phone}
-                  onChange={(e) => setBiodata({ ...biodata, phone: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
+                  disabled={!isOfficialEditor}
+                  maxLength={PHONE_MAX}
+                  onChange={(e) =>
+                    setBiodata({ ...biodata, phone: digitsOnly(e.target.value, PHONE_MAX) })
+                  }
+                  title={
+                    !isOfficialEditor
+                      ? 'No. HP / WhatsApp hanya dapat diubah melalui Halaman Profil'
+                      : undefined
+                  }
+                  className={`w-full px-3 py-2 rounded-xl border border-slate-300 ${
+                    !isOfficialEditor
+                      ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
+                      : 'bg-white'
+                  }`}
                 />
               </div>
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">Email</label>
+                <label className="block font-semibold text-slate-600 mb-1">
+                  Email{' '}
+                  {!isOfficialEditor && (
+                    <Link
+                      href="/portal/akun/profil"
+                      className="text-[10px] text-emerald-700 hover:underline font-normal"
+                    >
+                      (Ubah di Halaman Profil)
+                    </Link>
+                  )}
+                </label>
                 <input
                   type="email"
                   value={biodata.email}
+                  disabled={!isOfficialEditor}
                   onChange={(e) => setBiodata({ ...biodata, email: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
+                  title={
+                    !isOfficialEditor
+                      ? 'Email hanya dapat diubah melalui Halaman Profil'
+                      : undefined
+                  }
+                  className={`w-full px-3 py-2 rounded-xl border border-slate-300 ${
+                    !isOfficialEditor
+                      ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
+                      : 'bg-white'
+                  }`}
                 />
               </div>
             </div>
@@ -543,57 +710,29 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
             <h2 className="text-sm font-bold text-slate-900 border-b border-slate-200 pb-2">
               2. Alamat Tempat Tinggal &amp; Asal Sekolah
             </h2>
+            <StructuredAddressFields
+              title="Alamat Domisili Siswa"
+              value={{
+                province: biodata.province,
+                city: biodata.city,
+                district: biodata.district,
+                village: biodata.village,
+                rt_rw: biodata.rt_rw,
+                address: biodata.address,
+              }}
+              onChange={(addr) =>
+                setBiodata({
+                  ...biodata,
+                  province: addr.province,
+                  city: addr.city,
+                  district: addr.district,
+                  village: addr.village,
+                  rt_rw: addr.rt_rw,
+                  address: addr.address,
+                })
+              }
+            />
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-              <div className="sm:col-span-2 lg:col-span-3">
-                <label className="block font-semibold text-slate-600 mb-1">Alamat Lengkap (Jalan/Dusun)</label>
-                <textarea
-                  rows={2}
-                  value={biodata.address}
-                  onChange={(e) => setBiodata({ ...biodata, address: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">RT / RW</label>
-                <input
-                  placeholder="001/002"
-                  value={biodata.rt_rw}
-                  onChange={(e) => setBiodata({ ...biodata, rt_rw: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Desa / Kelurahan</label>
-                <input
-                  value={biodata.village}
-                  onChange={(e) => setBiodata({ ...biodata, village: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Kecamatan</label>
-                <input
-                  value={biodata.district}
-                  onChange={(e) => setBiodata({ ...biodata, district: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Kabupaten / Kota</label>
-                <input
-                  value={biodata.city}
-                  onChange={(e) => setBiodata({ ...biodata, city: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">Provinsi</label>
-                <input
-                  value={biodata.province}
-                  onChange={(e) => setBiodata({ ...biodata, province: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
-                />
-              </div>
               <div>
                 <label className="block font-semibold text-slate-600 mb-1">Kode Pos</label>
                 <input
@@ -682,7 +821,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                 <label className="block font-semibold text-slate-600 mb-1">NIK Ayah</label>
                 <input
                   value={biodata.father_nik}
-                  onChange={(e) => setBiodata({ ...biodata, father_nik: e.target.value })}
+                  maxLength={NIK_MAX}
+                  onChange={(e) =>
+                    setBiodata({ ...biodata, father_nik: digitsOnly(e.target.value, NIK_MAX) })
+                  }
+                  placeholder="16 digit angka"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
                 />
               </div>
@@ -698,7 +841,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                 <label className="block font-semibold text-slate-600 mb-1">No. HP Ayah</label>
                 <input
                   value={biodata.father_phone}
-                  onChange={(e) => setBiodata({ ...biodata, father_phone: e.target.value })}
+                  maxLength={PHONE_MAX}
+                  onChange={(e) =>
+                    setBiodata({ ...biodata, father_phone: digitsOnly(e.target.value, PHONE_MAX) })
+                  }
+                  placeholder="Maks. 12 digit"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
                 />
               </div>
@@ -715,7 +862,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                 <label className="block font-semibold text-slate-600 mb-1">NIK Ibu</label>
                 <input
                   value={biodata.mother_nik}
-                  onChange={(e) => setBiodata({ ...biodata, mother_nik: e.target.value })}
+                  maxLength={NIK_MAX}
+                  onChange={(e) =>
+                    setBiodata({ ...biodata, mother_nik: digitsOnly(e.target.value, NIK_MAX) })
+                  }
+                  placeholder="16 digit angka"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
                 />
               </div>
@@ -731,7 +882,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                 <label className="block font-semibold text-slate-600 mb-1">No. HP Ibu</label>
                 <input
                   value={biodata.mother_phone}
-                  onChange={(e) => setBiodata({ ...biodata, mother_phone: e.target.value })}
+                  maxLength={PHONE_MAX}
+                  onChange={(e) =>
+                    setBiodata({ ...biodata, mother_phone: digitsOnly(e.target.value, PHONE_MAX) })
+                  }
+                  placeholder="Maks. 12 digit"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
                 />
               </div>
@@ -748,7 +903,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                 <label className="block font-semibold text-slate-600 mb-1">NIK Wali</label>
                 <input
                   value={biodata.guardian_nik}
-                  onChange={(e) => setBiodata({ ...biodata, guardian_nik: e.target.value })}
+                  maxLength={NIK_MAX}
+                  onChange={(e) =>
+                    setBiodata({ ...biodata, guardian_nik: digitsOnly(e.target.value, NIK_MAX) })
+                  }
+                  placeholder="16 digit angka"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
                 />
               </div>
@@ -764,7 +923,14 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                 <label className="block font-semibold text-slate-600 mb-1">No. HP Wali</label>
                 <input
                   value={biodata.guardian_phone}
-                  onChange={(e) => setBiodata({ ...biodata, guardian_phone: e.target.value })}
+                  maxLength={PHONE_MAX}
+                  onChange={(e) =>
+                    setBiodata({
+                      ...biodata,
+                      guardian_phone: digitsOnly(e.target.value, PHONE_MAX),
+                    })
+                  }
+                  placeholder="Maks. 12 digit"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
                 />
               </div>

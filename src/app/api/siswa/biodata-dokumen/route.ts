@@ -4,6 +4,13 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import type { AuthenticatedSession } from '@/lib/auth/session';
 import type { AppRole } from '@/types/database';
+import { isR2Configured } from '@/lib/storage/r2';
+import {
+  syncBasicProfileFields,
+  syncStudentDocToGuardians,
+  syncStudentToGuardians,
+} from '@/lib/sdm/sync';
+import { nikSchema, kkSchema, phoneSchema } from '@/lib/validation/identity';
 
 const STAFF_ROLES: AppRole[] = [
   'SUPERADMIN',
@@ -66,16 +73,16 @@ const BiodataSchema = z.object({
   full_name: z.string().min(2),
   nis: z.string().optional().nullable(),
   nisn: z.string().optional().nullable(),
-  nik: z.string().optional().nullable(),
-  kk_number: z.string().optional().nullable(),
+  nik: nikSchema,
+  kk_number: kkSchema,
   birth_certificate_number: z.string().optional().nullable(),
   gender: z.enum(['L', 'P']).optional().nullable(),
   birth_place: z.string().optional().nullable(),
   birth_date: z.string().optional().nullable(),
   religion: z.string().optional().nullable(),
-  child_order: z.coerce.number().int().min(1).max(30).optional().nullable(),
-  siblings_count: z.coerce.number().int().min(0).max(30).optional().nullable(),
-  phone: z.string().optional().nullable(),
+  child_order: z.coerce.number().int().min(1).max(99).optional().nullable(),
+  siblings_count: z.coerce.number().int().min(0).max(99).optional().nullable(),
+  phone: phoneSchema,
   email: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
   rt_rw: z.string().optional().nullable(),
@@ -91,17 +98,17 @@ const BiodataSchema = z.object({
   kks_number: z.string().optional().nullable(),
   pkh_number: z.string().optional().nullable(),
   father_name: z.string().optional().nullable(),
-  father_nik: z.string().optional().nullable(),
+  father_nik: nikSchema,
   father_job: z.string().optional().nullable(),
-  father_phone: z.string().optional().nullable(),
+  father_phone: phoneSchema,
   mother_name: z.string().optional().nullable(),
-  mother_nik: z.string().optional().nullable(),
+  mother_nik: nikSchema,
   mother_job: z.string().optional().nullable(),
-  mother_phone: z.string().optional().nullable(),
+  mother_phone: phoneSchema,
   guardian_name: z.string().optional().nullable(),
-  guardian_nik: z.string().optional().nullable(),
+  guardian_nik: nikSchema,
   guardian_job: z.string().optional().nullable(),
-  guardian_phone: z.string().optional().nullable(),
+  guardian_phone: phoneSchema,
 });
 
 const DocumentSaveSchema = z.object({
@@ -226,6 +233,7 @@ export async function GET(request: NextRequest) {
     student,
     documents,
     isStaff: isStaff || Boolean(scopedStudentIds && scopedStudentIds.length > 0),
+    isOfficialEditor: isStaff,
     studentsList,
     profile: {
       id: session.userId,
@@ -253,10 +261,18 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { student_id, ...fields } = parsed.data;
+    const { student_id, ...rawFields } = parsed.data;
     const supabase = createSupabaseAdminClient();
     const session = guard.session;
+    const isStaff = session.roles.some((r) => STAFF_ROLES.includes(r));
     const existing = await resolveTargetStudent(supabase, session, student_id);
+
+    const fields = isStaff
+      ? rawFields
+      : (() => {
+        const { nis: _nis, nisn: _nisn, phone: _phone, email: _email, full_name: _fn, ...allowed } = rawFields;
+        return allowed;
+      })();
 
     if (existing) {
       const { data, error } = await supabase
@@ -269,7 +285,30 @@ export async function PATCH(request: NextRequest) {
         .select('*')
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+      await Promise.all([
+        isStaff && data.full_name
+          ? syncBasicProfileFields(supabase, data.profile_id, {
+              full_name: data.full_name,
+              phone: data.phone,
+            })
+          : syncBasicProfileFields(supabase, data.profile_id, {
+              phone: data.phone,
+            }),
+        syncStudentToGuardians(supabase, data.id, fields),
+      ]);
+
       return NextResponse.json({ student: data });
+    }
+
+    if (!isStaff) {
+      return NextResponse.json(
+        {
+          error:
+            'Data siswa belum tertaut dengan akun Anda. Hubungi Admin/TU untuk menautkan akun ke Buku Induk.',
+        },
+        { status: 404 }
+      );
     }
 
     const { data, error } = await supabase
@@ -277,7 +316,7 @@ export async function PATCH(request: NextRequest) {
       .insert({
         ...fields,
         profile_id: session.userId,
-        email: fields.email || session.email,
+        email: rawFields.email || session.email,
         status: 'AKTIF',
       })
       .select('*')
@@ -350,6 +389,18 @@ export async function POST(request: NextRequest) {
           .select('*')
           .single();
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        await syncStudentDocToGuardians(supabase, {
+          studentId: student.id,
+          documentType: parsed.data.document_type,
+          documentTitle: parsed.data.document_title || null,
+          documentNumber: parsed.data.document_number || null,
+          fileName: parsed.data.file_name,
+          fileUrl: parsed.data.file_url,
+          objectKey: parsed.data.object_key || null,
+          mimeType: parsed.data.mime_type || null,
+          fileSize: parsed.data.file_size || null,
+          uploadedBy: session.userId,
+        });
         return NextResponse.json({ document: data });
       }
     }
@@ -360,6 +411,18 @@ export async function POST(request: NextRequest) {
       .select('*')
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await syncStudentDocToGuardians(supabase, {
+      studentId: student.id,
+      documentType: parsed.data.document_type,
+      documentTitle: parsed.data.document_title || null,
+      documentNumber: parsed.data.document_number || null,
+      fileName: parsed.data.file_name,
+      fileUrl: parsed.data.file_url,
+      objectKey: parsed.data.object_key || null,
+      mimeType: parsed.data.mime_type || null,
+      fileSize: parsed.data.file_size || null,
+      uploadedBy: session.userId,
+    });
     return NextResponse.json({ document: data }, { status: 201 });
   } catch {
     return NextResponse.json({ error: 'Gagal menyimpan dokumen siswa.' }, { status: 500 });
@@ -383,10 +446,16 @@ export async function DELETE(request: NextRequest) {
   const session = guard.session;
   const isStaff = session.roles.some((r) => STAFF_ROLES.includes(r));
 
+  const { data: targetDoc } = await supabase
+    .from('student_documents')
+    .select('id, student_id, object_key')
+    .eq('id', id)
+    .maybeSingle();
+
   if (!isStaff) {
     const student = await resolveTargetStudent(supabase, session);
-    if (!student) {
-      return NextResponse.json({ error: 'Data siswa tidak ditemukan.' }, { status: 404 });
+    if (!student || !targetDoc || targetDoc.student_id !== student.id) {
+      return NextResponse.json({ error: 'Data siswa atau dokumen tidak ditemukan.' }, { status: 404 });
     }
     const { error } = await supabase
       .from('student_documents')
@@ -394,10 +463,25 @@ export async function DELETE(request: NextRequest) {
       .eq('id', id)
       .eq('student_id', student.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true });
+  } else {
+    const { error } = await supabase.from('student_documents').delete().eq('id', id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const { error } = await supabase.from('student_documents').delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (targetDoc?.object_key) {
+    const [{ count: sdmRefCount }, { count: studentRefCount }] = await Promise.all([
+      supabase
+        .from('sdm_documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('object_key', targetDoc.object_key),
+      supabase
+        .from('student_documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('object_key', targetDoc.object_key),
+    ]);
+    if ((sdmRefCount || 0) === 0 && (studentRefCount || 0) === 0 && !isR2Configured()) {
+      await supabase.storage.from('student-documents').remove([targetDoc.object_key]);
+    }
+  }
   return NextResponse.json({ ok: true });
 }

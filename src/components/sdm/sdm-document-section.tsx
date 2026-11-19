@@ -38,6 +38,7 @@ export function SdmDocumentSection({
   documents,
   onRefresh,
   supportsVerification = false,
+  allowSelfManage = false,
 }: {
   entityType: 'GTK' | 'ORANG_TUA' | 'SISWA' | 'ALUMNI';
   entityId: string;
@@ -45,9 +46,10 @@ export function SdmDocumentSection({
   documents: SdmDocumentItem[];
   onRefresh: () => Promise<void>;
   supportsVerification?: boolean;
+  allowSelfManage?: boolean;
 }) {
   const { hasPermission } = usePortalSession();
-  const canManage = hasPermission(PERMISSIONS.SDM_MANAGE);
+  const canManage = hasPermission(PERMISSIONS.SDM_MANAGE) || allowSelfManage;
   const [docType, setDocType] = useState(documentOptions[0]?.value || 'LAINNYA');
   const [docTitle, setDocTitle] = useState('');
   const [docNumber, setDocNumber] = useState('');

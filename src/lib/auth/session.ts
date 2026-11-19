@@ -52,15 +52,19 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
       return null;
     }
 
-    const [{ data: extraRoles }, { data: teacherRow }] = await Promise.all([
+    const [{ data: extraRoles }, { data: teacherRow }, { data: guardianRows }] = await Promise.all([
       db.from('user_roles').select('role').eq('user_id', user.id),
       db.from('teachers_staff').select('id').eq('profile_id', user.id).maybeSingle(),
+      db.from('student_guardians').select('id').eq('profile_id', user.id).limit(1),
     ]);
 
     const primaryRole = (profile?.primary_role as AppRole) || 'UMUM';
     const rolesSet = new Set<AppRole>([primaryRole]);
     for (const row of extraRoles || []) {
       rolesSet.add(row.role as AppRole);
+    }
+    if ((guardianRows || []).length > 0) {
+      rolesSet.add('ORANG_TUA');
     }
 
     let teacherAssignments: TeacherOperationalAssignments | null = null;

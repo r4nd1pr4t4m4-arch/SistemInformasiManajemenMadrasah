@@ -514,6 +514,37 @@ export const PERMISSIONS = {
     'STAF_TU',
   ] as AppRole[],
 
+  // Portal GTK & Orang Tua (Self-Service)
+  GTK_BIODATA_VIEW: [
+    'GURU',
+    'WALI_KELAS',
+    'GURU_WALI',
+    'GURU_BK',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'WAKA_HUMAS',
+    'WAKA_SARPRAS',
+    'KEPALA_LEMBAGA',
+    'KEPALA_TU',
+    'STAF_TU',
+    'BENDAHARA',
+    'BENDAHARA_KOMITE',
+    'PENGELOLA_TABUNGAN',
+    'PUSTAKAWAN',
+    'PEMBINA_OSIM',
+    'PEMBINA_EKSTRAKURIKULER',
+    'OPERATOR',
+    'SUPERADMIN',
+  ] as AppRole[],
+  ORTU_BIODATA_VIEW: [
+    'ORANG_TUA',
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'KEPALA_TU',
+    'STAF_TU',
+  ] as AppRole[],
+
   // Manajemen Pengguna
   USER_MANAGEMENT_VIEW: [
     'SUPERADMIN',
@@ -580,6 +611,10 @@ const PREFIX_ROUTE_RULES: Array<[string, AppRole[]]> = [
   ['/portal/layanan', PERMISSIONS.PERPUSTAKAAN_VIEW],
   ['/portal/siswa/biodata-dokumen', PERMISSIONS.SISWA_BIODATA_VIEW],
   ['/portal/siswa', PERMISSIONS.SISWA_BIODATA_VIEW],
+  ['/portal/gtk/biodata-dokumen', PERMISSIONS.GTK_BIODATA_VIEW],
+  ['/portal/gtk', PERMISSIONS.GTK_BIODATA_VIEW],
+  ['/portal/orang-tua/biodata-dokumen', PERMISSIONS.ORTU_BIODATA_VIEW],
+  ['/portal/orang-tua', PERMISSIONS.ORTU_BIODATA_VIEW],
 ];
 
 export function canAccessPortalPath(pathname: string, userRoles: readonly AppRole[]): boolean {
