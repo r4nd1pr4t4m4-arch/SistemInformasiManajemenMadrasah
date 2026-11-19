@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
+  Download,
   Edit3,
   Loader2,
   Plus,
@@ -15,6 +16,8 @@ import { formatRupiah } from '@/lib/domain/honorarium';
 import { isSiblingDiscountCategory } from '@/lib/domain/sibling-discount';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
+import { SppSlipModal } from './spp-slip-modal';
+import type { SppSlipData } from '@/lib/cards/spp-slip-png';
 
 interface StudentOption {
   id: string;
@@ -81,6 +84,7 @@ export function SppWorkspace({ section }: { section: SppSection }) {
   const [feeTypes, setFeeTypes] = useState<FeeTypeRow[]>([]);
   const [bills, setBills] = useState<BillRow[]>([]);
   const [siblingGroups, setSiblingGroups] = useState<SiblingGroupRow[]>([]);
+  const [activeSppSlip, setActiveSppSlip] = useState<SppSlipData | null>(null);
 
   const [feeForm, setFeeForm] = useState({
     name: '',
@@ -564,15 +568,42 @@ export function SppWorkspace({ section }: { section: SppSection }) {
                     </p>
                     {b.notes && <p className="text-[11px] text-slate-400 mt-0.5">{b.notes}</p>}
                   </div>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full font-bold shrink-0 ${
-                      b.status === 'LUNAS'
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'bg-amber-50 text-amber-700'
-                    }`}
-                  >
-                    {b.status}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full font-bold shrink-0 ${
+                        b.status === 'LUNAS'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : 'bg-amber-50 text-amber-700'
+                      }`}
+                    >
+                      {b.status}
+                    </span>
+                    {(Number(b.paid_amount) > 0 || b.status === 'LUNAS' || b.is_sibling_exempt) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveSppSlip({
+                            billId: b.id,
+                            studentName: b.student?.full_name || 'Siswa',
+                            studentNis: b.student?.nis || null,
+                            feeName: b.fee_type?.name || 'SPP / Iuran',
+                            feeCategory: b.fee_type?.category || null,
+                            amount: Number(b.amount) || 0,
+                            originalAmount: b.original_amount ?? null,
+                            discountAmount: b.discount_amount ?? null,
+                            isSiblingExempt: Boolean(b.is_sibling_exempt),
+                            paidAmount: Number(b.paid_amount) || 0,
+                            status: b.status,
+                            notes: b.notes || null,
+                          })
+                        }
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                        title="Lihat & Unduh Slip PNG"
+                      >
+                        <Download className="w-3 h-3" /> PNG
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -988,6 +1019,10 @@ export function SppWorkspace({ section }: { section: SppSection }) {
             </form>
           </div>
         </div>
+      )}
+
+      {activeSppSlip && (
+        <SppSlipModal slip={activeSppSlip} onClose={() => setActiveSppSlip(null)} />
       )}
     </div>
   );

@@ -22,6 +22,8 @@ import {
 import { formatRupiah } from '@/lib/domain/honorarium';
 import { SavingsSlipModal } from '@/components/portal/keuangan/savings-slip-modal';
 import type { SavingsSlipData } from '@/lib/cards/savings-slip-png';
+import { SppSlipModal } from '@/components/portal/keuangan/spp-slip-modal';
+import type { SppSlipData } from '@/lib/cards/spp-slip-png';
 
 export type PersonalScope = 'siswa' | 'orang-tua' | 'gtk' | 'umum';
 export type PersonalSection =
@@ -198,6 +200,7 @@ export function PersonalWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeSlip, setActiveSlip] = useState<SavingsSlipData | null>(null);
+  const [activeSppSlip, setActiveSppSlip] = useState<SppSlipData | null>(null);
 
   const todayDay = getTodayIsoDay();
 
@@ -905,40 +908,77 @@ export function PersonalWorkspace({
                           <th className="py-2.5 px-3 text-right">Nominal Tagihan</th>
                           <th className="py-2.5 px-3 text-right">Sudah Dibayar</th>
                           <th className="py-2.5 px-3 text-center">Status</th>
+                          <th className="py-2.5 px-3 text-center">Slip</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {data.bills.map((b) => (
-                          <tr key={b.id}>
-                            <td className="py-2.5 px-3 font-semibold text-slate-900">
-                              {b.title || b.fee_type?.name || 'Tagihan'}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-600">
-                              {b.billing_month && b.billing_year
-                                ? `${b.billing_month}/${b.billing_year}`
-                                : '-'}
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-bold">
-                              {formatRupiah(Number(b.amount) || 0)}
-                            </td>
-                            <td className="py-2.5 px-3 text-right text-emerald-700 font-semibold">
-                              {formatRupiah(Number(b.paid_amount) || 0)}
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <span
-                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                                  b.status === 'LUNAS'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : b.status === 'CICILAN'
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-rose-100 text-rose-800'
-                                }`}
-                              >
-                                {b.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {data.bills.map((b) => {
+                          const canDownloadSlip =
+                            Number(b.paid_amount) > 0 || b.status === 'LUNAS';
+                          const relatedPay = data.payments.find((p) => p.bill_id === b.id);
+                          return (
+                            <tr key={b.id}>
+                              <td className="py-2.5 px-3 font-semibold text-slate-900">
+                                {b.title || b.fee_type?.name || 'Tagihan'}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-600">
+                                {b.billing_month && b.billing_year
+                                  ? `${b.billing_month}/${b.billing_year}`
+                                  : '-'}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-bold">
+                                {formatRupiah(Number(b.amount) || 0)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-emerald-700 font-semibold">
+                                {formatRupiah(Number(b.paid_amount) || 0)}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                    b.status === 'LUNAS'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : b.status === 'CICILAN'
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-rose-100 text-rose-800'
+                                  }`}
+                                >
+                                  {b.status}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                {canDownloadSlip ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setActiveSppSlip({
+                                        billId: b.id,
+                                        referenceNumber: relatedPay?.reference_number || null,
+                                        studentName: data.student?.full_name || data.profile.fullName,
+                                        studentNis: data.student?.nis || null,
+                                        feeName: b.title || b.fee_type?.name || 'SPP / Iuran Komite',
+                                        periodLabel:
+                                          b.billing_month && b.billing_year
+                                            ? `${b.billing_month}/${b.billing_year}`
+                                            : null,
+                                        amount: Number(b.amount) || 0,
+                                        paidAmount: Number(b.paid_amount) || 0,
+                                        status: b.status,
+                                        paymentDate: relatedPay?.payment_date || null,
+                                        paymentMethod: relatedPay?.payment_method || null,
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                                    title="Lihat & Unduh Slip PNG"
+                                  >
+                                    <Download className="w-3 h-3" /> PNG
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400">-</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1073,6 +1113,9 @@ export function PersonalWorkspace({
 
       {activeSlip && (
         <SavingsSlipModal slip={activeSlip} onClose={() => setActiveSlip(null)} />
+      )}
+      {activeSppSlip && (
+        <SppSlipModal slip={activeSppSlip} onClose={() => setActiveSppSlip(null)} />
       )}
     </div>
   );
