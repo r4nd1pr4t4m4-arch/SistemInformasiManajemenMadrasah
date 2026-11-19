@@ -271,6 +271,31 @@ export const PERMISSIONS = {
     'KEPALA_LEMBAGA',
     'WAKA_KURIKULUM',
     'WAKA_KESISWAAN',
+    'WAKA_HUMAS',
+    'WAKA_SARPRAS',
+    'KEPALA_TU',
+    'STAF_TU',
+    'GURU',
+    'WALI_KELAS',
+    'GURU_WALI',
+    'GURU_BK',
+    'BENDAHARA',
+    'BENDAHARA_KOMITE',
+    'PENGELOLA_TABUNGAN',
+    'PUSTAKAWAN',
+    'PEMBINA_OSIM',
+    'PEMBINA_EKSTRAKURIKULER',
+    'SISWA',
+    'ORANG_TUA',
+    'ALUMNI',
+    'UMUM',
+  ] as AppRole[],
+  KALENDER_LOG_JTM_VIEW: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
     'KEPALA_TU',
     'STAF_TU',
     'GURU',
@@ -417,12 +442,25 @@ export const PERMISSIONS = {
     'SUPERADMIN',
     'OPERATOR',
     'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'WAKA_HUMAS',
+    'WAKA_SARPRAS',
     'PUSTAKAWAN',
     'GURU',
     'WALI_KELAS',
+    'GURU_WALI',
+    'GURU_BK',
+    'BENDAHARA',
+    'BENDAHARA_KOMITE',
+    'PENGELOLA_TABUNGAN',
+    'PEMBINA_OSIM',
+    'PEMBINA_EKSTRAKURIKULER',
     'STAF_TU',
     'KEPALA_TU',
     'SISWA',
+    'ORANG_TUA',
+    'ALUMNI',
     'UMUM',
   ] as AppRole[],
   PERPUSTAKAAN_MANAGE: [
@@ -557,6 +595,19 @@ export const PERMISSIONS = {
     'OPERATOR',
     'KEPALA_TU',
   ] as AppRole[],
+
+  // Piket Kelas Siswa (Wali Kelas, Guru, Staff)
+  PIKET_KELAS_MANAGE: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+    'WALI_KELAS',
+    'GURU',
+  ] as AppRole[],
 };
 
 export function hasRolePermission(
@@ -571,6 +622,8 @@ const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
   '/portal/akademik/buku-induk/siswa': PERMISSIONS.BUKU_INDUK_SISWA_VIEW,
   '/portal/akademik/buku-induk/gtk': PERMISSIONS.BUKU_INDUK_GTK_VIEW,
   '/portal/akademik/buku-induk/penempatan-akun': PERMISSIONS.BUKU_INDUK_MANAGE,
+  '/portal/akademik/kelas-jadwal/piket-kelas': PERMISSIONS.PIKET_KELAS_MANAGE,
+  '/portal/akademik/kalender/log-jtm': PERMISSIONS.KALENDER_LOG_JTM_VIEW,
   '/portal/sdm/gtk': PERMISSIONS.SDM_GTK_VIEW,
   '/portal/sdm/siswa': PERMISSIONS.SDM_SISWA_VIEW,
   '/portal/sdm/orang-tua': PERMISSIONS.SDM_ORTU_VIEW,
@@ -624,6 +677,7 @@ export function canAccessPortalPath(pathname: string, userRoles: readonly AppRol
 
   if (
     normalized === '/portal' ||
+    normalized === '/portal/tabungan-saya' ||
     normalized === '/portal/akun' ||
     normalized === '/portal/akun/profil' ||
     normalized === '/portal/akun/kata-sandi' ||
