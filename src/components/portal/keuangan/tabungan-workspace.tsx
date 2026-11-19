@@ -658,11 +658,18 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                     </span>
                   </div>
 
-                  <div className="flex justify-between py-1 border-b border-amber-200/70 text-rose-700">
+                  <div className="flex justify-between items-start py-1 border-b border-amber-200/70 text-rose-700">
                     <span>Potongan Fee Transaksi:</span>
-                    <strong className="text-rose-700">
-                      - {formatRupiah(realTimeFeeCalc.feeAmount)}
-                    </strong>
+                    <div className="text-right">
+                      <strong className="text-rose-700 block">
+                        - {formatRupiah(realTimeFeeCalc.feeAmount)}
+                      </strong>
+                      {realTimeFeeCalc.rawFeeAmount !== realTimeFeeCalc.feeAmount && (
+                        <span className="text-[10px] text-amber-800 block">
+                          (Dibulatkan dari {formatRupiah(realTimeFeeCalc.rawFeeAmount)})
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="pt-2">
@@ -675,10 +682,15 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                   </div>
                 </div>
 
-                <div className="rounded-2xl bg-white/80 border border-amber-200 p-3 text-[11px] text-amber-900 leading-relaxed">
-                  💡 <strong>Ketentuan Fee:</strong> Nominal fee langsung mengurangi nominal uang tunai
-                  yang diserahkan ke pemilik tabungan. Saldo rekening tetap berkurang sebesar nominal penarikan penuh (
-                  <strong>{formatRupiah(realTimeFeeCalc.amount)}</strong>).
+                <div className="rounded-2xl bg-white/80 border border-amber-200 p-3 text-[11px] text-amber-900 leading-relaxed space-y-1">
+                  <p>
+                    💡 <strong>Ketentuan Fee:</strong> Nominal fee langsung mengurangi nominal uang tunai
+                    yang diserahkan ke pemilik tabungan. Saldo rekening tetap berkurang sebesar nominal penarikan penuh (
+                    <strong>{formatRupiah(realTimeFeeCalc.amount)}</strong>).
+                  </p>
+                  <p className="text-amber-800">
+                    <strong>Aturan Pembulatan Fee:</strong> Ratusan &lt; 330 → 000 | 330–660 → 500 | &gt; 660 → 1.000.
+                  </p>
                 </div>
               </div>
             )}
@@ -1257,11 +1269,17 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
               </div>
 
               <div className="p-3 bg-white rounded-2xl border border-slate-200">
-                <p className="text-[10px] text-slate-500 uppercase font-semibold">Potongan Fee:</p>
+                <p className="text-[10px] text-slate-500 uppercase font-semibold">Potongan Fee (Setelah Pembulatan):</p>
                 <p className="font-bold text-rose-600 text-sm mt-0.5">
                   - {formatRupiah(simFeeCalc.feeAmount)}
                 </p>
-                <p className="text-[10px] text-slate-400">Masuk ke kas madrasah</p>
+                {simFeeCalc.rawFeeAmount !== simFeeCalc.feeAmount ? (
+                  <p className="text-[10px] text-amber-700 font-medium">
+                    Fee murni: {formatRupiah(simFeeCalc.rawFeeAmount)}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-slate-400">Masuk ke kas madrasah</p>
+                )}
               </div>
 
               <div className="p-3 bg-white rounded-2xl border border-emerald-200 bg-emerald-50/50">
@@ -1271,6 +1289,15 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                 </p>
                 <p className="text-[10px] text-emerald-600">Diterima bersih tunai</p>
               </div>
+            </div>
+
+            <div className="rounded-2xl bg-white/90 border border-emerald-200 p-4 text-xs text-slate-700 space-y-1.5">
+              <p className="font-bold text-emerald-900">Aturan Pembulatan Nominal Fee:</p>
+              <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-slate-600">
+                <li>Jika nominal ratusannya <strong>kurang dari 330</strong>, dibulatkan menjadi <strong>000</strong> (contoh: Rp 2.300 → Rp 2.000).</li>
+                <li>Jika nominal ratusannya <strong>antara 330 hingga 660</strong>, dibulatkan menjadi <strong>500</strong> (contoh: Rp 2.560 → Rp 2.500).</li>
+                <li>Jika nominal ratusannya <strong>lebih dari 660</strong>, dibulatkan menjadi <strong>1.000</strong> (contoh: Rp 2.870 → Rp 3.000).</li>
+              </ul>
             </div>
           </div>
         </div>

@@ -13,9 +13,36 @@ export interface SavingsFeeTier {
 export interface WithdrawalFeeCalculation {
   amount: number;
   feePercentage: number;
-  feeAmount: number;
+  rawFeeAmount: number; // nominal fee murni sebelum pembulatan
+  feeAmount: number; // nominal fee setelah pembulatan
   netAmount: number; // nominal uang yang diterima pemilik tabungan
   matchedTier: SavingsFeeTier | null;
+}
+
+/**
+ * Aturan Pembulatan Nominal Fee Penarikan Tabungan:
+ * 1. Jika nominal ratusannya kurang dari 330, maka dibulatkan menjadi 000 (ribuan bawah).
+ * 2. Jika nominal ratusannya antara 330 hingga 660, maka dibulatkan menjadi 500 (tengah).
+ * 3. Jika nominal ratusannya lebih dari 660, maka dibulatkan menjadi 1000 (ribuan atas).
+ *
+ * Contoh:
+ * - 2.300 -> ratusan 300 (< 330) -> dibulatkan menjadi 2.000
+ * - 2.560 -> ratusan 560 (330 s/d 660) -> dibulatkan menjadi 2.500
+ * - 2.870 -> ratusan 870 (> 660) -> dibulatkan menjadi 3.000
+ */
+export function roundSavingsFee(rawFee: number): number {
+  if (!rawFee || rawFee <= 0) return 0;
+
+  const baseThousands = Math.floor(rawFee / 1000) * 1000;
+  const remainder = rawFee - baseThousands;
+
+  if (remainder < 330) {
+    return baseThousands;
+  } else if (remainder <= 660) {
+    return baseThousands + 500;
+  } else {
+    return baseThousands + 1000;
+  }
 }
 
 /**
@@ -96,6 +123,7 @@ export function calculateWithdrawalFee(
     return {
       amount: 0,
       feePercentage: 0,
+      rawFeeAmount: 0,
       feeAmount: 0,
       netAmount: 0,
       matchedTier: null,
@@ -110,6 +138,7 @@ export function calculateWithdrawalFee(
     return {
       amount,
       feePercentage: 0,
+      rawFeeAmount: 0,
       feeAmount: 0,
       netAmount: amount,
       matchedTier: null,
@@ -147,12 +176,14 @@ export function calculateWithdrawalFee(
   }
 
   const feePercentage = matched ? Number(matched.fee_percentage) || 0 : 0;
-  const feeAmount = Math.round((amount * feePercentage) / 100);
+  const rawFee = (amount * feePercentage) / 100;
+  const feeAmount = roundSavingsFee(rawFee);
   const netAmount = Math.max(0, amount - feeAmount);
 
   return {
     amount,
     feePercentage,
+    rawFeeAmount: Math.round(rawFee),
     feeAmount,
     netAmount,
     matchedTier: matched,
