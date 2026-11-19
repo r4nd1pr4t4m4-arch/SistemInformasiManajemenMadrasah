@@ -20,6 +20,7 @@ const PUBLIC_NAV_LINKS = [
   { href: '/galeri', label: 'Galeri' },
   { href: '/direktori', label: 'Direktori' },
   { href: '/e-library', label: 'E-Library' },
+  { href: '/verifikasi', label: 'Verifikasi' },
   { href: '/ppdb', label: 'PPDB Online' },
   { href: '/kontak', label: 'Kontak & FAQ' },
 ];

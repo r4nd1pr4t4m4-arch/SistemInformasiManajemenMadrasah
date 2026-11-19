@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { buildVerificationUrl } from '@/lib/verification/document-verify';
 
 export interface CardInstitutionInfo {
   name: string;
@@ -241,7 +242,10 @@ export async function renderStudentCardFrontCanvas(
     loadImageSafe(institution.logo_url),
     loadImageSafe(student.photo_url),
     generateQrImage(
-      `SIMMS:STUDENT:${student.qr_token || student.id}:${student.nisn || student.nis || '-'}`
+      buildVerificationUrl({
+        ref: student.qr_token || student.nisn || student.nis || student.id,
+        type: 'KARTU_SISWA',
+      })
     ),
   ]);
 
@@ -449,7 +453,10 @@ export async function renderStudentCardBackCanvas(
   const ctx = canvas.getContext('2d')!;
 
   const qrImg = await generateQrImage(
-    `SIMMS:STUDENT:${student.qr_token || student.id}:${student.nisn || student.nis || '-'}`
+    buildVerificationUrl({
+      ref: student.qr_token || student.nisn || student.nis || student.id,
+      type: 'KARTU_SISWA',
+    })
   );
 
   drawCardShell(ctx, CARD_WIDTH, CARD_HEIGHT, '#ffffff');
@@ -556,7 +563,12 @@ export async function renderLibraryCardFrontCanvas(
 
   const [logoImg, qrImg] = await Promise.all([
     loadImageSafe(institution.logo_url),
-    generateQrImage(`SIMMS:LIBRARY:${member.member_code}:${member.id}`),
+    generateQrImage(
+      buildVerificationUrl({
+        ref: member.member_code,
+        type: 'KARTU_PERPUSTAKAAN',
+      })
+    ),
   ]);
 
   drawCardShell(ctx, CARD_WIDTH, CARD_HEIGHT, '#f8fafc');
@@ -735,7 +747,12 @@ export async function renderLibraryCardBackCanvas(
   canvas.height = CARD_HEIGHT;
   const ctx = canvas.getContext('2d')!;
 
-  const qrImg = await generateQrImage(`SIMMS:LIBRARY:${member.member_code}:${member.id}`);
+  const qrImg = await generateQrImage(
+    buildVerificationUrl({
+      ref: member.member_code,
+      type: 'KARTU_PERPUSTAKAAN',
+    })
+  );
 
   drawCardShell(ctx, CARD_WIDTH, CARD_HEIGHT, '#ffffff');
   drawDecorativePattern(ctx, '#0284c7', CARD_WIDTH, CARD_HEIGHT);

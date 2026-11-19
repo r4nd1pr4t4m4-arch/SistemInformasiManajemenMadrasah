@@ -2,6 +2,7 @@ import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
 import { formatRupiah } from '@/lib/domain/honorarium';
 import { downloadCanvasAsPng } from './card-png-renderer';
+import { buildVerificationUrl } from '@/lib/verification/document-verify';
 
 export interface HonorariumDutyItem {
   id?: string;
@@ -345,7 +346,10 @@ export async function renderHonorariumSlipCanvas(
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const qrPayload = `SIMMS-HONOR|${refCode}|${data.teacherName}|${data.periodMonth}/${data.periodYear}|${data.totalAmount}|${data.status}`;
+  const qrPayload = buildVerificationUrl({
+    ref: refCode,
+    type: 'HONORARIUM',
+  });
   const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 140, margin: 1 });
   const qrImg = new Image();
   await new Promise<void>((resolve, reject) => {

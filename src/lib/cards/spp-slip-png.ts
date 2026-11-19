@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
 import { formatRupiah } from '@/lib/domain/honorarium';
 import { downloadCanvasAsPng } from './card-png-renderer';
+import { buildVerificationUrl } from '@/lib/verification/document-verify';
 
 export interface SppSlipData {
   billId: string;
@@ -275,7 +276,10 @@ export async function renderSppSlipCanvas(
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const qrPayload = `SIMMS-SPP|${refCode}|${data.studentName}|${data.feeName}|${data.paidAmount}|${data.status}`;
+  const qrPayload = buildVerificationUrl({
+    ref: refCode,
+    type: 'SPP',
+  });
   const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 140, margin: 1 });
   const qrImg = new Image();
   await new Promise<void>((resolve, reject) => {

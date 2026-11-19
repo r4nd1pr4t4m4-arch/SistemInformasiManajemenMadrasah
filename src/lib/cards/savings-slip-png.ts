@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
 import { formatRupiah } from '@/lib/domain/honorarium';
 import { downloadCanvasAsPng } from './card-png-renderer';
+import { buildVerificationUrl } from '@/lib/verification/document-verify';
 
 export interface SavingsSlipData {
   referenceNumber: string;
@@ -268,7 +269,10 @@ export async function renderSavingsSlipCanvas(
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const qrPayload = `SIMMS-TABUNGAN|${data.referenceNumber}|${data.accountNumber}|${data.transactionType}|${data.amount}`;
+  const qrPayload = buildVerificationUrl({
+    ref: data.referenceNumber,
+    type: 'TABUNGAN',
+  });
   const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 140, margin: 1 });
   const qrImg = new Image();
   await new Promise<void>((resolve, reject) => {

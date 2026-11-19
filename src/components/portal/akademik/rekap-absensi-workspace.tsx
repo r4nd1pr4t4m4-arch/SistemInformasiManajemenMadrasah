@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import QRCode from 'qrcode';
+import { buildVerificationUrl } from '@/lib/verification/document-verify';
 import {
   BookOpenCheck,
   Download,
@@ -326,15 +328,26 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
     XLSX.writeFile(wb, `${payload.fileName}.xlsx`);
   }
 
-  function handleExportPdf() {
+  async function handleExportPdf() {
     const payload = getExportPayload();
     const doc = new jsPDF({ orientation: 'landscape' });
+    const refCode = `RKP-${section.toUpperCase()}-${startDate.replace(/-/g, '')}-${endDate.replace(/-/g, '')}`;
+
     doc.setFontSize(13);
     doc.text(payload.title, 14, 15);
     doc.setFontSize(9);
-    doc.text(`Periode: ${startDate} s.d. ${endDate}`, 14, 21);
+    doc.text(`Periode: ${startDate} s.d. ${endDate}  •  Ref: ${refCode}`, 14, 21);
+
+    try {
+      const qrUrl = buildVerificationUrl({ ref: refCode, type: 'REKAP_ABSENSI' });
+      const qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 120, margin: 1 });
+      doc.addImage(qrDataUrl, 'PNG', 262, 6, 20, 20);
+    } catch {
+      // ignore QR fallback
+    }
+
     autoTable(doc, {
-      startY: 26,
+      startY: 28,
       head: [payload.headers],
       body: payload.rows,
       styles: { fontSize: 8 },

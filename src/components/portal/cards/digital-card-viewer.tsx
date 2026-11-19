@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
+import { buildVerificationUrl } from '@/lib/verification/document-verify';
 import {
   BookOpen,
   Download,
@@ -97,7 +98,10 @@ export function DigitalStudentCard({
   }, [institutionProp]);
 
   useEffect(() => {
-    const payload = `SIMMS:STUDENT:${student.qr_token || student.id}:${student.nisn || student.nis || '-'}`;
+    const payload = buildVerificationUrl({
+      ref: student.qr_token || student.nisn || student.nis || student.id,
+      type: 'KARTU_SISWA',
+    });
     QRCode.toDataURL(payload, { width: 180, margin: 1 })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(''));
@@ -401,7 +405,10 @@ export function DigitalLibraryCard({
   }, [institutionProp]);
 
   useEffect(() => {
-    const payload = `SIMMS:LIBRARY:${member.member_code}:${member.id}`;
+    const payload = buildVerificationUrl({
+      ref: member.member_code,
+      type: 'KARTU_PERPUSTAKAAN',
+    });
     QRCode.toDataURL(payload, { width: 180, margin: 1 })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(''));
