@@ -15,10 +15,13 @@ import {
   Banknote,
   ArrowUpRight,
   ArrowDownRight,
+  Download,
   Loader2,
   UserCheck,
 } from 'lucide-react';
 import { formatRupiah } from '@/lib/domain/honorarium';
+import { SavingsSlipModal } from '@/components/portal/keuangan/savings-slip-modal';
+import type { SavingsSlipData } from '@/lib/cards/savings-slip-png';
 
 export type PersonalScope = 'siswa' | 'orang-tua' | 'gtk' | 'umum';
 export type PersonalSection =
@@ -194,6 +197,7 @@ export function PersonalWorkspace({
   const [selectedChildId, setSelectedChildId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeSlip, setActiveSlip] = useState<SavingsSlipData | null>(null);
 
   const todayDay = getTodayIsoDay();
 
@@ -615,11 +619,15 @@ export function PersonalWorkspace({
                               <th className="py-2.5 px-3 text-right">Diterima Bersih</th>
                               <th className="py-2.5 px-3 text-right">Saldo Akhir</th>
                               <th className="py-2.5 px-3">Keterangan</th>
+                              <th className="py-2.5 px-3 text-center">Slip</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {data.savingsTransactions.map((trx) => {
                               const isTarik = trx.transaction_type === 'TARIK';
+                              const acc = data.savingsAccounts.find(
+                                (a) => a.id === trx.account_id
+                              );
                               return (
                                 <tr key={trx.id} className="hover:bg-slate-50/70">
                                   <td className="py-2.5 px-3 whitespace-nowrap text-slate-600">
@@ -662,6 +670,31 @@ export function PersonalWorkspace({
                                   </td>
                                   <td className="py-2.5 px-3 text-slate-500">
                                     {trx.notes || '-'}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setActiveSlip({
+                                          referenceNumber: trx.reference_number,
+                                          accountNumber: acc?.account_number || '-',
+                                          ownerName: acc?.owner_name || data.profile.fullName,
+                                          ownerType: acc?.owner_type || 'UMUM',
+                                          transactionType: trx.transaction_type,
+                                          amount: Number(trx.amount) || 0,
+                                          feePercentage: Number(trx.fee_percentage) || 0,
+                                          feeAmount: Number(trx.fee_amount) || 0,
+                                          netAmount: Number(trx.net_amount ?? trx.amount),
+                                          balanceAfter: Number(trx.balance_after) || 0,
+                                          transactionDate: trx.transaction_date,
+                                          notes: trx.notes,
+                                        })
+                                      }
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                                      title="Lihat & Unduh Slip PNG"
+                                    >
+                                      <Download className="w-3 h-3" /> PNG
+                                    </button>
                                   </td>
                                 </tr>
                               );
@@ -1036,6 +1069,10 @@ export function PersonalWorkspace({
             </div>
           )}
         </>
+      )}
+
+      {activeSlip && (
+        <SavingsSlipModal slip={activeSlip} onClose={() => setActiveSlip(null)} />
       )}
     </div>
   );

@@ -9,6 +9,7 @@ import {
   Calculator,
   CheckCircle2,
   DollarSign,
+  Download,
   Edit2,
   FileText,
   History,
@@ -33,6 +34,8 @@ import {
 } from '@/lib/domain/tabungan-fee';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
+import { SavingsSlipModal } from './savings-slip-modal';
+import type { SavingsSlipData } from '@/lib/cards/savings-slip-png';
 
 interface SavingsAccountRow {
   id: string;
@@ -136,6 +139,7 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
     netAmount: number;
     balanceAfter: number;
   } | null>(null);
+  const [activeSlip, setActiveSlip] = useState<SavingsSlipData | null>(null);
 
   // State Manajemen Aturan Fee
   const [editingTiers, setEditingTiers] = useState<SavingsFeeTier[]>([]);
@@ -766,6 +770,28 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                     </strong>
                   </p>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveSlip({
+                      referenceNumber: lastReceipt.referenceNumber,
+                      accountNumber: lastReceipt.accountNumber,
+                      ownerName: lastReceipt.ownerName,
+                      ownerType: lastReceipt.ownerType,
+                      transactionType: lastReceipt.type,
+                      amount: lastReceipt.amount,
+                      feePercentage: lastReceipt.feePercentage,
+                      feeAmount: lastReceipt.feeAmount,
+                      netAmount: lastReceipt.netAmount,
+                      balanceAfter: lastReceipt.balanceAfter,
+                      transactionDate: new Date().toISOString(),
+                    })
+                  }
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2 px-3 text-xs transition"
+                >
+                  <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip PNG
+                </button>
               </div>
             )}
           </div>
@@ -1048,12 +1074,13 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                     <th className="py-2.5 px-3 text-right">Potongan Fee</th>
                     <th className="py-2.5 px-3 text-right">Uang Diterima / Masuk</th>
                     <th className="py-2.5 px-3 text-right">Saldo Akhir</th>
+                    <th className="py-2.5 px-3 text-center">Slip</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {transactions.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-400">
+                      <td colSpan={9} className="py-8 text-center text-slate-400">
                         Belum ada riwayat transaksi tabungan.
                       </td>
                     </tr>
@@ -1105,6 +1132,31 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono text-slate-700 whitespace-nowrap">
                           {formatRupiah(Number(t.balance_after))}
+                        </td>
+                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveSlip({
+                                referenceNumber: t.reference_number,
+                                accountNumber: t.account?.account_number || '-',
+                                ownerName: t.account?.owner_name || 'Nasabah',
+                                ownerType: t.account?.owner_type || 'UMUM',
+                                transactionType: t.transaction_type,
+                                amount: Number(t.amount),
+                                feePercentage: Number(t.fee_percentage) || 0,
+                                feeAmount: Number(t.fee_amount) || 0,
+                                netAmount: Number(t.net_amount ?? t.amount),
+                                balanceAfter: Number(t.balance_after),
+                                transactionDate: t.transaction_date,
+                                notes: t.notes,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                            title="Lihat & Unduh Slip PNG"
+                          >
+                            <Download className="w-3 h-3" /> PNG
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -1496,6 +1548,10 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
             </div>
           </div>
         </div>
+      )}
+
+      {activeSlip && (
+        <SavingsSlipModal slip={activeSlip} onClose={() => setActiveSlip(null)} />
       )}
     </div>
   );
