@@ -318,17 +318,19 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
               </select>
               <input
                 type="number"
-                step="0.1"
+                step="0.01"
                 min={0}
+                max={500}
                 value={distanceForm.home_distance_km}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const val = Number(e.target.value);
                   setDistanceForm({
                     ...distanceForm,
-                    home_distance_km: Number(e.target.value) || 0,
-                  })
-                }
-                placeholder="KM"
-                className="w-20 rounded-xl border border-slate-300 bg-white px-2.5 py-2 text-xs font-mono"
+                    home_distance_km: Number.isFinite(val) ? Math.round(val * 100) / 100 : 0,
+                  });
+                }}
+                placeholder="KM (mis. 4.25)"
+                className="w-28 rounded-xl border border-slate-300 bg-white px-2.5 py-2 text-xs font-mono"
               />
               <button
                 type="submit"

@@ -1,3 +1,5 @@
+import { roundSavingsFee } from './tabungan-fee';
+
 export interface JtmBreakdown {
   teachingJtm: number;
   substituteJtm: number;
@@ -155,7 +157,8 @@ export function calculateTeacherHonorarium(
     0
   );
 
-  const safeTransport = Math.max(0, Number(transportAllowance.toFixed(2)));
+  // Pembulatan total tunjangan transportasi (ratusan < 330 -> 000, 330..660 -> 500, > 660 -> 1000)
+  const safeTransport = roundSavingsFee(Math.max(0, transportAllowance));
 
   return {
     totalJtm,

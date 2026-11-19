@@ -5,6 +5,7 @@ import {
   calculateDailyTransportAllowance,
   calculateTeacherHonorarium,
 } from '@/lib/domain/honorarium';
+import { roundSavingsFee } from '@/lib/domain/tabungan-fee';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { mapDutyCodeToRole } from '@/lib/auth/rbac';
 
@@ -203,9 +204,10 @@ export async function PATCH(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Jarak rumah guru tidak valid.' }, { status: 400 });
       }
+      const roundedDistance = Math.round(parsed.data.home_distance_km * 100) / 100;
       const { data, error } = await supabase
         .from('teachers_staff')
-        .update({ home_distance_km: parsed.data.home_distance_km })
+        .update({ home_distance_km: roundedDistance })
         .eq('id', parsed.data.teacher_id)
         .select('id, full_name, home_distance_km')
         .single();
@@ -578,7 +580,8 @@ export async function POST(request: Request) {
         });
         transportAllowance += res.amount;
       }
-      transportAllowance = Number(transportAllowance.toFixed(2));
+      // Bulatkan total tunjangan transportasi sebelum generate honorarium
+      transportAllowance = roundSavingsFee(transportAllowance);
 
       const dutyInputs = (duties || [])
         .map((d) => {
