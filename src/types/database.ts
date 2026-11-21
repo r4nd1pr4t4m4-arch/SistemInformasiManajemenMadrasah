@@ -84,6 +84,7 @@ export interface PostItem {
   author_display_name: string | null;
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
   published_at: string | null;
+  created_at?: string | null;
 }
 
 export interface Student {
