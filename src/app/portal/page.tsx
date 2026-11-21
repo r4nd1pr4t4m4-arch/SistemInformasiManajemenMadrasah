@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
@@ -13,7 +13,6 @@ import {
   Clock,
   CreditCard,
   FileCheck2,
-  FileText,
   GraduationCap,
   HeartHandshake,
   Loader2,
@@ -26,7 +25,6 @@ import {
   Sparkles,
   TrendingUp,
   UserCheck,
-  Users,
   Wallet,
 } from 'lucide-react';
 import type { AppRole } from '@/types/database';
@@ -47,6 +45,11 @@ function formatRupiah(value: number): string {
     currency: 'IDR',
     maximumFractionDigits: 0,
   }).format(value || 0);
+}
+
+function formatEnum(value: string | null | undefined, fallback = '-'): string {
+  if (!value) return fallback;
+  return value.replace(/_/g, ' ');
 }
 
 interface AdditionalDutyItem {
@@ -397,34 +400,101 @@ export default function PortalDashboardPage() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const loadDashboard = useCallback(async (isSilent = false) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     if (!isSilent) setLoading(true);
     else setRefreshing(true);
+
     try {
-      const res = await fetch('/api/portal/dashboard', { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
+      const res = await fetch('/api/portal/dashboard', {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error || 'Gagal memuat data dashboard portal.');
       }
-    } catch {
-      // ignore network error
+      const json = await res.json();
+      setData(json);
+      setErrorMsg(null);
+    } catch (err) {
+      if ((err as { name?: string })?.name === 'AbortError') return;
+      setErrorMsg((err as Error)?.message || 'Tidak dapat terhubung ke server.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (abortRef.current === controller) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    fetch('/api/portal/dashboard', {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson?.error || 'Gagal memuat data dashboard portal.');
+        }
+        return res.json();
+      })
+      .then((json) => {
+        setData(json);
+        setErrorMsg(null);
+      })
+      .catch((err) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setErrorMsg((err as Error)?.message || 'Tidak dapat terhubung ke server.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto">
-        <div className="glass-card rounded-3xl p-12 text-center text-sm text-slate-500 flex items-center justify-center gap-2.5">
-          <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
+        <div className="glass-card rounded-3xl p-8 sm:p-12 text-center text-sm text-slate-500 flex items-center justify-center gap-2.5">
+          <Loader2 className="w-5 h-5 animate-spin text-emerald-600 shrink-0" />
           <span>Memuat ringkasan data operasional sesuai peran &amp; tugas tambahan Anda...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (errorMsg && !data) {
+    return (
+      <div className="max-w-7xl mx-auto">
+        <div className="glass-card rounded-3xl p-8 sm:p-10 text-center space-y-3 border border-rose-200">
+          <AlertCircle className="w-9 h-9 text-rose-500 mx-auto" />
+          <h1 className="text-base sm:text-lg font-bold text-slate-900">
+            Gagal Memuat Dashboard Portal
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto">{errorMsg}</p>
+          <button
+            type="button"
+            onClick={() => void loadDashboard(false)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Coba Lagi
+          </button>
         </div>
       </div>
     );
@@ -446,25 +516,51 @@ export default function PortalDashboardPage() {
   const studentPersonal = data?.studentProfile;
   const alumni = data?.alumniSummary;
 
-  const todayFormatted = data?.todayDate
-    ? new Date(`${data.todayDate}T00:00:00`).toLocaleDateString('id-ID', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      })
-    : '';
+  const parsedToday = data?.todayDate ? new Date(`${data.todayDate}T00:00:00`) : null;
+  const todayFormatted =
+    parsedToday && !Number.isNaN(parsedToday.getTime())
+      ? parsedToday.toLocaleDateString('id-ID', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        })
+      : '';
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {errorMsg && (
+        <div
+          role="alert"
+          className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-wrap items-center justify-between gap-2"
+        >
+          <span className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadDashboard(true)}
+            className="px-3 py-1 rounded-lg bg-white border border-rose-200 font-semibold hover:bg-rose-100/60 transition"
+          >
+            Muat Ulang
+          </button>
+        </div>
+      )}
+
       {/* 1. HERO HEADER: IDENTITAS, PERAN AKTIF & TUGAS TAMBAHAN */}
-      <section className="glass-card rounded-3xl p-6 sm:p-8 space-y-5 relative overflow-hidden">
+      <section className="glass-card rounded-3xl p-5 sm:p-8 space-y-5 relative overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div className="space-y-2.5 max-w-3xl">
+          <div className="space-y-2.5 max-w-3xl min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Peran: {(user?.roles || []).join(' • ')}
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Peran:{' '}
+                  {(user?.roles || []).length > 0
+                    ? (user?.roles || []).map((r) => formatEnum(r)).join(' • ')
+                    : 'Pengguna'}
+                </span>
               </span>
               {data?.academicYear && (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-50 border border-sky-200/80 text-sky-800 text-xs font-semibold">
@@ -521,7 +617,7 @@ export default function PortalDashboardPage() {
                   Kalender Pendidikan Hari Ini: {data.todayCalendarEvent.title}
                 </p>
                 <p className="text-[11px] text-emerald-800">
-                  Kategori: <strong>{data.todayCalendarEvent.category.replace(/_/g, ' ')}</strong>
+                  Kategori: <strong>{formatEnum(data.todayCalendarEvent.category, 'Umum')}</strong>
                   {data.todayCalendarEvent.description
                     ? ` — ${data.todayCalendarEvent.description}`
                     : ''}
@@ -589,14 +685,14 @@ export default function PortalDashboardPage() {
       {/* 2. PANEL KHUSUS GTK / GURU / WALI KELAS: PRESENSI, JADWAL HARI INI, JTM & KELAS PERWALIAN */}
       {teaching && teacher && (
         <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-emerald-700" />
-              Kinerja Mengajar, Presensi &amp; Tugas Tambahan Anda
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2 min-w-0">
+              <MapPin className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>Kinerja Mengajar, Presensi &amp; Tugas Tambahan Anda</span>
             </h2>
             <Link
               href="/portal/akademik/presensi/gps"
-              className="text-xs font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1"
+              className="text-xs font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1 shrink-0"
             >
               Buka Presensi GPS <ArrowUpRight className="w-3.5 h-3.5" />
             </Link>
@@ -686,13 +782,13 @@ export default function PortalDashboardPage() {
             </div>
           </div>
 
-          <div className="grid lg:grid-cols-12 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
             {/* Jadwal Mengajar Hari Ini */}
-            <div className="lg:col-span-7 glass-card rounded-3xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
+            <div className="lg:col-span-7 glass-card rounded-3xl p-5 sm:p-6 space-y-4 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
                   <h3 className="text-base font-bold text-slate-900">
-                    Jadwal Mengajar Anda Hari Ini ({DAY_NAMES[data.todayDayOfWeek]})
+                    Jadwal Mengajar Anda Hari Ini ({DAY_NAMES[data?.todayDayOfWeek ?? 1] || '-'})
                   </h3>
                   <p className="text-xs text-slate-500">
                     Status pengisian Jurnal Pembelajaran untuk setiap jam tatap muka hari ini
@@ -700,7 +796,7 @@ export default function PortalDashboardPage() {
                 </div>
                 <Link
                   href="/portal/akademik/presensi/jurnal"
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition shrink-0"
                 >
                   Isi Jurnal KBM
                 </Link>
@@ -774,7 +870,7 @@ export default function PortalDashboardPage() {
                           {hr.studentsCount} Siswa
                         </span>
                       </div>
-                      <div className="grid grid-cols-4 gap-1.5 text-center pt-1">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center pt-1">
                         <div className="rounded-xl bg-white p-1.5 border border-indigo-100">
                           <p className="text-[10px] text-slate-500">Hadir</p>
                           <p className="font-bold text-emerald-700">{hr.todayPresent}</p>
@@ -975,18 +1071,18 @@ export default function PortalDashboardPage() {
                       key={att.id}
                       className="modular-card rounded-xl p-3 flex items-center justify-between text-xs"
                     >
-                      <div>
-                        <p className="font-bold text-slate-900">
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 break-words">
                           {att.teacher?.full_name || 'Guru'}
                         </p>
                         <p className="text-[11px] text-slate-500">
-                          {att.attendance_type.replace(/_/g, ' ')} • Masuk:{' '}
+                          {formatEnum(att.attendance_type, 'Presensi')} • Masuk:{' '}
                           {att.check_in_time?.slice(0, 5) || '-'} • Pulang:{' '}
                           {att.check_out_time?.slice(0, 5) || '-'}
                         </p>
                       </div>
                       <span
-                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold shrink-0 ${
                           att.admin_confirmed
                             ? 'bg-emerald-50 text-emerald-700'
                             : 'bg-amber-50 text-amber-700'
@@ -1019,7 +1115,7 @@ export default function PortalDashboardPage() {
                 </Link>
               </div>
 
-              <div className="grid grid-cols-4 gap-2 text-center text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
                 <div className="modular-card rounded-2xl p-3">
                   <p className="text-[11px] text-slate-500">Total</p>
                   <p className="text-lg font-extrabold text-slate-900">{exec.ppdb.total}</p>
@@ -1040,22 +1136,28 @@ export default function PortalDashboardPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                {exec.ppdb.recentRegistrations.slice(0, 3).map((reg) => (
-                  <div
-                    key={reg.id}
-                    className="modular-card rounded-xl p-3 flex items-center justify-between text-xs"
-                  >
-                    <div>
-                      <p className="font-bold text-slate-900">{reg.full_name}</p>
-                      <p className="text-[11px] text-slate-500">Jalur: {reg.pathway || 'UMUM'}</p>
+              {exec.ppdb.recentRegistrations.length === 0 ? (
+                <div className="rounded-2xl bg-slate-50 p-4 text-center text-xs text-slate-500">
+                  Belum ada pendaftar PPDB terbaru.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {exec.ppdb.recentRegistrations.slice(0, 3).map((reg) => (
+                    <div
+                      key={reg.id}
+                      className="modular-card rounded-xl p-3 flex items-center justify-between gap-2.5 text-xs min-w-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 truncate">{reg.full_name}</p>
+                        <p className="text-[11px] text-slate-500">Jalur: {reg.pathway || 'UMUM'}</p>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold text-[11px] shrink-0">
+                        {formatEnum(reg.status, 'BARU')}
+                      </span>
                     </div>
-                    <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold text-[11px]">
-                      {reg.status.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1113,8 +1215,8 @@ export default function PortalDashboardPage() {
                         <span className="font-semibold text-slate-800">
                           {f.name} ({f.quantity} unit)
                         </span>
-                        <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 font-semibold text-[11px]">
-                          {f.condition.replace(/_/g, ' ')}
+                        <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 font-semibold text-[11px] shrink-0">
+                          {formatEnum(f.condition, 'Baik')}
                         </span>
                       </div>
                     ))}
@@ -1149,18 +1251,18 @@ export default function PortalDashboardPage() {
                 ) : (
                   <div className="space-y-2">
                     {exec.recentLetters.map((l) => (
-                      <div
-                        key={l.id}
-                        className="modular-card rounded-xl p-3 flex items-center justify-between text-xs"
-                      >
-                        <div>
-                          <p className="font-mono font-bold text-emerald-700">
-                            {l.letter_number} • {l.direction}
-                          </p>
-                          <p className="font-bold text-slate-900">{l.subject}</p>
-                        </div>
-                        <span className="text-slate-500 shrink-0">{l.letter_date}</span>
+                    <div
+                      key={l.id}
+                      className="modular-card rounded-xl p-3 flex items-center justify-between gap-2.5 text-xs min-w-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-mono font-bold text-emerald-700 truncate">
+                          {l.letter_number} • {l.direction}
+                        </p>
+                        <p className="font-bold text-slate-900 truncate">{l.subject}</p>
                       </div>
+                      <span className="text-slate-500 shrink-0">{l.letter_date}</span>
+                    </div>
                     ))}
                   </div>
                 )}
@@ -1220,24 +1322,30 @@ export default function PortalDashboardPage() {
                   <p className="text-[11px] font-bold text-slate-500 uppercase">
                     Pembayaran Masuk Terbaru
                   </p>
-                  {finance.spp.recentPayments.slice(0, 3).map((p) => (
-                    <div
-                      key={p.id}
-                      className="modular-card rounded-xl p-2.5 flex items-center justify-between text-xs"
-                    >
-                      <div className="truncate pr-2">
-                        <p className="font-bold text-slate-900 truncate">
-                          {p.bill?.student?.full_name || p.receipt_number}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          {p.bill?.fee_type?.name || 'SPP'} • {p.payment_method}
-                        </p>
+                  {finance.spp.recentPayments.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic py-2">
+                      Belum ada transaksi pembayaran terbaru.
+                    </p>
+                  ) : (
+                    finance.spp.recentPayments.slice(0, 3).map((p) => (
+                      <div
+                        key={p.id}
+                        className="modular-card rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs min-w-0"
+                      >
+                        <div className="min-w-0 truncate pr-2">
+                          <p className="font-bold text-slate-900 truncate">
+                            {p.bill?.student?.full_name || p.receipt_number}
+                          </p>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {p.bill?.fee_type?.name || 'SPP'} • {p.payment_method}
+                          </p>
+                        </div>
+                        <span className="font-bold text-emerald-700 shrink-0">
+                          {formatRupiah(p.amount_paid)}
+                        </span>
                       </div>
-                      <span className="font-bold text-emerald-700 shrink-0">
-                        {formatRupiah(p.amount_paid)}
-                      </span>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -1275,27 +1383,33 @@ export default function PortalDashboardPage() {
                   <p className="text-[11px] font-bold text-slate-500 uppercase">
                     Mutasi Setor / Tarik Terbaru
                   </p>
-                  {finance.tabungan.recentTransactions.slice(0, 3).map((trx) => (
-                    <div
-                      key={trx.id}
-                      className="modular-card rounded-xl p-2.5 flex items-center justify-between text-xs"
-                    >
-                      <div className="truncate pr-2">
-                        <p className="font-bold text-slate-900 truncate">
-                          {trx.account?.owner_name || trx.account?.account_number}
-                        </p>
-                        <p className="text-[11px] text-slate-500">{trx.transaction_type}</p>
-                      </div>
-                      <span
-                        className={`font-bold shrink-0 ${
-                          trx.transaction_type === 'SETOR' ? 'text-emerald-700' : 'text-rose-700'
-                        }`}
+                  {finance.tabungan.recentTransactions.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic py-2">
+                      Belum ada mutasi tabungan terbaru.
+                    </p>
+                  ) : (
+                    finance.tabungan.recentTransactions.slice(0, 3).map((trx) => (
+                      <div
+                        key={trx.id}
+                        className="modular-card rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs min-w-0"
                       >
-                        {trx.transaction_type === 'SETOR' ? '+' : '-'}
-                        {formatRupiah(trx.amount)}
-                      </span>
-                    </div>
-                  ))}
+                        <div className="min-w-0 truncate pr-2">
+                          <p className="font-bold text-slate-900 truncate">
+                            {trx.account?.owner_name || trx.account?.account_number}
+                          </p>
+                          <p className="text-[11px] text-slate-500">{trx.transaction_type}</p>
+                        </div>
+                        <span
+                          className={`font-bold shrink-0 ${
+                            trx.transaction_type === 'SETOR' ? 'text-emerald-700' : 'text-rose-700'
+                          }`}
+                        >
+                          {trx.transaction_type === 'SETOR' ? '+' : '-'}
+                          {formatRupiah(trx.amount)}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -1605,7 +1719,7 @@ export default function PortalDashboardPage() {
               </Link>
             </div>
 
-            <div className="grid grid-cols-4 gap-2 text-center text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
               <div className="modular-card rounded-xl p-2.5">
                 <p className="text-[10px] text-slate-500">Kuliah</p>
                 <p className="font-extrabold text-slate-900 text-base">{alumni.kuliahCount}</p>
@@ -1647,6 +1761,30 @@ export default function PortalDashboardPage() {
           </div>
         )}
       </div>
+      {!teaching && !exec && !finance && !bk && !guruWali && !studentPersonal && !library && !alumni && (
+        <div className="glass-card rounded-3xl p-6 sm:p-8 text-center space-y-3">
+          <Sparkles className="w-8 h-8 text-emerald-600 mx-auto" />
+          <h2 className="text-base font-bold text-slate-900">Selamat Datang di Portal Terpadu</h2>
+          <p className="text-xs sm:text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
+            Belum ada modul operasional yang terhubung ke akun Anda. Gunakan menu navigasi atau
+            buka halaman profil akun untuk memeriksa data Anda.
+          </p>
+          <div className="pt-1 flex flex-wrap items-center justify-center gap-2.5">
+            <Link
+              href="/portal/akun/profil"
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
+            >
+              Profil Akun Saya
+            </Link>
+            <Link
+              href="/e-library"
+              className="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:border-emerald-300 text-slate-700 text-xs font-semibold transition"
+            >
+              Jelajahi E-Library
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

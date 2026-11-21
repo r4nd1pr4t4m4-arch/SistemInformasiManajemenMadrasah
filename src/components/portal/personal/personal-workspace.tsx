@@ -17,7 +17,11 @@ import {
   ArrowDownRight,
   Download,
   Loader2,
+  RefreshCw,
+  RotateCcw,
+  Search,
   UserCheck,
+  X,
 } from 'lucide-react';
 import { formatRupiah } from '@/lib/domain/honorarium';
 import { SavingsSlipModal } from '@/components/portal/keuangan/savings-slip-modal';
@@ -201,40 +205,56 @@ export function PersonalWorkspace({
   const [selectedChildId, setSelectedChildId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
+  const [todayDay, setTodayDay] = useState<number>(1);
   const [activeSlip, setActiveSlip] = useState<SavingsSlipData | null>(null);
   const [activeSppSlip, setActiveSppSlip] = useState<SppSlipData | null>(null);
   const [activeHonorSlip, setActiveHonorSlip] = useState<HonorariumSlipData | null>(null);
 
-  const todayDay = getTodayIsoDay();
+  // Filter & pagination khusus Tabungan Digital
+  const [trxSearch, setTrxSearch] = useState('');
+  const [trxTypeFilter, setTrxTypeFilter] = useState<'ALL' | 'SETOR' | 'TARIK'>('ALL');
+  const [trxAccountFilter, setTrxAccountFilter] = useState<string>('ALL');
+  const [trxVisibleCount, setTrxVisibleCount] = useState<number>(15);
 
   useEffect(() => {
-    let active = true;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const params = new URLSearchParams({ scope, section });
-        if (selectedChildId) params.set('student_id', selectedChildId);
-        const res = await fetch(`/api/portal/personal?${params.toString()}`);
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || 'Gagal memuat data.');
-        if (active) {
-          setData(json);
-          if (!selectedChildId && json.children?.length > 0 && json.student?.id) {
-            setSelectedChildId(json.student.id);
-          }
+    setTodayDay(getTodayIsoDay());
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const params = new URLSearchParams({ scope, section });
+    if (selectedChildId) params.set('student_id', selectedChildId);
+
+    fetch(`/api/portal/personal?${params.toString()}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.error || 'Gagal memuat data.');
+        return json as PersonalPayload;
+      })
+      .then((json) => {
+        setData(json);
+        setError(null);
+        if (!selectedChildId && json.children?.length > 0 && json.student?.id) {
+          setSelectedChildId(json.student.id);
         }
-      } catch (err) {
-        if (active) setError(err instanceof Error ? err.message : 'Terjadi kesalahan.');
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-    load();
+      })
+      .catch((err) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setError(err instanceof Error ? err.message : 'Terjadi kesalahan.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, [scope, section, selectedChildId]);
+  }, [scope, section, selectedChildId, reloadTick]);
 
   const myPicketDays = useMemo(() => {
     if (!data) return [];
@@ -254,10 +274,12 @@ export function PersonalWorkspace({
   return (
     <div className="space-y-6">
       {/* Header & Identity Banner */}
-      <div className="glass-card rounded-3xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-black text-slate-900 tracking-tight">{title}</h1>
-          <p className="text-xs text-slate-500 mt-1">{subtitle}</p>
+      <div className="glass-card rounded-3xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight break-words">
+            {title}
+          </h1>
+          <p className="text-xs text-slate-500 mt-1 leading-relaxed">{subtitle}</p>
           {data?.student && (
             <div className="flex flex-wrap items-center gap-2 mt-3">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
@@ -286,37 +308,72 @@ export function PersonalWorkspace({
           )}
         </div>
 
-        {/* Child selector for Orang Tua */}
-        {scope === 'orang-tua' && data && data.children.length > 1 && (
-          <div className="min-w-[240px]">
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-              Pilih Putra / Putri:
-            </label>
-            <select
-              value={selectedChildId}
-              onChange={(e) => setSelectedChildId(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800"
-            >
-              {data.children.map((child) => (
-                <option key={child.id} value={child.id}>
-                  {child.full_name} {child.nis ? `(${child.nis})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          {/* Child selector for Orang Tua */}
+          {scope === 'orang-tua' && data && data.children.length > 1 && (
+            <div className="min-w-[220px] flex-1 sm:flex-none">
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                Pilih Putra / Putri:
+              </label>
+              <select
+                value={selectedChildId}
+                onChange={(e) => {
+                  setLoading(true);
+                  setError(null);
+                  setSelectedChildId(e.target.value);
+                }}
+                className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800"
+              >
+                {data.children.map((child) => (
+                  <option key={child.id} value={child.id}>
+                    {child.full_name} {child.nis ? `(${child.nis})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              setError(null);
+              setReloadTick((t) => t + 1);
+            }}
+            disabled={loading}
+            className="self-end min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 transition disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Segarkan</span>
+          </button>
+        </div>
       </div>
 
       {loading && (
-        <div className="glass-card rounded-3xl p-12 flex items-center justify-center gap-2 text-slate-500 text-sm">
+        <div className="glass-card rounded-3xl p-10 sm:p-12 flex items-center justify-center gap-2 text-slate-500 text-sm">
           <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> Memuat data...
         </div>
       )}
 
       {error && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-700 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{error}</span>
+        <div
+          role="alert"
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-700 flex flex-wrap items-center justify-between gap-3"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              setError(null);
+              setReloadTick((t) => t + 1);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-rose-200 font-semibold hover:bg-rose-100/60 transition"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Coba Lagi
+          </button>
         </div>
       )}
 
@@ -343,11 +400,10 @@ export function PersonalWorkspace({
                     return (
                       <div
                         key={day}
-                        className={`rounded-3xl border p-5 transition ${
-                          isToday
-                            ? 'border-emerald-400 bg-emerald-50/40 shadow-sm'
-                            : 'border-slate-200 bg-white'
-                        }`}
+                        className={`rounded-3xl border p-5 transition ${isToday
+                          ? 'border-emerald-400 bg-emerald-50/40 shadow-sm'
+                          : 'border-slate-200 bg-white'
+                          }`}
                       >
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
                           <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
@@ -407,17 +463,15 @@ export function PersonalWorkspace({
             <div className="space-y-5">
               {/* Banner penanda khusus hari piketnya */}
               <div
-                className={`rounded-3xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                  myPicketDays.includes(todayDay)
-                    ? 'border-amber-300 bg-amber-50 text-amber-950'
-                    : 'border-emerald-200 bg-emerald-50/60 text-emerald-950'
-                }`}
+                className={`rounded-3xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${myPicketDays.includes(todayDay)
+                  ? 'border-amber-300 bg-amber-50 text-amber-950'
+                  : 'border-emerald-200 bg-emerald-50/60 text-emerald-950'
+                  }`}
               >
                 <div className="flex items-start gap-3">
                   <Sparkles
-                    className={`w-5 h-5 shrink-0 mt-0.5 ${
-                      myPicketDays.includes(todayDay) ? 'text-amber-600' : 'text-emerald-600'
-                    }`}
+                    className={`w-5 h-5 shrink-0 mt-0.5 ${myPicketDays.includes(todayDay) ? 'text-amber-600' : 'text-emerald-600'
+                      }`}
                   />
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide">
@@ -453,11 +507,10 @@ export function PersonalWorkspace({
                       return (
                         <div
                           key={p.id}
-                          className={`rounded-3xl border p-5 ${
-                            isToday
-                              ? 'border-amber-400 bg-amber-50/70 shadow-sm'
-                              : 'border-emerald-200 bg-white'
-                          }`}
+                          className={`rounded-3xl border p-5 ${isToday
+                            ? 'border-amber-400 bg-amber-50/70 shadow-sm'
+                            : 'border-emerald-200 bg-white'
+                            }`}
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-black text-slate-900">
@@ -490,13 +543,12 @@ export function PersonalWorkspace({
                     return (
                       <div
                         key={day}
-                        className={`rounded-3xl border p-5 transition ${
-                          isMyDay
-                            ? 'border-amber-400 bg-amber-50/60 ring-2 ring-amber-300/60 shadow-sm'
-                            : isToday
+                        className={`rounded-3xl border p-5 transition ${isMyDay
+                          ? 'border-amber-400 bg-amber-50/60 ring-2 ring-amber-300/60 shadow-sm'
+                          : isToday
                             ? 'border-emerald-300 bg-emerald-50/30'
                             : 'border-slate-200 bg-white'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
                           <h3 className="font-bold text-slate-900 text-sm">{DAY_NAMES[day]}</h3>
@@ -526,11 +578,10 @@ export function PersonalWorkspace({
                               return (
                                 <li
                                   key={p.id}
-                                  className={`rounded-xl px-3 py-2 text-xs flex items-center justify-between gap-2 ${
-                                    isSelf
-                                      ? 'bg-amber-100 border border-amber-300 font-bold text-amber-950'
-                                      : 'bg-slate-50 border border-slate-100 text-slate-700'
-                                  }`}
+                                  className={`rounded-xl px-3 py-2 text-xs flex items-center justify-between gap-2 ${isSelf
+                                    ? 'bg-amber-100 border border-amber-300 font-bold text-amber-950'
+                                    : 'bg-slate-50 border border-slate-100 text-slate-700'
+                                    }`}
                                 >
                                   <div>
                                     <p>{p.student?.full_name || 'Siswa'}</p>
@@ -568,149 +619,394 @@ export function PersonalWorkspace({
                   description="Silakan hubungi Pengelola Tabungan atau Bendahara Madrasah untuk membuka buku tabungan digital."
                 />
               ) : (
-                <>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    {data.savingsAccounts.map((acc) => (
-                      <div
-                        key={acc.id}
-                        className="rounded-3xl bg-gradient-to-br from-emerald-800 to-teal-900 text-white p-6 shadow-md space-y-4"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-mono bg-white/15 px-3 py-1 rounded-full">
-                            {acc.account_number}
-                          </span>
-                          <span
-                            className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                              acc.is_active ? 'bg-emerald-400 text-emerald-950' : 'bg-slate-400 text-slate-900'
-                            }`}
-                          >
-                            {acc.is_active ? 'REKENING AKTIF' : 'NONAKTIF'}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="text-[11px] text-emerald-200 uppercase font-semibold">
-                            Saldo Tabungan Tersedia
-                          </p>
-                          <p className="text-3xl font-black mt-1">
-                            {formatRupiah(Number(acc.balance) || 0)}
-                          </p>
-                        </div>
-                        <div className="pt-2 border-t border-white/15 flex items-center justify-between text-xs text-emerald-100">
-                          <span>Pemilik: {acc.owner_name}</span>
-                          <span>Kategori: {acc.owner_type}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                (() => {
+                  const totalSetor = data.savingsTransactions
+                    .filter((t) => t.transaction_type === 'SETOR')
+                    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+                  const totalTarik = data.savingsTransactions
+                    .filter((t) => t.transaction_type === 'TARIK')
+                    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-                  <div className="glass-card rounded-3xl p-6 space-y-4">
-                    <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <Banknote className="w-4 h-4 text-emerald-700" />
-                      Riwayat Transaksi Setor &amp; Tarik Tabungan
-                    </h2>
-                    {data.savingsTransactions.length === 0 ? (
-                      <p className="text-xs text-slate-400 py-6 text-center">
-                        Belum ada transaksi tercatat.
-                      </p>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead>
-                            <tr className="border-b border-slate-200 text-slate-500 font-semibold">
-                              <th className="py-2.5 px-3">Tanggal</th>
-                              <th className="py-2.5 px-3">Referensi</th>
-                              <th className="py-2.5 px-3">Jenis</th>
-                              <th className="py-2.5 px-3 text-right">Nominal</th>
-                              <th className="py-2.5 px-3 text-right">Fee Tarik</th>
-                              <th className="py-2.5 px-3 text-right">Diterima Bersih</th>
-                              <th className="py-2.5 px-3 text-right">Saldo Akhir</th>
-                              <th className="py-2.5 px-3">Keterangan</th>
-                              <th className="py-2.5 px-3 text-center">Slip</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {data.savingsTransactions.map((trx) => {
-                              const isTarik = trx.transaction_type === 'TARIK';
-                              const acc = data.savingsAccounts.find(
-                                (a) => a.id === trx.account_id
-                              );
-                              return (
-                                <tr key={trx.id} className="hover:bg-slate-50/70">
-                                  <td className="py-2.5 px-3 whitespace-nowrap text-slate-600">
-                                    {formatDateId(trx.transaction_date)}
-                                  </td>
-                                  <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500">
-                                    {trx.reference_number}
-                                  </td>
-                                  <td className="py-2.5 px-3">
-                                    <span
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                        isTarik
-                                          ? 'bg-amber-100 text-amber-800'
-                                          : 'bg-emerald-100 text-emerald-800'
-                                      }`}
-                                    >
-                                      {isTarik ? (
-                                        <ArrowDownRight className="w-3 h-3" />
-                                      ) : (
-                                        <ArrowUpRight className="w-3 h-3" />
-                                      )}
-                                      {trx.transaction_type}
-                                    </span>
-                                  </td>
-                                  <td className="py-2.5 px-3 text-right font-bold text-slate-900">
-                                    {formatRupiah(Number(trx.amount) || 0)}
-                                  </td>
-                                  <td className="py-2.5 px-3 text-right text-rose-600">
-                                    {isTarik && Number(trx.fee_amount) > 0
-                                      ? `- ${formatRupiah(Number(trx.fee_amount))}`
-                                      : '-'}
-                                  </td>
-                                  <td className="py-2.5 px-3 text-right font-semibold text-emerald-700">
-                                    {isTarik
-                                      ? formatRupiah(Number(trx.net_amount ?? trx.amount))
-                                      : '-'}
-                                  </td>
-                                  <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
-                                    {formatRupiah(Number(trx.balance_after) || 0)}
-                                  </td>
-                                  <td className="py-2.5 px-3 text-slate-500">
-                                    {trx.notes || '-'}
-                                  </td>
-                                  <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                  const q = trxSearch.trim().toLowerCase();
+                  const filteredTrx = data.savingsTransactions.filter((trx) => {
+                    if (trxTypeFilter !== 'ALL' && trx.transaction_type !== trxTypeFilter) {
+                      return false;
+                    }
+                    if (trxAccountFilter !== 'ALL' && trx.account_id !== trxAccountFilter) {
+                      return false;
+                    }
+                    if (!q) return true;
+                    return (
+                      (trx.reference_number || '').toLowerCase().includes(q) ||
+                      (trx.notes || '').toLowerCase().includes(q)
+                    );
+                  });
+
+                  const displayedTrx = filteredTrx.slice(0, trxVisibleCount);
+                  const hasMoreTrx = trxVisibleCount < filteredTrx.length;
+                  const hasTrxFilter =
+                    trxSearch.trim().length > 0 ||
+                    trxTypeFilter !== 'ALL' ||
+                    trxAccountFilter !== 'ALL';
+
+                  function openSlip(trx: PersonalPayload['savingsTransactions'][number]) {
+                    const acc = data?.savingsAccounts.find((a) => a.id === trx.account_id);
+                    setActiveSlip({
+                      referenceNumber: trx.reference_number,
+                      accountNumber: acc?.account_number || '-',
+                      ownerName: acc?.owner_name || data?.profile.fullName || 'Nasabah',
+                      ownerType: acc?.owner_type || 'UMUM',
+                      transactionType: trx.transaction_type,
+                      amount: Number(trx.amount) || 0,
+                      feePercentage: Number(trx.fee_percentage) || 0,
+                      feeAmount: Number(trx.fee_amount) || 0,
+                      netAmount: Number(trx.net_amount ?? trx.amount),
+                      balanceAfter: Number(trx.balance_after) || 0,
+                      transactionDate: trx.transaction_date,
+                      notes: trx.notes,
+                    });
+                  }
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {data.savingsAccounts.map((acc) => (
+                          <div
+                            key={acc.id}
+                            className="rounded-3xl bg-gradient-to-br from-emerald-800 to-teal-900 text-white p-5 sm:p-6 shadow-md space-y-4 min-w-0"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-xs font-mono bg-white/15 px-3 py-1 rounded-full break-all">
+                                {acc.account_number}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full shrink-0 ${acc.is_active
+                                  ? 'bg-emerald-400 text-emerald-950'
+                                  : 'bg-slate-400 text-slate-900'
+                                  }`}
+                              >
+                                {acc.is_active ? 'REKENING AKTIF' : 'NONAKTIF'}
+                              </span>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] text-emerald-200 uppercase font-semibold">
+                                Saldo Tabungan Tersedia
+                              </p>
+                              <p className="text-2xl sm:text-3xl font-black mt-1 break-words">
+                                {formatRupiah(Number(acc.balance) || 0)}
+                              </p>
+                            </div>
+                            <div className="pt-2 border-t border-white/15 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-100">
+                              <span className="break-words">Pemilik: {acc.owner_name}</span>
+                              <span className="shrink-0">Kategori: {acc.owner_type}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {data.savingsTransactions.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                          <StatCard
+                            label="Total Setoran"
+                            value={formatRupiah(totalSetor)}
+                            tone="emerald"
+                          />
+                          <StatCard
+                            label="Total Penarikan"
+                            value={formatRupiah(totalTarik)}
+                            tone="amber"
+                          />
+                          <StatCard
+                            label="Jumlah Transaksi"
+                            value={`${data.savingsTransactions.length} Kali`}
+                            tone="slate"
+                          />
+                        </div>
+                      )}
+
+                      <div className="glass-card rounded-3xl p-4 sm:p-6 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                            <Banknote className="w-4 h-4 text-emerald-700 shrink-0" />
+                            <span>Riwayat Transaksi Setor &amp; Tarik Tabungan</span>
+                          </h2>
+                          {data.savingsTransactions.length > 0 && (
+                            <span className="text-[11px] font-medium text-slate-500">
+                              Menampilkan {displayedTrx.length} dari {filteredTrx.length} transaksi
+                            </span>
+                          )}
+                        </div>
+
+                        {data.savingsTransactions.length > 0 && (
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
+                            <div className="relative flex-1 min-w-0">
+                              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                              <input
+                                type="text"
+                                value={trxSearch}
+                                onChange={(e) => {
+                                  setTrxSearch(e.target.value);
+                                  setTrxVisibleCount(15);
+                                }}
+                                placeholder="Cari nomor referensi atau keterangan..."
+                                aria-label="Cari transaksi tabungan"
+                                className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                              />
+                              {trxSearch && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setTrxSearch('');
+                                    setTrxVisibleCount(15);
+                                  }}
+                                  aria-label="Hapus pencarian transaksi"
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 shrink-0">
+                              {data.savingsAccounts.length > 1 && (
+                                <select
+                                  value={trxAccountFilter}
+                                  onChange={(e) => {
+                                    setTrxAccountFilter(e.target.value);
+                                    setTrxVisibleCount(15);
+                                  }}
+                                  aria-label="Filter rekening tabungan"
+                                  className="min-h-[38px] rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                                >
+                                  <option value="ALL">Semua Rekening</option>
+                                  {data.savingsAccounts.map((acc) => (
+                                    <option key={acc.id} value={acc.id}>
+                                      {acc.account_number}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                              {(['ALL', 'SETOR', 'TARIK'] as const).map((tp) => (
+                                <button
+                                  key={tp}
+                                  type="button"
+                                  onClick={() => {
+                                    setTrxTypeFilter(tp);
+                                    setTrxVisibleCount(15);
+                                  }}
+                                  className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${trxTypeFilter === tp
+                                    ? 'bg-emerald-700 text-white border-emerald-700'
+                                    : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                                    }`}
+                                >
+                                  {tp === 'ALL' ? 'Semua' : tp === 'SETOR' ? 'Setor' : 'Tarik'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {data.savingsTransactions.length === 0 ? (
+                          <p className="text-xs text-slate-400 py-6 text-center">
+                            Belum ada transaksi tercatat.
+                          </p>
+                        ) : filteredTrx.length === 0 ? (
+                          <div className="py-8 text-center space-y-2.5">
+                            <p className="text-xs font-semibold text-slate-600">
+                              Tidak ada transaksi yang sesuai filter.
+                            </p>
+                            {hasTrxFilter && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTrxSearch('');
+                                  setTrxTypeFilter('ALL');
+                                  setTrxAccountFilter('ALL');
+                                  setTrxVisibleCount(15);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            {/* Mobile Card List */}
+                            <div className="space-y-3 md:hidden">
+                              {displayedTrx.map((trx) => {
+                                const isTarik = trx.transaction_type === 'TARIK';
+                                return (
+                                  <div
+                                    key={trx.id}
+                                    className="modular-card rounded-2xl p-4 space-y-2.5 text-xs min-w-0"
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <span
+                                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isTarik
+                                            ? 'bg-amber-100 text-amber-800'
+                                            : 'bg-emerald-100 text-emerald-800'
+                                            }`}
+                                        >
+                                          {isTarik ? (
+                                            <ArrowDownRight className="w-3 h-3" />
+                                          ) : (
+                                            <ArrowUpRight className="w-3 h-3" />
+                                          )}
+                                          {trx.transaction_type}
+                                        </span>
+                                        <p className="font-mono text-[11px] text-slate-500 mt-1 break-all">
+                                          {trx.reference_number}
+                                        </p>
+                                      </div>
+                                      <span className="text-[11px] text-slate-500 shrink-0">
+                                        {formatDateId(trx.transaction_date)}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-baseline justify-between gap-2 pt-1 border-t border-slate-100">
+                                      <span className="text-slate-500">Nominal</span>
+                                      <span className="text-sm font-extrabold text-slate-900">
+                                        {formatRupiah(Number(trx.amount) || 0)}
+                                      </span>
+                                    </div>
+
+                                    {isTarik && Number(trx.fee_amount) > 0 && (
+                                      <div className="flex items-center justify-between gap-2 text-rose-600">
+                                        <span>Fee Tarik</span>
+                                        <span>- {formatRupiah(Number(trx.fee_amount))}</span>
+                                      </div>
+                                    )}
+
+                                    {isTarik && (
+                                      <div className="flex items-center justify-between gap-2 text-emerald-700 font-semibold">
+                                        <span>Diterima Bersih</span>
+                                        <span>{formatRupiah(Number(trx.net_amount ?? trx.amount))}</span>
+                                      </div>
+                                    )}
+
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-slate-500">Saldo Akhir</span>
+                                      <span className="font-mono font-bold text-slate-800">
+                                        {formatRupiah(Number(trx.balance_after) || 0)}
+                                      </span>
+                                    </div>
+
+                                    {trx.notes && (
+                                      <p className="text-[11px] text-slate-500 break-words bg-slate-50 rounded-xl px-2.5 py-1.5">
+                                        {trx.notes}
+                                      </p>
+                                    )}
+
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        setActiveSlip({
-                                          referenceNumber: trx.reference_number,
-                                          accountNumber: acc?.account_number || '-',
-                                          ownerName: acc?.owner_name || data.profile.fullName,
-                                          ownerType: acc?.owner_type || 'UMUM',
-                                          transactionType: trx.transaction_type,
-                                          amount: Number(trx.amount) || 0,
-                                          feePercentage: Number(trx.fee_percentage) || 0,
-                                          feeAmount: Number(trx.fee_amount) || 0,
-                                          netAmount: Number(trx.net_amount ?? trx.amount),
-                                          balanceAfter: Number(trx.balance_after) || 0,
-                                          transactionDate: trx.transaction_date,
-                                          notes: trx.notes,
-                                        })
-                                      }
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
-                                      title="Lihat & Unduh Slip PNG"
+                                      onClick={() => openSlip(trx)}
+                                      className="w-full min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-xs transition"
                                     >
-                                      <Download className="w-3 h-3" /> PNG
+                                      <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip PNG
                                     </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Desktop Table */}
+                            <div className="hidden md:block overflow-x-auto">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                  <tr className="border-b border-slate-200 text-slate-500 font-semibold">
+                                    <th className="py-2.5 px-3">Tanggal</th>
+                                    <th className="py-2.5 px-3">Referensi</th>
+                                    <th className="py-2.5 px-3">Jenis</th>
+                                    <th className="py-2.5 px-3 text-right">Nominal</th>
+                                    <th className="py-2.5 px-3 text-right">Fee Tarik</th>
+                                    <th className="py-2.5 px-3 text-right">Diterima Bersih</th>
+                                    <th className="py-2.5 px-3 text-right">Saldo Akhir</th>
+                                    <th className="py-2.5 px-3">Keterangan</th>
+                                    <th className="py-2.5 px-3 text-center">Slip</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {displayedTrx.map((trx) => {
+                                    const isTarik = trx.transaction_type === 'TARIK';
+                                    return (
+                                      <tr key={trx.id} className="hover:bg-slate-50/70">
+                                        <td className="py-2.5 px-3 whitespace-nowrap text-slate-600">
+                                          {formatDateId(trx.transaction_date)}
+                                        </td>
+                                        <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500">
+                                          {trx.reference_number}
+                                        </td>
+                                        <td className="py-2.5 px-3">
+                                          <span
+                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${isTarik
+                                              ? 'bg-amber-100 text-amber-800'
+                                              : 'bg-emerald-100 text-emerald-800'
+                                              }`}
+                                          >
+                                            {isTarik ? (
+                                              <ArrowDownRight className="w-3 h-3" />
+                                            ) : (
+                                              <ArrowUpRight className="w-3 h-3" />
+                                            )}
+                                            {trx.transaction_type}
+                                          </span>
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right font-bold text-slate-900">
+                                          {formatRupiah(Number(trx.amount) || 0)}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right text-rose-600">
+                                          {isTarik && Number(trx.fee_amount) > 0
+                                            ? `- ${formatRupiah(Number(trx.fee_amount))}`
+                                            : '-'}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right font-semibold text-emerald-700">
+                                          {isTarik
+                                            ? formatRupiah(Number(trx.net_amount ?? trx.amount))
+                                            : '-'}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
+                                          {formatRupiah(Number(trx.balance_after) || 0)}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-slate-500">
+                                          {trx.notes || '-'}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                          <button
+                                            type="button"
+                                            onClick={() => openSlip(trx)}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                                            title="Lihat & Unduh Slip PNG"
+                                          >
+                                            <Download className="w-3 h-3" /> PNG
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {hasMoreTrx && (
+                              <div className="flex justify-center pt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setTrxVisibleCount((c) => c + 15)}
+                                  className="min-h-[40px] px-5 py-2 rounded-xl bg-white border border-slate-200 hover:border-emerald-300 text-xs font-semibold text-slate-700 hover:text-emerald-800 transition"
+                                >
+                                  Muat Lebih Banyak ({filteredTrx.length - displayedTrx.length}{' '}
+                                  tersisa)
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </>
+                    </>
+                  );
+                })()
               )}
             </div>
           )}
@@ -774,17 +1070,17 @@ export function PersonalWorkspace({
                                 <td className="py-2.5 px-3 text-slate-600">
                                   {a.check_in_time
                                     ? new Date(String(a.check_in_time)).toLocaleTimeString('id-ID', {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      })
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })
                                     : '-'}
                                 </td>
                                 <td className="py-2.5 px-3 text-slate-600">
                                   {a.check_out_time
                                     ? new Date(String(a.check_out_time)).toLocaleTimeString('id-ID', {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      })
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })
                                     : '-'}
                                 </td>
                                 <td className="py-2.5 px-3 text-center font-bold">
@@ -792,11 +1088,10 @@ export function PersonalWorkspace({
                                 </td>
                                 <td className="py-2.5 px-3 text-center">
                                   <span
-                                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                      a.is_within_geofence
-                                        ? 'bg-emerald-100 text-emerald-800'
-                                        : 'bg-amber-100 text-amber-800'
-                                    }`}
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${a.is_within_geofence
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-amber-100 text-amber-800'
+                                      }`}
                                   >
                                     {a.is_within_geofence ? 'Di Lokasi' : 'Luar Radius'}
                                   </span>
@@ -823,8 +1118,8 @@ export function PersonalWorkspace({
                           status === 'HADIR'
                             ? 'emerald'
                             : status === 'ALPA'
-                            ? 'rose'
-                            : 'amber'
+                              ? 'rose'
+                              : 'amber'
                         }
                       />
                     ))}
@@ -863,13 +1158,12 @@ export function PersonalWorkspace({
                                   </td>
                                   <td className="py-2.5 px-3 text-center">
                                     <span
-                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                                        status === 'HADIR'
-                                          ? 'bg-emerald-100 text-emerald-800'
-                                          : status === 'ALPA'
+                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${status === 'HADIR'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : status === 'ALPA'
                                           ? 'bg-rose-100 text-rose-800'
                                           : 'bg-amber-100 text-amber-800'
-                                      }`}
+                                        }`}
                                     >
                                       {status}
                                     </span>
@@ -937,13 +1231,12 @@ export function PersonalWorkspace({
                               </td>
                               <td className="py-2.5 px-3 text-center">
                                 <span
-                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                                    b.status === 'LUNAS'
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : b.status === 'CICILAN'
+                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${b.status === 'LUNAS'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : b.status === 'CICILAN'
                                       ? 'bg-amber-100 text-amber-800'
                                       : 'bg-rose-100 text-rose-800'
-                                  }`}
+                                    }`}
                                 >
                                   {b.status}
                                 </span>
@@ -1028,7 +1321,7 @@ export function PersonalWorkspace({
                           <strong>
                             {formatRupiah(
                               (Number(h.additional_duty_allowance) || 0) +
-                                (Number(h.transport_allowance) || 0)
+                              (Number(h.transport_allowance) || 0)
                             )}
                           </strong>
                         </div>
@@ -1189,10 +1482,10 @@ function StatCard({
     tone === 'emerald'
       ? 'border-emerald-200 bg-emerald-50/70 text-emerald-900'
       : tone === 'amber'
-      ? 'border-amber-200 bg-amber-50/70 text-amber-900'
-      : tone === 'rose'
-      ? 'border-rose-200 bg-rose-50/70 text-rose-900'
-      : 'border-slate-200 bg-white text-slate-900';
+        ? 'border-amber-200 bg-amber-50/70 text-amber-900'
+        : tone === 'rose'
+          ? 'border-rose-200 bg-rose-50/70 text-rose-900'
+          : 'border-slate-200 bg-white text-slate-900';
 
   return (
     <div className={`rounded-2xl border p-4 ${toneClass}`}>
