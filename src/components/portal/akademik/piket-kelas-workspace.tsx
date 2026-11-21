@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { ClipboardCheck, Plus, Trash2, Loader2, Sparkles } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ClipboardCheck, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { AkademikErrorBanner, AkademikToast, useAkademikToast } from './akademik-ui';
 
 const DAY_NAMES: Record<number, string> = {
   1: 'Senin',
@@ -39,8 +40,10 @@ export function PiketKelasWorkspace() {
   const [students, setStudents] = useState<Student[]>([]);
   const [pickets, setPickets] = useState<PicketItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const { toast, showToast, dismissToast } = useAkademikToast();
+  const requestIdRef = useRef(0);
 
   const [form, setForm] = useState({
     student_id: '',
@@ -49,14 +52,16 @@ export function PiketKelasWorkspace() {
   });
 
   const loadData = useCallback(async (classroomId?: string) => {
-    setLoading(true);
+    const reqId = ++requestIdRef.current;
     try {
       const url = classroomId
         ? `/api/akademik/piket-kelas?classroom_id=${encodeURIComponent(classroomId)}`
         : '/api/akademik/piket-kelas';
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
+      if (reqId !== requestIdRef.current) return;
       if (!res.ok) throw new Error(data.error || 'Gagal memuat jadwal piket.');
+      setLoadError(null);
       setClassrooms(data.classrooms || []);
       if (data.classroomId && !classroomId) {
         setSelectedClassroomId(data.classroomId);
@@ -64,24 +69,30 @@ export function PiketKelasWorkspace() {
       setStudents(data.students || []);
       setPickets(data.pickets || []);
     } catch (err) {
-      setMsg({ type: 'err', text: err instanceof Error ? err.message : 'Gagal memuat data.' });
+      if (reqId !== requestIdRef.current) return;
+      setLoadError(err instanceof Error ? err.message : 'Gagal memuat data.');
     } finally {
-      setLoading(false);
+      if (reqId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    loadData();
+    const timer = setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [loadData]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     if (!selectedClassroomId || !form.student_id) {
-      setMsg({ type: 'err', text: 'Pilih kelas dan siswa terlebih dahulu.' });
+      showToast('error', 'Pilih kelas dan siswa terlebih dahulu.');
       return;
     }
     setSubmitting(true);
-    setMsg(null);
     try {
       const res = await fetch('/api/akademik/piket-kelas', {
         method: 'POST',
@@ -96,50 +107,54 @@ export function PiketKelasWorkspace() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Gagal menyimpan jadwal piket.');
-      setMsg({ type: 'ok', text: 'Jadwal piket siswa berhasil ditambahkan.' });
+      showToast('success', 'Jadwal piket siswa berhasil ditambahkan.');
       setForm((prev) => ({ ...prev, student_id: '', task_notes: '' }));
       await loadData(selectedClassroomId);
     } catch (err) {
-      setMsg({ type: 'err', text: err instanceof Error ? err.message : 'Gagal menyimpan.' });
+      showToast('error', err instanceof Error ? err.message : 'Gagal menyimpan.');
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(item: PicketItem) {
+    if (submitting) return;
+    const name = item.student?.full_name || 'siswa ini';
+    if (!window.confirm(`Hapus jadwal piket ${name}?`)) return;
     setSubmitting(true);
     try {
       const res = await fetch('/api/akademik/piket-kelas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'DELETE', id }),
+        body: JSON.stringify({ action: 'DELETE', id: item.id }),
       });
+      const json = await res.json();
       if (!res.ok) {
-        const json = await res.json();
         throw new Error(json.error || 'Gagal menghapus.');
       }
+      showToast('success', `Jadwal piket ${name} dihapus.`);
       await loadData(selectedClassroomId);
     } catch (err) {
-      setMsg({ type: 'err', text: err instanceof Error ? err.message : 'Gagal menghapus.' });
+      showToast('error', err instanceof Error ? err.message : 'Gagal menghapus.');
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="space-y-6">
-      <div className="glass-card rounded-3xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
-            <ClipboardCheck className="w-5 h-5 text-emerald-700" />
-            Manajemen Jadwal Piket Kelas Siswa
+    <div className="max-w-7xl mx-auto space-y-6">
+      <div className="glass-card rounded-3xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
+            <ClipboardCheck className="w-5 h-5 text-emerald-700 shrink-0" />
+            <span>Manajemen Jadwal Piket Kelas Siswa</span>
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
             Atur pembagian jadwal piket kebersihan kelas per hari (Senin–Sabtu). Siswa dan orang tua akan melihat penanda khusus pada hari piket masing-masing.
           </p>
         </div>
 
-        <div className="min-w-[220px]">
+        <div className="w-full md:w-auto md:min-w-[220px]">
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">
             Pilih Rombel / Kelas:
           </label>
@@ -149,37 +164,35 @@ export function PiketKelasWorkspace() {
               setSelectedClassroomId(e.target.value);
               loadData(e.target.value);
             }}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900"
+            className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
           >
-            {classrooms.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
+            {classrooms.length === 0 ? (
+              <option value="">Belum ada rombel</option>
+            ) : (
+              classrooms.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))
+            )}
           </select>
         </div>
       </div>
 
-      {msg && (
-        <div
-          className={`rounded-2xl px-4 py-3 text-xs font-medium border ${
-            msg.type === 'ok'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-rose-50 border-rose-200 text-rose-700'
-          }`}
-        >
-          {msg.text}
-        </div>
-      )}
+      <AkademikToast toast={toast} onDismiss={dismissToast} />
+      <AkademikErrorBanner error={loadError} onRetry={() => loadData(selectedClassroomId)} />
 
       {/* Form Tambah Jadwal Piket */}
-      <form onSubmit={handleAdd} className="glass-card rounded-3xl p-6 grid sm:grid-cols-4 gap-3 items-end">
+      <form
+        onSubmit={handleAdd}
+        className="glass-card rounded-3xl p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end"
+      >
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1">Hari Piket</label>
           <select
             value={form.day_of_week}
             onChange={(e) => setForm({ ...form, day_of_week: Number(e.target.value) })}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold"
+            className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold"
           >
             {Object.entries(DAY_NAMES).map(([k, v]) => (
               <option key={k} value={k}>
@@ -195,7 +208,7 @@ export function PiketKelasWorkspace() {
             required
             value={form.student_id}
             onChange={(e) => setForm({ ...form, student_id: e.target.value })}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+            className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
           >
             <option value="">-- Pilih Siswa --</option>
             {students.map((s) => (
@@ -221,8 +234,8 @@ export function PiketKelasWorkspace() {
 
         <button
           type="submit"
-          disabled={submitting}
-          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2 px-4 text-xs transition"
+          disabled={submitting || !selectedClassroomId}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2.5 px-4 text-xs transition"
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
           Tambah ke Piket
@@ -241,7 +254,7 @@ export function PiketKelasWorkspace() {
               <div key={day} className="glass-card rounded-3xl p-5 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-emerald-600" />
+                    <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
                     {DAY_NAMES[day]}
                   </h3>
                   <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
@@ -257,20 +270,23 @@ export function PiketKelasWorkspace() {
                         key={item.id}
                         className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2 text-xs"
                       >
-                        <div>
-                          <p className="font-semibold text-slate-800">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-slate-800 truncate">
                             {item.student?.full_name || 'Siswa'}
                           </p>
                           {item.task_notes && (
-                            <p className="text-[10px] text-slate-500">{item.task_notes}</p>
+                            <p className="text-[10px] text-slate-500 break-words">
+                              {item.task_notes}
+                            </p>
                           )}
                         </div>
                         <button
                           type="button"
-                          onClick={() => handleDelete(item.id)}
+                          onClick={() => handleDelete(item)}
                           disabled={submitting}
-                          className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-100 transition"
+                          className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-100 disabled:opacity-40 transition shrink-0"
                           title="Hapus"
+                          aria-label={`Hapus piket ${item.student?.full_name || 'siswa'}`}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

@@ -16,6 +16,7 @@ import {
   UserCheck,
   Users,
 } from 'lucide-react';
+import { AkademikErrorBanner, AkademikToast, useAkademikToast } from './akademik-ui';
 
 interface TeacherRecapRow {
   teacher_id: string;
@@ -98,6 +99,9 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
 
   const tab = section;
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const { toast, showToast, dismissToast } = useAkademikToast();
+
   const [monthValue, setMonthValue] = useState(initialMonth);
   const [startDate, setStartDate] = useState(initialRange.start);
   const [endDate, setEndDate] = useState(initialRange.end);
@@ -113,8 +117,13 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
   const [subjects, setSubjects] = useState<FilterOption[]>([]);
   const [teachers, setTeachers] = useState<FilterOption[]>([]);
 
+  const isInvalidRange = Boolean(startDate && endDate && startDate > endDate);
+
   const loadData = useCallback(async () => {
-    setLoading(true);
+    if (startDate && endDate && startDate > endDate) {
+      setLoading(false);
+      return;
+    }
     try {
       const params = new URLSearchParams({ startDate, endDate });
       if (classroomId) params.set('classroomId', classroomId);
@@ -125,21 +134,28 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
         cache: 'no-store',
       });
       const data = await res.json();
-      if (res.ok) {
-        setTeacherRecap(data.teacherRecap || []);
-        setDailyStudentRecap(data.dailyStudentRecap || []);
-        setSubjectStudentRecap(data.subjectStudentRecap || []);
-        setClassrooms(data.filters?.classrooms || []);
-        setSubjects(data.filters?.subjects || []);
-        setTeachers(data.filters?.teachers || []);
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal memuat rekapitulasi absensi.');
       }
+      setLoadError(null);
+      setTeacherRecap(data.teacherRecap || []);
+      setDailyStudentRecap(data.dailyStudentRecap || []);
+      setSubjectStudentRecap(data.subjectStudentRecap || []);
+      setClassrooms(data.filters?.classrooms || []);
+      setSubjects(data.filters?.subjects || []);
+      setTeachers(data.filters?.teachers || []);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Gagal terhubung ke server.');
     } finally {
       setLoading(false);
     }
   }, [startDate, endDate, classroomId, subjectId, teacherId]);
 
   useEffect(() => {
-    loadData();
+    const timer = setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [loadData]);
 
   const filteredGuru = useMemo(() => {
@@ -322,6 +338,10 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
 
   function handleExportXlsx() {
     const payload = getExportPayload();
+    if (payload.rows.length === 0) {
+      showToast('error', 'Tidak ada data pada periode ini untuk diekspor ke Excel.');
+      return;
+    }
     const ws = XLSX.utils.json_to_sheet(payload.objects);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Rekap Absensi');
@@ -330,6 +350,10 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
 
   async function handleExportPdf() {
     const payload = getExportPayload();
+    if (payload.rows.length === 0) {
+      showToast('error', 'Tidak ada data pada periode ini untuk diekspor ke PDF.');
+      return;
+    }
     const doc = new jsPDF({ orientation: 'landscape' });
     const refCode = `RKP-${section.toUpperCase()}-${startDate.replace(/-/g, '')}-${endDate.replace(/-/g, '')}`;
 
@@ -359,18 +383,18 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 print:hidden">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-xl font-bold text-slate-900">Rekapitulasi Absensi</h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
             Rekap absensi guru, absensi siswa harian (piket), dan absensi siswa per mata pelajaran.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={handleExportXlsx}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition"
           >
             <FileSpreadsheet className="w-4 h-4" />
             Export .xlsx
@@ -378,7 +402,7 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
           <button
             type="button"
             onClick={handleExportPdf}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition"
           >
             <Download className="w-4 h-4" />
             Download PDF
@@ -386,13 +410,16 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition"
           >
             <Printer className="w-4 h-4" />
             Cetak
           </button>
         </div>
       </div>
+
+      <AkademikToast toast={toast} onDismiss={dismissToast} />
+      <AkademikErrorBanner error={loadError} onRetry={loadData} />
 
       {/* Print Header */}
       <div className="hidden print:block border-b border-slate-300 pb-3 mb-4">
@@ -403,7 +430,7 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
       </div>
 
       {/* Filter Bar */}
-      <div className="glass-card rounded-3xl p-4 space-y-3 print:hidden">
+      <div className="glass-card rounded-3xl p-4 sm:p-5 space-y-3 print:hidden">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
           <div>
             <label className="block font-semibold text-slate-600 mb-1">Preset Bulan</label>
@@ -426,7 +453,10 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
             <input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => {
+                setMonthValue('');
+                setStartDate(e.target.value);
+              }}
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
             />
           </div>
@@ -435,7 +465,10 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
             <input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => {
+                setMonthValue('');
+                setEndDate(e.target.value);
+              }}
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
             />
           </div>
@@ -444,7 +477,7 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
             <select
               value={classroomId}
               onChange={(e) => setClassroomId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+              className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white"
             >
               <option value="">Semua Kelas</option>
               {classrooms.map((c) => (
@@ -459,7 +492,7 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
             <select
               value={subjectId}
               onChange={(e) => setSubjectId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+              className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white"
             >
               <option value="">Semua Mapel</option>
               {subjects.map((s) => (
@@ -474,7 +507,7 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
             <select
               value={teacherId}
               onChange={(e) => setTeacherId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
+              className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white"
             >
               <option value="">Semua Guru</option>
               {teachers.map((t) => (
@@ -486,21 +519,27 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
           </div>
         </div>
 
+        {isInvalidRange && (
+          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+            Tanggal mulai tidak boleh lebih besar dari tanggal akhir.
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
           <div className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
             {tab === 'guru' ? (
               <>
-                <UserCheck className="w-4 h-4 text-emerald-700" />
+                <UserCheck className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span>Rekap Absensi Guru ({filteredGuru.length})</span>
               </>
             ) : tab === 'siswa-harian' ? (
               <>
-                <Users className="w-4 h-4 text-emerald-700" />
+                <Users className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span>Rekap Siswa Harian/Piket ({filteredDailyStudent.length})</span>
               </>
             ) : (
               <>
-                <BookOpenCheck className="w-4 h-4 text-emerald-700" />
+                <BookOpenCheck className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span>Rekap Siswa per Mapel ({filteredSubjectStudent.length})</span>
               </>
             )}
@@ -520,142 +559,148 @@ export function RekapAbsensiWorkspace({ section }: { section: RekapAbsensiSectio
       </div>
 
       {/* Table Content */}
-      <div className="glass-card rounded-3xl p-5 overflow-x-auto">
+      <div className="glass-card rounded-3xl p-4 sm:p-5">
         {loading ? (
           <div className="py-12 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Memuat rekapitulasi absensi...
+            <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> Memuat rekapitulasi absensi...
           </div>
-        ) : tab === 'guru' ? (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-left font-semibold text-slate-500 uppercase">
-                <th className="py-3 px-3">Nama Guru</th>
-                <th className="py-3 px-3 text-center">Hari Hadir</th>
-                <th className="py-3 px-3 text-center">Mengajar</th>
-                <th className="py-3 px-3 text-center">Piket</th>
-                <th className="py-3 px-3 text-center">Ujian</th>
-                <th className="py-3 px-3 text-center">Acara</th>
-                <th className="py-3 px-3 text-center">Terkonfirmasi</th>
-                <th className="py-3 px-3 text-center">Total JTM</th>
-                <th className="py-3 px-3 text-center">Izin Keluar</th>
-                <th className="py-3 px-3 text-center">Rata-rata Hadir</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredGuru.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="py-8 text-center text-slate-400">
-                    Tidak ada data absensi guru pada periode ini.
-                  </td>
-                </tr>
-              ) : (
-                filteredGuru.map((r) => (
-                  <tr key={r.teacher_id} className="hover:bg-slate-50">
-                    <td className="py-3 px-3">
-                      <p className="font-semibold text-slate-900">{r.full_name}</p>
-                      <p className="text-[11px] text-slate-400">NIP: {r.nip || '-'}</p>
-                    </td>
-                    <td className="py-3 px-3 text-center font-semibold">{r.total_days_present}</td>
-                    <td className="py-3 px-3 text-center">{r.teaching_sessions}</td>
-                    <td className="py-3 px-3 text-center">{r.picket_sessions}</td>
-                    <td className="py-3 px-3 text-center">{r.exam_sessions}</td>
-                    <td className="py-3 px-3 text-center">{r.event_sessions}</td>
-                    <td className="py-3 px-3 text-center font-semibold text-emerald-700">
-                      {r.confirmed_sessions}
-                    </td>
-                    <td className="py-3 px-3 text-center font-bold text-slate-900">{r.total_jtm}</td>
-                    <td className="py-3 px-3 text-center">{r.total_short_leave_minutes} mnt</td>
-                    <td className="py-3 px-3 text-center font-semibold">
-                      {r.avg_presence_pct != null ? `${r.avg_presence_pct}%` : '-'}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        ) : tab === 'siswa-harian' ? (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-left font-semibold text-slate-500 uppercase">
-                <th className="py-3 px-3">Nama Siswa</th>
-                <th className="py-3 px-3">NIS</th>
-                <th className="py-3 px-3">Kelas</th>
-                <th className="py-3 px-3 text-center text-emerald-700">Hadir</th>
-                <th className="py-3 px-3 text-center text-amber-700">Sakit</th>
-                <th className="py-3 px-3 text-center text-sky-700">Izin</th>
-                <th className="py-3 px-3 text-center text-rose-700">Alpa</th>
-                <th className="py-3 px-3 text-center">Total</th>
-                <th className="py-3 px-3 text-center">Persentase</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredDailyStudent.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
-                    Tidak ada data absensi siswa harian (piket) pada periode ini.
-                  </td>
-                </tr>
-              ) : (
-                filteredDailyStudent.map((r) => (
-                  <tr key={`${r.student_id}-${r.classroom_id}`} className="hover:bg-slate-50">
-                    <td className="py-3 px-3 font-semibold text-slate-900">{r.full_name}</td>
-                    <td className="py-3 px-3 text-slate-600">{r.nis || '-'}</td>
-                    <td className="py-3 px-3 text-slate-600">{r.classroom_name}</td>
-                    <td className="py-3 px-3 text-center font-bold text-emerald-700">{r.hadir}</td>
-                    <td className="py-3 px-3 text-center font-semibold text-amber-700">{r.sakit}</td>
-                    <td className="py-3 px-3 text-center font-semibold text-sky-700">{r.izin}</td>
-                    <td className="py-3 px-3 text-center font-semibold text-rose-700">{r.alpa}</td>
-                    <td className="py-3 px-3 text-center font-semibold">{r.total}</td>
-                    <td className="py-3 px-3 text-center font-bold">{r.presence_pct}%</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
         ) : (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-left font-semibold text-slate-500 uppercase">
-                <th className="py-3 px-3">Nama Siswa</th>
-                <th className="py-3 px-3">Kelas</th>
-                <th className="py-3 px-3">Mata Pelajaran</th>
-                <th className="py-3 px-3">Guru Mapel</th>
-                <th className="py-3 px-3 text-center text-emerald-700">H</th>
-                <th className="py-3 px-3 text-center text-amber-700">S</th>
-                <th className="py-3 px-3 text-center text-sky-700">I</th>
-                <th className="py-3 px-3 text-center text-rose-700">A</th>
-                <th className="py-3 px-3 text-center">Total</th>
-                <th className="py-3 px-3 text-center">Persentase</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredSubjectStudent.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="py-8 text-center text-slate-400">
-                    Tidak ada data absensi siswa per mata pelajaran pada periode ini.
-                  </td>
-                </tr>
-              ) : (
-                filteredSubjectStudent.map((r) => (
-                  <tr key={r.key} className="hover:bg-slate-50">
-                    <td className="py-3 px-3">
-                      <p className="font-semibold text-slate-900">{r.full_name}</p>
-                      <p className="text-[11px] text-slate-400">NIS: {r.nis || '-'}</p>
-                    </td>
-                    <td className="py-3 px-3 text-slate-600">{r.classroom_name}</td>
-                    <td className="py-3 px-3 font-medium text-slate-800">{r.subject_name}</td>
-                    <td className="py-3 px-3 text-slate-600">{r.teacher_name}</td>
-                    <td className="py-3 px-3 text-center font-bold text-emerald-700">{r.hadir}</td>
-                    <td className="py-3 px-3 text-center font-semibold text-amber-700">{r.sakit}</td>
-                    <td className="py-3 px-3 text-center font-semibold text-sky-700">{r.izin}</td>
-                    <td className="py-3 px-3 text-center font-semibold text-rose-700">{r.alpa}</td>
-                    <td className="py-3 px-3 text-center font-semibold">{r.total}</td>
-                    <td className="py-3 px-3 text-center font-bold">{r.presence_pct}%</td>
+          <div className="overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
+            {tab === 'guru' ? (
+              <table className="w-full text-xs min-w-[760px]">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    <th className="py-3 px-3">Nama Guru</th>
+                    <th className="py-3 px-3 text-center">Hari Hadir</th>
+                    <th className="py-3 px-3 text-center">Mengajar</th>
+                    <th className="py-3 px-3 text-center">Piket</th>
+                    <th className="py-3 px-3 text-center">Ujian</th>
+                    <th className="py-3 px-3 text-center">Acara</th>
+                    <th className="py-3 px-3 text-center">Terkonfirmasi</th>
+                    <th className="py-3 px-3 text-center">Total JTM</th>
+                    <th className="py-3 px-3 text-center">Izin Keluar</th>
+                    <th className="py-3 px-3 text-center">Rata-rata Hadir</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredGuru.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="py-8 text-center text-slate-400">
+                        Tidak ada data absensi guru pada periode ini.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredGuru.map((r) => (
+                      <tr key={r.teacher_id} className="hover:bg-slate-50/80">
+                        <td className="py-3 px-3">
+                          <p className="font-semibold text-slate-900">{r.full_name}</p>
+                          <p className="text-[11px] text-slate-400">NIP: {r.nip || '-'}</p>
+                        </td>
+                        <td className="py-3 px-3 text-center font-semibold">{r.total_days_present}</td>
+                        <td className="py-3 px-3 text-center">{r.teaching_sessions}</td>
+                        <td className="py-3 px-3 text-center">{r.picket_sessions}</td>
+                        <td className="py-3 px-3 text-center">{r.exam_sessions}</td>
+                        <td className="py-3 px-3 text-center">{r.event_sessions}</td>
+                        <td className="py-3 px-3 text-center font-semibold text-emerald-700">
+                          {r.confirmed_sessions}
+                        </td>
+                        <td className="py-3 px-3 text-center font-bold text-slate-900">{r.total_jtm}</td>
+                        <td className="py-3 px-3 text-center whitespace-nowrap">
+                          {r.total_short_leave_minutes} mnt
+                        </td>
+                        <td className="py-3 px-3 text-center font-semibold">
+                          {r.avg_presence_pct != null ? `${r.avg_presence_pct}%` : '-'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            ) : tab === 'siswa-harian' ? (
+              <table className="w-full text-xs min-w-[680px]">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    <th className="py-3 px-3">Nama Siswa</th>
+                    <th className="py-3 px-3">NIS</th>
+                    <th className="py-3 px-3">Kelas</th>
+                    <th className="py-3 px-3 text-center text-emerald-700">Hadir</th>
+                    <th className="py-3 px-3 text-center text-amber-700">Sakit</th>
+                    <th className="py-3 px-3 text-center text-sky-700">Izin</th>
+                    <th className="py-3 px-3 text-center text-rose-700">Alpa</th>
+                    <th className="py-3 px-3 text-center">Total</th>
+                    <th className="py-3 px-3 text-center">Persentase</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredDailyStudent.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-slate-400">
+                        Tidak ada data absensi siswa harian (piket) pada periode ini.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredDailyStudent.map((r) => (
+                      <tr key={`${r.student_id}-${r.classroom_id}`} className="hover:bg-slate-50/80">
+                        <td className="py-3 px-3 font-semibold text-slate-900">{r.full_name}</td>
+                        <td className="py-3 px-3 text-slate-600">{r.nis || '-'}</td>
+                        <td className="py-3 px-3 text-slate-600">{r.classroom_name}</td>
+                        <td className="py-3 px-3 text-center font-bold text-emerald-700">{r.hadir}</td>
+                        <td className="py-3 px-3 text-center font-semibold text-amber-700">{r.sakit}</td>
+                        <td className="py-3 px-3 text-center font-semibold text-sky-700">{r.izin}</td>
+                        <td className="py-3 px-3 text-center font-semibold text-rose-700">{r.alpa}</td>
+                        <td className="py-3 px-3 text-center font-semibold">{r.total}</td>
+                        <td className="py-3 px-3 text-center font-bold">{r.presence_pct}%</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-xs min-w-[780px]">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left font-semibold text-slate-500 uppercase whitespace-nowrap">
+                    <th className="py-3 px-3">Nama Siswa</th>
+                    <th className="py-3 px-3">Kelas</th>
+                    <th className="py-3 px-3">Mata Pelajaran</th>
+                    <th className="py-3 px-3">Guru Mapel</th>
+                    <th className="py-3 px-3 text-center text-emerald-700">H</th>
+                    <th className="py-3 px-3 text-center text-amber-700">S</th>
+                    <th className="py-3 px-3 text-center text-sky-700">I</th>
+                    <th className="py-3 px-3 text-center text-rose-700">A</th>
+                    <th className="py-3 px-3 text-center">Total</th>
+                    <th className="py-3 px-3 text-center">Persentase</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredSubjectStudent.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="py-8 text-center text-slate-400">
+                        Tidak ada data absensi siswa per mata pelajaran pada periode ini.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSubjectStudent.map((r) => (
+                      <tr key={r.key} className="hover:bg-slate-50/80">
+                        <td className="py-3 px-3">
+                          <p className="font-semibold text-slate-900">{r.full_name}</p>
+                          <p className="text-[11px] text-slate-400">NIS: {r.nis || '-'}</p>
+                        </td>
+                        <td className="py-3 px-3 text-slate-600">{r.classroom_name}</td>
+                        <td className="py-3 px-3 font-medium text-slate-800">{r.subject_name}</td>
+                        <td className="py-3 px-3 text-slate-600">{r.teacher_name}</td>
+                        <td className="py-3 px-3 text-center font-bold text-emerald-700">{r.hadir}</td>
+                        <td className="py-3 px-3 text-center font-semibold text-amber-700">{r.sakit}</td>
+                        <td className="py-3 px-3 text-center font-semibold text-sky-700">{r.izin}</td>
+                        <td className="py-3 px-3 text-center font-semibold text-rose-700">{r.alpa}</td>
+                        <td className="py-3 px-3 text-center font-semibold">{r.total}</td>
+                        <td className="py-3 px-3 text-center font-bold">{r.presence_pct}%</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
         )}
       </div>
     </div>

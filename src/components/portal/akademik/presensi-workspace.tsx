@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BookOpen,
-  CheckCircle2,
   Loader2,
   MapPin,
   RefreshCw,
@@ -15,6 +14,14 @@ import { verifyGeofence } from '@/lib/domain/geofence';
 import { calculateLateJtm, getWibTodayDateString, isSundayDate } from '@/lib/domain/jtm-late-penalty';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
+import {
+  AkademikErrorBanner,
+  AkademikLoading,
+  AkademikModal,
+  AkademikToast,
+  BatchStudentAttendanceList,
+  useAkademikToast,
+} from './akademik-ui';
 
 interface TeacherOpt {
   id: string;
@@ -178,11 +185,12 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
   const { hasPermission } = usePortalSession();
   const canSubmitPresensi = hasPermission(PERMISSIONS.PRESENSI_SUBMIT);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const { toast, showToast, dismissToast } = useAkademikToast();
 
   const [teachers, setTeachers] = useState<TeacherOpt[]>([]);
-  const [students, setStudents] = useState<{ id: string; full_name: string; nis: string | null }[]>([]);
+  const [, setStudents] = useState<{ id: string; full_name: string; nis: string | null }[]>([]);
   const [classrooms, setClassrooms] = useState<{ id: string; name: string }[]>([]);
   const [enrollments, setEnrollments] = useState<
     {
@@ -306,16 +314,16 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
     jtm_fallback: 2,
   });
 
-  const [delegationForm, setDelegationForm] = useState({
+  const [delegationForm, setDelegationForm] = useState(() => ({
     picket_attendance_id: '',
-    delegation_date: '',
+    delegation_date: new Date().toISOString().slice(0, 10),
     delegation_type: 'MENGAJAR' as 'MENGAJAR' | 'PIKET',
     original_teacher_id: '',
     substitute_teacher_id: '',
     schedule_id: '',
     jtm_transferred: 2,
     reason: '',
-  });
+  }));
 
   const [studentAttForm, setStudentAttForm] = useState({
     picket_attendance_id: '',
@@ -348,19 +356,17 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
     actor_ref: '',
   });
 
-  const showToast = useCallback((type: 'success' | 'error', text: string) => {
-    setToast({ type, text });
-    setTimeout(() => setToast(null), 5000);
-  }, []);
-
   const loadData = useCallback(async () => {
     try {
       const [biRes, prRes] = await Promise.all([
-        fetch('/api/akademik/buku-induk'),
-        fetch('/api/akademik/presensi'),
+        fetch('/api/akademik/buku-induk', { cache: 'no-store' }),
+        fetch('/api/akademik/presensi', { cache: 'no-store' }),
       ]);
       const bi = await biRes.json();
       const pr = await prRes.json();
+      if (!biRes.ok) throw new Error(bi.error || 'Gagal memuat data GTK.');
+      if (!prRes.ok) throw new Error(pr.error || 'Gagal memuat data presensi.');
+      setLoadError(null);
       const loadedTeachers: TeacherOpt[] = bi.teachers || [];
       setTeachers(loadedTeachers);
       if (loadedTeachers.length === 1) {
@@ -386,6 +392,8 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
       if (pr.geofenceConfig) {
         setGeofenceConfig(pr.geofenceConfig);
       }
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Gagal terhubung ke server.');
     } finally {
       setLoading(false);
     }
@@ -434,30 +442,35 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
   }, [showToast]);
 
   useEffect(() => {
-    setDelegationForm((prev) =>
-      prev.delegation_date ? prev : { ...prev, delegation_date: new Date().toISOString().slice(0, 10) }
-    );
-    loadData();
-    captureBrowserGps(false);
+    const timer = setTimeout(() => {
+      void loadData();
+      captureBrowserGps(false);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [loadData, captureBrowserGps]);
 
   async function postPresensi(body: unknown) {
-    const res = await fetch('/api/akademik/presensi', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      if (res.status === 403 && data.code === 'OUTSIDE_GEOFENCE' && data.geofence) {
-        setOutsideModal(data.geofence);
+    try {
+      const res = await fetch('/api/akademik/presensi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 403 && data.code === 'OUTSIDE_GEOFENCE' && data.geofence) {
+          setOutsideModal(data.geofence);
+          return null;
+        }
+        showToast('error', data.error || 'Terjadi kesalahan.');
         return null;
       }
-      showToast('error', data.error || 'Terjadi kesalahan.');
+      await loadData();
+      return data;
+    } catch {
+      showToast('error', 'Terjadi kesalahan jaringan. Silakan coba lagi.');
       return null;
     }
-    await loadData();
-    return data;
   }
 
   // Jurnal Pembelajaran yang sudah diisi (berdasarkan session_confirmation_id)
@@ -597,11 +610,7 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
   }, [gpsCaptured, teacherAttForm.latitude, teacherAttForm.longitude, geofenceConfig]);
 
   if (loading) {
-    return (
-      <div className="max-w-7xl mx-auto glass-card rounded-3xl p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin" /> Memuat data presensi, jurnal &amp; delegasi...
-      </div>
-    );
+    return <AkademikLoading label="Memuat data presensi, jurnal & delegasi..." />;
   }
 
   const isLocationBlocked =
@@ -609,38 +618,31 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {toast && (
-        <div
-          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center gap-2 ${
-            toast.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-rose-50 border-rose-200 text-rose-800'
-          }`}
-        >
-          {toast.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-          ) : (
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-          )}
-          <span>{toast.text}</span>
-        </div>
-      )}
+      <AkademikToast toast={toast} onDismiss={dismissToast} />
+      <AkademikErrorBanner error={loadError} onRetry={loadData} />
 
       {/* 1. Presensi Guru GPS Geofencing */}
       {section === 'gps' && (
-        <div className="glass-card rounded-3xl p-6 space-y-4">
-          <div className="flex items-center justify-between gap-2">
+        <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-emerald-700" /> Presensi Guru{' '}
-              {geofenceConfig.enabled ? '(GPS Geofencing)' : '(Mode Tanpa Geofencing)'}
+              <MapPin className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>
+                Presensi Guru{' '}
+                {geofenceConfig.enabled ? '(GPS Geofencing)' : '(Mode Tanpa Geofencing)'}
+              </span>
             </h1>
             {geofenceConfig.enabled && (
               <button
                 type="button"
+                disabled={locationStatus === 'checking'}
                 onClick={() => captureBrowserGps(true)}
-                className="text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl inline-flex items-center gap-1 transition"
+                className="text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-60 px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 transition"
               >
-                <RefreshCw className="w-3 h-3" /> Ambil GPS Perangkat
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${locationStatus === 'checking' ? 'animate-spin' : ''}`}
+                />
+                {locationStatus === 'checking' ? 'Membaca GPS...' : 'Ambil GPS Perangkat'}
               </button>
             )}
           </div>
@@ -971,40 +973,48 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
+              if (submitting) return;
               const sc = pendingJournalSessions.find(
                 (item) => item.id === journalForm.session_confirmation_id
               );
-              const classroomId = sc?.schedule?.classroom_id;
-              if (sc?.schedule_id && classroomId && Object.keys(subjectStudentStatuses).length > 0) {
-                const records = Object.entries(subjectStudentStatuses).map(([student_id, status]) => ({
-                  student_id,
-                  status,
-                }));
-                await postPresensi({
-                  action: 'RECORD_SUBJECT_STUDENT_ATTENDANCE',
-                  schedule_id: sc.schedule_id,
-                  classroom_id: classroomId,
-                  attendance_date: sc.session_date,
-                  records,
-                });
-              }
+              const classroomId = sc?.schedule?.classroom_id || journalFallbackClassroomId;
+              setSubmitting(true);
+              try {
+                if (sc?.schedule_id && classroomId && Object.keys(subjectStudentStatuses).length > 0) {
+                  const records = Object.entries(subjectStudentStatuses).map(([student_id, status]) => ({
+                    student_id,
+                    status,
+                  }));
+                  const attRes = await postPresensi({
+                    action: 'RECORD_SUBJECT_STUDENT_ATTENDANCE',
+                    schedule_id: sc.schedule_id,
+                    classroom_id: classroomId,
+                    attendance_date: sc.session_date,
+                    records,
+                  });
+                  if (!attRes) return;
+                }
 
-              const res = await postPresensi({ action: 'SUBMIT_JOURNAL', ...journalForm });
-              if (res) {
-                showToast(
-                  'success',
-                  `Jurnal pembelajaran & absensi siswa mapel disimpan (${res.percentage ?? 100}%). +${res.jtmCredited} JTM telah dihitung.`
-                );
-                setSubjectStudentStatuses({});
-                setJournalForm({
-                  session_confirmation_id: '',
-                  topic: '',
-                  learning_activities: '',
-                  present_students_count: 30,
-                  absent_students_count: 0,
-                  student_attendance_notes: '',
-                  jtm_fallback: 2,
-                });
+                const res = await postPresensi({ action: 'SUBMIT_JOURNAL', ...journalForm });
+                if (res) {
+                  showToast(
+                    'success',
+                    `Jurnal pembelajaran & absensi siswa mapel disimpan (${res.percentage ?? 100}%). +${res.jtmCredited} JTM telah dihitung.`
+                  );
+                  setSubjectStudentStatuses({});
+                  setJournalFallbackClassroomId('');
+                  setJournalForm({
+                    session_confirmation_id: '',
+                    topic: '',
+                    learning_activities: '',
+                    present_students_count: 30,
+                    absent_students_count: 0,
+                    student_attendance_notes: '',
+                    jtm_fallback: 2,
+                  });
+                }
+              } finally {
+                setSubmitting(false);
               }
             }}
             className="space-y-3"
@@ -1171,65 +1181,28 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
                         ))}
                       </select>
                       {classStudents.length > 0 && (
-                        <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
-                          {classStudents.map((st) => {
-                            const current = subjectStudentStatuses[st.id] || 'HADIR';
-                            return (
-                              <div
-                                key={st.id}
-                                className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs"
-                              >
-                                <div className="truncate">
-                                  <span className="font-semibold text-slate-900">{st.full_name}</span>
-                                  {st.nis && <span className="text-slate-400 ml-1.5">({st.nis})</span>}
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {(['HADIR', 'SAKIT', 'IZIN', 'ALPA'] as const).map((statusOpt) => (
-                                    <button
-                                      key={statusOpt}
-                                      type="button"
-                                      onClick={() => {
-                                        const next = { ...subjectStudentStatuses, [st.id]: statusOpt };
-                                        setSubjectStudentStatuses(next);
-                                        const entries = classStudents.map((item) => ({
-                                          name: item.full_name,
-                                          status: next[item.id] || 'HADIR',
-                                        }));
-                                        const presentCount = entries.filter(
-                                          (x) => x.status === 'HADIR'
-                                        ).length;
-                                        const absentEntries = entries.filter(
-                                          (x) => x.status !== 'HADIR'
-                                        );
-                                        setJournalForm((prev) => ({
-                                          ...prev,
-                                          present_students_count: presentCount,
-                                          absent_students_count: absentEntries.length,
-                                          student_attendance_notes: absentEntries
-                                            .map((x) => `${x.name} (${x.status})`)
-                                            .join(', '),
-                                        }));
-                                      }}
-                                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
-                                        current === statusOpt
-                                          ? statusOpt === 'HADIR'
-                                            ? 'bg-emerald-600 text-white'
-                                            : statusOpt === 'SAKIT'
-                                            ? 'bg-amber-500 text-white'
-                                            : statusOpt === 'IZIN'
-                                            ? 'bg-sky-600 text-white'
-                                            : 'bg-rose-600 text-white'
-                                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                      }`}
-                                    >
-                                      {statusOpt[0]}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                        <BatchStudentAttendanceList
+                          students={classStudents}
+                          statuses={subjectStudentStatuses}
+                          onChangeStatus={(studentId, statusOpt) => {
+                            const next = { ...subjectStudentStatuses, [studentId]: statusOpt };
+                            setSubjectStudentStatuses(next);
+                            const entries = classStudents.map((item) => ({
+                              name: item.full_name,
+                              status: next[item.id] || 'HADIR',
+                            }));
+                            const presentCount = entries.filter((x) => x.status === 'HADIR').length;
+                            const absentEntries = entries.filter((x) => x.status !== 'HADIR');
+                            setJournalForm((prev) => ({
+                              ...prev,
+                              present_students_count: presentCount,
+                              absent_students_count: absentEntries.length,
+                              student_attendance_notes: absentEntries
+                                .map((x) => `${x.name} (${x.status})`)
+                                .join(', '),
+                            }));
+                          }}
+                        />
                       )}
                     </div>
                   );
@@ -1245,65 +1218,28 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
                 }
 
                 return (
-                  <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
-                    {classStudents.map((st) => {
-                      const current = subjectStudentStatuses[st.id] || 'HADIR';
-                      return (
-                        <div
-                          key={st.id}
-                          className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs"
-                        >
-                          <div className="truncate">
-                            <span className="font-semibold text-slate-900">{st.full_name}</span>
-                            {st.nis && <span className="text-slate-400 ml-1.5">({st.nis})</span>}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {(['HADIR', 'SAKIT', 'IZIN', 'ALPA'] as const).map((statusOpt) => (
-                              <button
-                                key={statusOpt}
-                                type="button"
-                                onClick={() => {
-                                  const next = { ...subjectStudentStatuses, [st.id]: statusOpt };
-                                  setSubjectStudentStatuses(next);
-                                  const entries = classStudents.map((item) => ({
-                                    name: item.full_name,
-                                    status: next[item.id] || 'HADIR',
-                                  }));
-                                  const presentCount = entries.filter(
-                                    (x) => x.status === 'HADIR'
-                                  ).length;
-                                  const absentEntries = entries.filter(
-                                    (x) => x.status !== 'HADIR'
-                                  );
-                                  setJournalForm((prev) => ({
-                                    ...prev,
-                                    present_students_count: presentCount,
-                                    absent_students_count: absentEntries.length,
-                                    student_attendance_notes: absentEntries
-                                      .map((x) => `${x.name} (${x.status})`)
-                                      .join(', '),
-                                  }));
-                                }}
-                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
-                                  current === statusOpt
-                                    ? statusOpt === 'HADIR'
-                                      ? 'bg-emerald-600 text-white'
-                                      : statusOpt === 'SAKIT'
-                                      ? 'bg-amber-500 text-white'
-                                      : statusOpt === 'IZIN'
-                                      ? 'bg-sky-600 text-white'
-                                      : 'bg-rose-600 text-white'
-                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                }`}
-                              >
-                                {statusOpt[0]}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <BatchStudentAttendanceList
+                    students={classStudents}
+                    statuses={subjectStudentStatuses}
+                    onChangeStatus={(studentId, statusOpt) => {
+                      const next = { ...subjectStudentStatuses, [studentId]: statusOpt };
+                      setSubjectStudentStatuses(next);
+                      const entries = classStudents.map((item) => ({
+                        name: item.full_name,
+                        status: next[item.id] || 'HADIR',
+                      }));
+                      const presentCount = entries.filter((x) => x.status === 'HADIR').length;
+                      const absentEntries = entries.filter((x) => x.status !== 'HADIR');
+                      setJournalForm((prev) => ({
+                        ...prev,
+                        present_students_count: presentCount,
+                        absent_students_count: absentEntries.length,
+                        student_attendance_notes: absentEntries
+                          .map((x) => `${x.name} (${x.status})`)
+                          .join(', '),
+                      }));
+                    }}
+                  />
                 );
               })()}
 
@@ -1347,9 +1283,10 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
 
             <button
               type="submit"
-              disabled={pendingJournalSessions.length === 0 || isSundayDate(getWibTodayDateString())}
-              className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+              disabled={submitting || pendingJournalSessions.length === 0 || isSundayDate(getWibTodayDateString())}
+              className="w-full inline-flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition"
             >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Simpan Jurnal &amp; Hitung JTM
             </button>
           </form>
@@ -1424,11 +1361,11 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
                 return (
                   <div
                     key={item.key}
-                    className="p-3 rounded-2xl bg-white border border-emerald-200/80 flex items-center justify-between gap-3 text-xs"
+                    className="p-3 rounded-2xl bg-white border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                   >
-                    <div>
-                      <p className="font-bold text-slate-900">{item.teacher_name}</p>
-                      <p className="text-[11px] text-slate-600">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-slate-900 truncate">{item.teacher_name}</p>
+                      <p className="text-[11px] text-slate-600 break-words">
                         {item.session_date} • {item.label} ({item.expectedJtm} JTM)
                       </p>
                     </div>
@@ -1459,11 +1396,11 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
                 return (
                   <div
                     key={a.id}
-                    className="p-3 rounded-2xl bg-white border border-slate-200 flex items-center justify-between gap-3 text-xs"
+                    className="p-3 rounded-2xl bg-white border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                   >
-                    <div>
-                      <p className="font-bold text-slate-900">{a.teacher?.full_name || 'Guru'}</p>
-                      <p className="text-[11px] text-slate-500">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-slate-900 truncate">{a.teacher?.full_name || 'Guru'}</p>
+                      <p className="text-[11px] text-slate-500 break-words">
                         {a.attendance_date} •{' '}
                         <span className="font-semibold text-amber-700">{a.attendance_type}</span> •
                         Jarak {a.distance_meters ?? 0} m
@@ -1524,12 +1461,18 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              const res = await postPresensi({ action: 'CREATE_DELEGATION', ...delegationForm });
-              if (res) {
-                showToast(
-                  'success',
-                  'Guru pengganti berhasil ditunjuk. Guru pengganti wajib presensi & isi Jurnal Pembelajaran agar JTM dihitung.'
-                );
+              if (submitting) return;
+              setSubmitting(true);
+              try {
+                const res = await postPresensi({ action: 'CREATE_DELEGATION', ...delegationForm });
+                if (res) {
+                  showToast(
+                    'success',
+                    'Guru pengganti berhasil ditunjuk. Guru pengganti wajib presensi & isi Jurnal Pembelajaran agar JTM dihitung.'
+                  );
+                }
+              } finally {
+                setSubmitting(false);
               }
             }}
             className="space-y-3"
@@ -1540,7 +1483,7 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
               onChange={(e) =>
                 setDelegationForm({ ...delegationForm, picket_attendance_id: e.target.value })
               }
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
             >
               <option value="">-- Pilih Guru Piket Terkonfirmasi Admin --</option>
               {confirmedPicketAttendances.map((p) => (
@@ -1550,7 +1493,7 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
               ))}
             </select>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <input
                 type="date"
                 value={delegationForm.delegation_date}
@@ -1654,9 +1597,10 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
 
             <button
               type="submit"
-              disabled={confirmedPicketAttendances.length === 0}
-              className="w-full bg-slate-900 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+              disabled={submitting || confirmedPicketAttendances.length === 0}
+              className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-semibold py-2.5 rounded-xl text-xs transition"
             >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Tunjuk Guru Pengganti
             </button>
           </form>
@@ -1682,6 +1626,7 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
+              if (submitting) return;
               const classStudents = studentAttForm.classroom_id
                 ? enrollments
                     .filter(
@@ -1698,18 +1643,23 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
                 status: picketBatchStatuses[st.id] || 'HADIR',
                 notes: studentAttForm.notes || null,
               }));
-              const res = await postPresensi({
-                action: 'BATCH_STUDENT_ATTENDANCE',
-                picket_attendance_id: studentAttForm.picket_attendance_id,
-                classroom_id: studentAttForm.classroom_id,
-                records,
-              });
-              if (res) {
-                showToast(
-                  'success',
-                  `Absensi batch kelas (${res.savedCount ?? records.length} siswa) berhasil disimpan.`
-                );
-                setStudentAttForm((prev) => ({ ...prev, notes: '' }));
+              setSubmitting(true);
+              try {
+                const res = await postPresensi({
+                  action: 'BATCH_STUDENT_ATTENDANCE',
+                  picket_attendance_id: studentAttForm.picket_attendance_id,
+                  classroom_id: studentAttForm.classroom_id,
+                  records,
+                });
+                if (res) {
+                  showToast(
+                    'success',
+                    `Absensi batch kelas (${res.savedCount ?? records.length} siswa) berhasil disimpan.`
+                  );
+                  setStudentAttForm((prev) => ({ ...prev, notes: '' }));
+                }
+              } finally {
+                setSubmitting(false);
               }
             }}
             className="lg:col-span-6 space-y-3"
@@ -1816,58 +1766,26 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
                       Tandai Semua Hadir ({classStudents.length})
                     </button>
                   </div>
-                  <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
-                    {classStudents.map((st) => {
-                      const current = picketBatchStatuses[st.id] || 'HADIR';
-                      return (
-                        <div
-                          key={st.id}
-                          className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs"
-                        >
-                          <div className="truncate">
-                            <span className="font-semibold text-slate-900">{st.full_name}</span>
-                            {st.nis && <span className="text-slate-400 ml-1.5">({st.nis})</span>}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {(['HADIR', 'SAKIT', 'IZIN', 'ALPA'] as const).map((statusOpt) => (
-                              <button
-                                key={statusOpt}
-                                type="button"
-                                onClick={() =>
-                                  setPicketBatchStatuses((prev) => ({
-                                    ...prev,
-                                    [st.id]: statusOpt,
-                                  }))
-                                }
-                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
-                                  current === statusOpt
-                                    ? statusOpt === 'HADIR'
-                                      ? 'bg-emerald-600 text-white'
-                                      : statusOpt === 'SAKIT'
-                                      ? 'bg-amber-500 text-white'
-                                      : statusOpt === 'IZIN'
-                                      ? 'bg-sky-600 text-white'
-                                      : 'bg-rose-600 text-white'
-                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                }`}
-                              >
-                                {statusOpt[0]}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <BatchStudentAttendanceList
+                    students={classStudents}
+                    statuses={picketBatchStatuses}
+                    onChangeStatus={(studentId, statusOpt) =>
+                      setPicketBatchStatuses((prev) => ({
+                        ...prev,
+                        [studentId]: statusOpt,
+                      }))
+                    }
+                  />
                 </div>
               );
             })()}
 
             <button
               type="submit"
-              disabled={confirmedPicketAttendances.length === 0 || !studentAttForm.classroom_id}
-              className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 disabled:text-slate-500 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+              disabled={submitting || confirmedPicketAttendances.length === 0 || !studentAttForm.classroom_id}
+              className="w-full inline-flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 disabled:text-slate-500 text-white font-semibold py-2.5 rounded-xl text-xs transition"
             >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Simpan Absensi Kelas (Batch)
             </button>
           </form>
@@ -1926,22 +1844,28 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              const res = await postPresensi({
-                action: 'SUBMIT_PICKET_REPORT',
-                ...picketReportForm,
-              });
-              if (res) {
-                showToast(
-                  'success',
-                  `Laporan Harian Piket disimpan. +${res.jtmCredited} JTM telah dihitung.`
-                );
-                setPicketReportForm({
-                  attendance_id: '',
-                  summary: '',
-                  late_students_notes: '',
-                  teacher_substitution_notes: '',
-                  incidents: '',
+              if (submitting) return;
+              setSubmitting(true);
+              try {
+                const res = await postPresensi({
+                  action: 'SUBMIT_PICKET_REPORT',
+                  ...picketReportForm,
                 });
+                if (res) {
+                  showToast(
+                    'success',
+                    `Laporan Harian Piket disimpan. +${res.jtmCredited} JTM telah dihitung.`
+                  );
+                  setPicketReportForm({
+                    attendance_id: '',
+                    summary: '',
+                    late_students_notes: '',
+                    teacher_substitution_notes: '',
+                    incidents: '',
+                  });
+                }
+              } finally {
+                setSubmitting(false);
               }
             }}
             className="lg:col-span-6 space-y-2.5"
@@ -2009,9 +1933,10 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
 
             <button
               type="submit"
-              disabled={pendingPicketReports.length === 0}
-              className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 disabled:text-slate-500 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+              disabled={submitting || pendingPicketReports.length === 0}
+              className="w-full inline-flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 disabled:text-slate-500 text-white font-semibold py-2.5 rounded-xl text-xs transition"
             >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Simpan Laporan Harian Piket &amp; Hitung JTM
             </button>
           </form>
@@ -2065,17 +1990,31 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
+              if (submitting) return;
+              if (!canAdminConfirm && !manualTimeForm.actor_ref) {
+                showToast('error', 'Pilih peran Anda (Guru Piket / Panitia Terkonfirmasi) terlebih dahulu.');
+                return;
+              }
+              if (manualTimeForm.check_out_hhmm <= manualTimeForm.check_in_hhmm) {
+                showToast('error', 'Jam pulang harus lebih besar dari jam masuk.');
+                return;
+              }
               const [kind, refId] = manualTimeForm.actor_ref.split(':');
-              const res = await postPresensi({
-                action: 'SET_ATTENDANCE_TIMES',
-                attendance_id: manualTimeForm.attendance_id,
-                check_in_hhmm: manualTimeForm.check_in_hhmm,
-                check_out_hhmm: manualTimeForm.check_out_hhmm,
-                picket_attendance_id: kind === 'picket' ? refId : null,
-                committee_attendance_id: kind === 'committee' ? refId : null,
-              });
-              if (res) {
-                showToast('success', 'Jam masuk & jam pulang berhasil disimpan.');
+              setSubmitting(true);
+              try {
+                const res = await postPresensi({
+                  action: 'SET_ATTENDANCE_TIMES',
+                  attendance_id: manualTimeForm.attendance_id,
+                  check_in_hhmm: manualTimeForm.check_in_hhmm,
+                  check_out_hhmm: manualTimeForm.check_out_hhmm,
+                  picket_attendance_id: kind === 'picket' ? refId : null,
+                  committee_attendance_id: kind === 'committee' ? refId : null,
+                });
+                if (res) {
+                  showToast('success', 'Jam masuk & jam pulang berhasil disimpan.');
+                }
+              } finally {
+                setSubmitting(false);
               }
             }}
             className="space-y-2.5"
@@ -2152,8 +2091,10 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
 
             <button
               type="submit"
-              className="w-full bg-slate-900 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+              disabled={submitting}
+              className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition"
             >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Simpan Jam Masuk &amp; Jam Pulang
             </button>
           </form>
@@ -2184,19 +2125,33 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
+              if (submitting) return;
+              if (!canAdminConfirm && !shortLeaveForm.actor_ref) {
+                showToast('error', 'Pilih peran Anda (Guru Piket / Panitia Terkonfirmasi) terlebih dahulu.');
+                return;
+              }
+              if (shortLeaveForm.leave_end_time <= shortLeaveForm.leave_start_time) {
+                showToast('error', 'Jam kembali harus lebih besar dari jam keluar.');
+                return;
+              }
               const [kind, refId] = shortLeaveForm.actor_ref.split(':');
-              const res = await postPresensi({
-                action: 'CREATE_SHORT_LEAVE',
-                attendance_id: shortLeaveForm.attendance_id,
-                leave_start_time: shortLeaveForm.leave_start_time,
-                leave_end_time: shortLeaveForm.leave_end_time,
-                reason: shortLeaveForm.reason,
-                picket_attendance_id: kind === 'picket' ? refId : null,
-                committee_attendance_id: kind === 'committee' ? refId : null,
-              });
-              if (res) {
-                showToast('success', 'Izin keluar sebentar berhasil dicatat.');
-                setShortLeaveForm((prev) => ({ ...prev, reason: '' }));
+              setSubmitting(true);
+              try {
+                const res = await postPresensi({
+                  action: 'CREATE_SHORT_LEAVE',
+                  attendance_id: shortLeaveForm.attendance_id,
+                  leave_start_time: shortLeaveForm.leave_start_time,
+                  leave_end_time: shortLeaveForm.leave_end_time,
+                  reason: shortLeaveForm.reason,
+                  picket_attendance_id: kind === 'picket' ? refId : null,
+                  committee_attendance_id: kind === 'committee' ? refId : null,
+                });
+                if (res) {
+                  showToast('success', 'Izin keluar sebentar berhasil dicatat.');
+                  setShortLeaveForm((prev) => ({ ...prev, reason: '' }));
+                }
+              } finally {
+                setSubmitting(false);
               }
             }}
             className="space-y-2.5"
@@ -2279,8 +2234,10 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
 
             <button
               type="submit"
-              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+              disabled={submitting}
+              className="w-full inline-flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition"
             >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Catat Izin Keluar Sebentar
             </button>
           </form>
@@ -2291,14 +2248,14 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
               {shortLeaves.slice(0, 10).map((lv) => (
                 <div
                   key={lv.id}
-                  className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 flex items-center justify-between text-xs"
+                  className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 flex flex-wrap items-center justify-between gap-2 text-xs"
                 >
-                  <div>
-                    <p className="font-bold text-slate-900">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-slate-900 truncate">
                       {lv.leave_date} • {lv.teacher?.full_name}
                     </p>
-                    <p className="text-[11px] text-slate-600">
-                      {lv.leave_start_time.slice(0, 5)}–{lv.leave_end_time.slice(0, 5)}
+                    <p className="text-[11px] text-slate-600 break-words">
+                      {(lv.leave_start_time || '').slice(0, 5)}–{(lv.leave_end_time || '').slice(0, 5)}
                       {lv.reason ? ` • ${lv.reason}` : ''}
                     </p>
                   </div>
@@ -2313,34 +2270,32 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
       )}
 
       {/* Modal Popup Di Luar Radius Geofencing (Req #2) */}
-      {outsideModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+      <AkademikModal
+        open={Boolean(outsideModal)}
+        onClose={() => setOutsideModal(null)}
+        title="Di Luar Radius Geofencing"
+      >
+        {outsideModal && (
+          <>
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5 text-rose-600" />
               </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-slate-900">
-                  Di Luar Radius Geofencing
-                </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Absensi geofencing hanya bisa dilakukan di dalam radius yang diizinkan oleh
-                  lembaga.
-                </p>
-              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Absensi geofencing hanya bisa dilakukan di dalam radius yang diizinkan oleh lembaga.
+              </p>
             </div>
 
             <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200 text-xs text-rose-900 space-y-1.5">
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-2">
                 <span>Jarak Anda saat ini:</span>
                 <strong>{outsideModal.distanceMeters} meter</strong>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-2">
                 <span>Radius maksimal diizinkan:</span>
                 <strong>{outsideModal.radiusMeters} meter</strong>
               </div>
-              <div className="text-[11px] text-rose-700 pt-1 border-t border-rose-200/70 font-mono">
+              <div className="text-[11px] text-rose-700 pt-1 border-t border-rose-200/70 font-mono break-all">
                 Posisi Anda: {outsideModal.teacherLat}, {outsideModal.teacherLng}
               </div>
             </div>
@@ -2350,7 +2305,7 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
               <strong>Ambil GPS Perangkat</strong> untuk memperbarui posisi Anda.
             </p>
 
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setOutsideModal(null)}
@@ -2369,17 +2324,18 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
                 Perbarui GPS Sekarang
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </AkademikModal>
 
       {/* Modal 1: Penyesuaian JTM saat Konfirmasi Kehadiran */}
-      {jtmAdjustModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
-            <h3 className="text-base font-bold text-slate-900">
-              Konfirmasi Kehadiran &amp; Penyesuaian JTM
-            </h3>
+      <AkademikModal
+        open={Boolean(jtmAdjustModal)}
+        onClose={() => setJtmAdjustModal(null)}
+        title="Konfirmasi Kehadiran & Penyesuaian JTM"
+      >
+        {jtmAdjustModal && (
+          <>
             <p className="text-xs text-slate-600 leading-relaxed">
               Sesuaikan jumlah JTM yang akan diperoleh{' '}
               <strong>{jtmAdjustModal.teacherName}</strong> ({jtmAdjustModal.label}) setelah
@@ -2399,18 +2355,23 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
                 max={jtmAdjustModal.expectedJtm}
                 step="0.5"
                 value={jtmAdjustModal.approvedJtm}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const val = Math.min(
+                    jtmAdjustModal.expectedJtm,
+                    Math.max(0, Number(e.target.value) || 0)
+                  );
                   setJtmAdjustModal({
                     ...jtmAdjustModal,
-                    approvedJtm: Number(e.target.value),
-                  })
-                }
+                    approvedJtm: val,
+                  });
+                }}
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs"
               />
             </div>
-            <div className="flex justify-end gap-2 pt-1">
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() => setJtmAdjustModal(null)}
                 className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
               >
@@ -2418,10 +2379,13 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
               </button>
               <button
                 type="button"
+                disabled={submitting}
                 onClick={async () => {
-                  const diff = Number(
-                    (jtmAdjustModal.expectedJtm - jtmAdjustModal.approvedJtm).toFixed(2)
+                  const clampedApproved = Math.min(
+                    jtmAdjustModal.expectedJtm,
+                    Math.max(0, Number(jtmAdjustModal.approvedJtm) || 0)
                   );
+                  const diff = Number((jtmAdjustModal.expectedJtm - clampedApproved).toFixed(2));
                   const teacherId =
                     jtmAdjustModal.sessionItem?.teacher_id || jtmAdjustModal.att?.teacher_id || '';
                   if (diff > 0) {
@@ -2430,7 +2394,7 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
                       att: jtmAdjustModal.att,
                       teacherId,
                       expectedJtm: jtmAdjustModal.expectedJtm,
-                      approvedJtm: jtmAdjustModal.approvedJtm,
+                      approvedJtm: clampedApproved,
                       diffJtm: diff,
                       picketAttendanceId: jtmAdjustModal.picketAttendanceId,
                       recipientTeacherId: '',
@@ -2439,47 +2403,57 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
                     setJtmAdjustModal(null);
                     return;
                   }
-                  const res = jtmAdjustModal.sessionItem
-                    ? await postPresensi({
-                        action: 'CONFIRM_SCHEDULE_SESSION',
-                        session_type: 'MENGAJAR',
-                        session_date: jtmAdjustModal.sessionItem.session_date,
-                        teacher_id: jtmAdjustModal.sessionItem.teacher_id,
-                        schedule_id: jtmAdjustModal.sessionItem.schedule_id,
-                        delegation_id: jtmAdjustModal.sessionItem.delegation_id,
-                        picket_attendance_id: jtmAdjustModal.picketAttendanceId,
-                        approved_jtm: jtmAdjustModal.approvedJtm,
-                      })
-                    : await postPresensi({
-                        action: 'CONFIRM_ATTENDANCE',
-                        attendance_id: jtmAdjustModal.att!.id,
-                        picket_attendance_id: jtmAdjustModal.picketAttendanceId,
-                        approved_jtm: jtmAdjustModal.approvedJtm,
-                      });
-                  if (res) {
-                    showToast(
-                      'success',
-                      `Jadwal dikonfirmasi dengan ${jtmAdjustModal.approvedJtm} JTM.`
-                    );
-                    setJtmAdjustModal(null);
+                  if (submitting) return;
+                  setSubmitting(true);
+                  try {
+                    const res = jtmAdjustModal.sessionItem
+                      ? await postPresensi({
+                          action: 'CONFIRM_SCHEDULE_SESSION',
+                          session_type: 'MENGAJAR',
+                          session_date: jtmAdjustModal.sessionItem.session_date,
+                          teacher_id: jtmAdjustModal.sessionItem.teacher_id,
+                          schedule_id: jtmAdjustModal.sessionItem.schedule_id,
+                          delegation_id: jtmAdjustModal.sessionItem.delegation_id,
+                          picket_attendance_id: jtmAdjustModal.picketAttendanceId,
+                          approved_jtm: clampedApproved,
+                        })
+                      : await postPresensi({
+                          action: 'CONFIRM_ATTENDANCE',
+                          attendance_id: jtmAdjustModal.att!.id,
+                          picket_attendance_id: jtmAdjustModal.picketAttendanceId,
+                          approved_jtm: clampedApproved,
+                        });
+                    if (res) {
+                      showToast(
+                        'success',
+                        `Jadwal dikonfirmasi dengan ${clampedApproved} JTM.`
+                      );
+                      setJtmAdjustModal(null);
+                    }
+                  } finally {
+                    setSubmitting(false);
                   }
                 }}
-                className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold"
               >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {jtmAdjustModal.approvedJtm < jtmAdjustModal.expectedJtm
                   ? 'Lanjut Alokasi Selisih JTM →'
                   : 'Konfirmasi Hadir'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </AkademikModal>
 
       {/* Modal 2: Alokasi Selisih JTM ke Guru / Pengawas Lain */}
-      {jtmDiffModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
-            <h3 className="text-base font-bold text-slate-900">Alokasi Selisih JTM</h3>
+      <AkademikModal
+        open={Boolean(jtmDiffModal)}
+        onClose={() => setJtmDiffModal(null)}
+        title="Alokasi Selisih JTM"
+      >
+        {jtmDiffModal && (
+          <>
             <p className="text-xs text-slate-600 leading-relaxed">
               Terdapat selisih <strong>{jtmDiffModal.diffJtm} JTM</strong> (dari{' '}
               {jtmDiffModal.expectedJtm} JTM menjadi {jtmDiffModal.approvedJtm} JTM). Pilih guru/pengawas
@@ -2492,7 +2466,7 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
               onChange={(e) =>
                 setJtmDiffModal({ ...jtmDiffModal, recipientTeacherId: e.target.value })
               }
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
             >
               <option value="">-- Pilih Guru / Pengawas Penerima Selisih JTM --</option>
               {teachers
@@ -2509,9 +2483,10 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
               onChange={(e) => setJtmDiffModal({ ...jtmDiffModal, reason: e.target.value })}
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
             />
-            <div className="flex justify-end gap-2 pt-1">
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() => setJtmDiffModal(null)}
                 className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
               >
@@ -2519,45 +2494,52 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
               </button>
               <button
                 type="button"
-                disabled={!jtmDiffModal.recipientTeacherId}
+                disabled={submitting || !jtmDiffModal.recipientTeacherId}
                 onClick={async () => {
-                  const res = jtmDiffModal.sessionItem
-                    ? await postPresensi({
-                        action: 'CONFIRM_SCHEDULE_SESSION',
-                        session_type: 'MENGAJAR',
-                        session_date: jtmDiffModal.sessionItem.session_date,
-                        teacher_id: jtmDiffModal.sessionItem.teacher_id,
-                        schedule_id: jtmDiffModal.sessionItem.schedule_id,
-                        delegation_id: jtmDiffModal.sessionItem.delegation_id,
-                        picket_attendance_id: jtmDiffModal.picketAttendanceId,
-                        approved_jtm: jtmDiffModal.approvedJtm,
-                        diff_recipient_teacher_id: jtmDiffModal.recipientTeacherId,
-                        diff_reason: jtmDiffModal.reason,
-                      })
-                    : await postPresensi({
-                        action: 'CONFIRM_ATTENDANCE',
-                        attendance_id: jtmDiffModal.att!.id,
-                        picket_attendance_id: jtmDiffModal.picketAttendanceId,
-                        approved_jtm: jtmDiffModal.approvedJtm,
-                        diff_recipient_teacher_id: jtmDiffModal.recipientTeacherId,
-                        diff_reason: jtmDiffModal.reason,
-                      });
-                  if (res) {
-                    showToast(
-                      'success',
-                      `Kehadiran dikonfirmasi (${jtmDiffModal.approvedJtm} JTM) & selisih ${jtmDiffModal.diffJtm} JTM dialokasikan.`
-                    );
-                    setJtmDiffModal(null);
+                  if (submitting) return;
+                  setSubmitting(true);
+                  try {
+                    const res = jtmDiffModal.sessionItem
+                      ? await postPresensi({
+                          action: 'CONFIRM_SCHEDULE_SESSION',
+                          session_type: 'MENGAJAR',
+                          session_date: jtmDiffModal.sessionItem.session_date,
+                          teacher_id: jtmDiffModal.sessionItem.teacher_id,
+                          schedule_id: jtmDiffModal.sessionItem.schedule_id,
+                          delegation_id: jtmDiffModal.sessionItem.delegation_id,
+                          picket_attendance_id: jtmDiffModal.picketAttendanceId,
+                          approved_jtm: jtmDiffModal.approvedJtm,
+                          diff_recipient_teacher_id: jtmDiffModal.recipientTeacherId,
+                          diff_reason: jtmDiffModal.reason,
+                        })
+                      : await postPresensi({
+                          action: 'CONFIRM_ATTENDANCE',
+                          attendance_id: jtmDiffModal.att!.id,
+                          picket_attendance_id: jtmDiffModal.picketAttendanceId,
+                          approved_jtm: jtmDiffModal.approvedJtm,
+                          diff_recipient_teacher_id: jtmDiffModal.recipientTeacherId,
+                          diff_reason: jtmDiffModal.reason,
+                        });
+                    if (res) {
+                      showToast(
+                        'success',
+                        `Kehadiran dikonfirmasi (${jtmDiffModal.approvedJtm} JTM) & selisih ${jtmDiffModal.diffJtm} JTM dialokasikan.`
+                      );
+                      setJtmDiffModal(null);
+                    }
+                  } finally {
+                    setSubmitting(false);
                   }
                 }}
-                className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold"
               >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Konfirmasi &amp; Alokasikan Selisih
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </AkademikModal>
     </div>
   );
 }

@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  CheckCircle2,
   ClipboardCheck,
   DoorOpen,
   Loader2,
@@ -17,6 +16,14 @@ import {
 import { calculateLateJtm, getWibTodayDateString, isSundayDate } from '@/lib/domain/jtm-late-penalty';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
+import {
+  AkademikErrorBanner,
+  AkademikLoading,
+  AkademikModal,
+  AkademikToast,
+  BatchStudentAttendanceList,
+  useAkademikToast,
+} from './akademik-ui';
 
 interface TeacherOpt {
   id: string;
@@ -97,7 +104,9 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
   const canManageUjian = hasPermission(PERMISSIONS.UJIAN_MANAGE);
   const canSubmitUjian = hasPermission(PERMISSIONS.PRESENSI_SUBMIT);
   const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const { toast, showToast, dismissToast } = useAkademikToast();
   const [teachers, setTeachers] = useState<TeacherOpt[]>([]);
   const [examPeriods, setExamPeriods] = useState<ExamPeriodRow[]>([]);
   const [supervisors, setSupervisors] = useState<SupervisorRow[]>([]);
@@ -221,7 +230,7 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
     exam_period_id: '',
     exam_room_id: '',
     student_id: '',
-    exam_date: '2026-12-01',
+    exam_date: getWibTodayDateString(),
     session_name: 'Sesi 1',
     status: 'HADIR' as 'HADIR' | 'SAKIT' | 'IZIN' | 'ALPA',
   });
@@ -251,20 +260,19 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
     jtm_allocated: 6,
   });
 
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(null), 4000);
-  }
-
-  async function loadData() {
-    setLoading(true);
+  const loadData = useCallback(async () => {
     try {
       const [biRes, ujRes] = await Promise.all([
-        fetch('/api/akademik/buku-induk'),
-        fetch('/api/akademik/ujian'),
+        fetch('/api/akademik/buku-induk', { cache: 'no-store' }),
+        fetch('/api/akademik/ujian', { cache: 'no-store' }),
       ]);
       const bi = await biRes.json();
       const uj = await ujRes.json();
+      if (!biRes.ok) throw new Error(bi.error || 'Gagal memuat data GTK.');
+      if (!ujRes.ok) throw new Error(uj.error || 'Gagal memuat data ujian.');
+
+      setLoadError(null);
+
       setTeachers(bi.teachers || []);
       setExamPeriods(uj.periods || []);
       setSupervisors(uj.supervisors || []);
@@ -289,45 +297,63 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
       setRooms(loadedRooms);
       setExamRoomStudents(uj.examRoomStudents || []);
 
-      const activePeriodId =
-        selectedExamPeriodId && loadedPeriods.some((p) => p.id === selectedExamPeriodId)
-          ? selectedExamPeriodId
-          : loadedPeriods[0]?.id || '';
-      setSelectedExamPeriodId(activePeriodId);
-      setRoomForm((prev) =>
-        prev.exam_period_id ? prev : { ...prev, exam_period_id: activePeriodId }
-      );
-      const periodRooms = loadedRooms.filter((r) => r.exam_period_id === activePeriodId);
-      setSelectedExamRoomId((prev) =>
-        prev && periodRooms.some((r) => r.id === prev) ? prev : periodRooms[0]?.id || ''
-      );
+      setSelectedExamPeriodId((prevPeriodId) => {
+        const activePeriodId =
+          prevPeriodId && loadedPeriods.some((p) => p.id === prevPeriodId)
+            ? prevPeriodId
+            : loadedPeriods[0]?.id || '';
+        setRoomForm((prev) =>
+          prev.exam_period_id ? prev : { ...prev, exam_period_id: activePeriodId }
+        );
+        const periodRooms = loadedRooms.filter((r) => r.exam_period_id === activePeriodId);
+        setSelectedExamRoomId((prevRoomId) =>
+          prevRoomId && periodRooms.some((r) => r.id === prevRoomId)
+            ? prevRoomId
+            : periodRooms[0]?.id || ''
+        );
+        return activePeriodId;
+      });
 
       setExamStudentAttendances(uj.studentAttendances || []);
       setCanManageCommittees(Boolean(uj.canManageCommittees));
       setGeofenceEnabled(uj.geofenceEnabled ?? true);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Gagal terhubung ke server.');
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    loadData();
   }, []);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loadData]);
+
   async function postUjian(body: unknown, msg: string) {
-    const res = await fetch('/api/akademik/ujian', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      showToast(data.error || 'Terjadi kesalahan.');
+    if (submitting) return false;
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/akademik/ujian', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast('error', data.error || 'Terjadi kesalahan.');
+        return false;
+      }
+      showToast('success', msg);
+      await loadData();
+      return true;
+    } catch {
+      showToast('error', 'Terjadi kesalahan jaringan. Silakan coba lagi.');
       return false;
+    } finally {
+      setSubmitting(false);
     }
-    showToast(msg);
-    await loadData();
-    return true;
   }
 
   const studentClassroomMap = useMemo(() => {
@@ -488,21 +514,13 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
   );
 
   if (loading) {
-    return (
-      <div className="max-w-7xl mx-auto glass-card rounded-3xl p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin" /> Memuat data periode ujian...
-      </div>
-    );
+    return <AkademikLoading label="Memuat data periode ujian..." />;
   }
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {toast && (
-        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{toast}</span>
-        </div>
-      )}
+      <AkademikToast toast={toast} onDismiss={dismissToast} />
+      <AkademikErrorBanner error={loadError} onRetry={loadData} />
 
       {/* Banner Alur Presensi, BAP & Konfirmasi Panitia */}
       <div className="glass-card rounded-3xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -578,8 +596,10 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
                 </div>
                 <button
                   type="submit"
-                  className="w-full bg-emerald-600 text-white font-semibold py-2 rounded-xl text-xs"
+                  disabled={submitting}
+                  className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2 rounded-xl text-xs transition"
                 >
+                  {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   Simpan Periode Ujian
                 </button>
               </form>
@@ -666,13 +686,13 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
                       </option>
                     ))}
                   </select>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <input
                       required
                       placeholder="Nama Ruang (cth: Ruang 01)"
                       value={roomForm.room_name}
                       onChange={(e) => setRoomForm({ ...roomForm, room_name: e.target.value })}
-                      className="col-span-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                      className="sm:col-span-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
                     />
                     <input
                       type="number"
@@ -681,7 +701,7 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
                       placeholder="Kapasitas"
                       value={roomForm.capacity}
                       onChange={(e) =>
-                        setRoomForm({ ...roomForm, capacity: Number(e.target.value) })
+                        setRoomForm({ ...roomForm, capacity: Math.max(1, Number(e.target.value) || 1) })
                       }
                       className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
                       title="Kapasitas Ruang"
@@ -689,8 +709,10 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
                   </div>
                   <button
                     type="submit"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-xl text-xs transition"
+                    disabled={submitting}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2 rounded-xl text-xs transition"
                   >
+                    {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                     Simpan Ruang Ujian
                   </button>
                 </form>
@@ -1062,42 +1084,44 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
                   </option>
                 ))}
               </select>
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  type="date"
-                  value={supervisorForm.exam_date}
-                  onChange={(e) =>
-                    setSupervisorForm({ ...supervisorForm, exam_date: e.target.value })
-                  }
-                  className="rounded-xl border border-slate-300 bg-white px-2 py-2 text-xs"
-                />
-                <input
-                  value={supervisorForm.session_name}
-                  onChange={(e) =>
-                    setSupervisorForm({ ...supervisorForm, session_name: e.target.value })
-                  }
-                  className="rounded-xl border border-slate-300 bg-white px-2 py-2 text-xs"
-                />
-                <input
-                  type="number"
-                  min={1}
-                  value={supervisorForm.jtm_allocated}
-                  onChange={(e) =>
-                    setSupervisorForm({
-                      ...supervisorForm,
-                      jtm_allocated: Number(e.target.value),
-                    })
-                  }
-                  title="Alokasi JTM"
-                  className="rounded-xl border border-slate-300 bg-white px-2 py-2 text-xs"
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 text-white font-semibold py-2 rounded-xl text-xs"
-              >
-                Simpan Pengawas Ujian
-              </button>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <input
+                        type="date"
+                        value={supervisorForm.exam_date}
+                        onChange={(e) =>
+                          setSupervisorForm({ ...supervisorForm, exam_date: e.target.value })
+                        }
+                        className="rounded-xl border border-slate-300 bg-white px-2.5 py-2 text-xs"
+                      />
+                      <input
+                        value={supervisorForm.session_name}
+                        onChange={(e) =>
+                          setSupervisorForm({ ...supervisorForm, session_name: e.target.value })
+                        }
+                        className="rounded-xl border border-slate-300 bg-white px-2.5 py-2 text-xs"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        value={supervisorForm.jtm_allocated}
+                        onChange={(e) =>
+                          setSupervisorForm({
+                            ...supervisorForm,
+                            jtm_allocated: Math.max(1, Number(e.target.value) || 1),
+                          })
+                        }
+                        title="Alokasi JTM"
+                        className="rounded-xl border border-slate-300 bg-white px-2.5 py-2 text-xs"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2 rounded-xl text-xs transition"
+                    >
+                      {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      Simpan Pengawas Ujian
+                    </button>
             </form>
           </div>
           )}
@@ -1448,12 +1472,13 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (submitting) return;
                 if (bapForm.exam_supervisor_id && Object.keys(bapStudentStatuses).length > 0) {
                   const records = Object.entries(bapStudentStatuses).map(([student_id, status]) => ({
                     student_id,
                     status,
                   }));
-                  await postUjian(
+                  const attOk = await postUjian(
                     {
                       action: 'BATCH_EXAM_STUDENT_ATTENDANCE',
                       exam_supervisor_id: bapForm.exam_supervisor_id,
@@ -1461,19 +1486,22 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
                     },
                     'Absensi batch siswa ujian disimpan.'
                   );
+                  if (!attOk) return;
                 }
-                await postUjian(
+                const bapOk = await postUjian(
                   { action: 'SUBMIT_BAP', ...bapForm },
                   'Berita Acara Pengawasan (BAP) & absensi siswa ujian disimpan, JTM pengawas dihitung.'
                 );
-                setBapClassroomId('');
-                setBapStudentStatuses({});
-                setBapForm({
-                  exam_supervisor_id: '',
-                  present_students_count: 30,
-                  absent_students_count: 0,
-                  incidents: '',
-                });
+                if (bapOk) {
+                  setBapClassroomId('');
+                  setBapStudentStatuses({});
+                  setBapForm({
+                    exam_supervisor_id: '',
+                    present_students_count: 30,
+                    absent_students_count: 0,
+                    incidents: '',
+                  });
+                }
               }}
               className="space-y-2.5"
             >
@@ -1580,56 +1608,23 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
                       );
                     }
                     return (
-                      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                        {classStudents.map((st) => {
-                          const current = bapStudentStatuses[st.id] || 'HADIR';
-                          return (
-                            <div
-                              key={st.id}
-                              className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs"
-                            >
-                              <div className="truncate">
-                                <span className="font-semibold text-slate-900">{st.full_name}</span>
-                                {st.nis && <span className="text-slate-400 ml-1.5">({st.nis})</span>}
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                {(['HADIR', 'SAKIT', 'IZIN', 'ALPA'] as const).map((statusOpt) => (
-                                  <button
-                                    key={statusOpt}
-                                    type="button"
-                                    onClick={() => {
-                                      const next = { ...bapStudentStatuses, [st.id]: statusOpt };
-                                      setBapStudentStatuses(next);
-                                      const presentCount = classStudents.filter(
-                                        (x) => (next[x.id] || 'HADIR') === 'HADIR'
-                                      ).length;
-                                      const absentCount = classStudents.length - presentCount;
-                                      setBapForm((prev) => ({
-                                        ...prev,
-                                        present_students_count: presentCount,
-                                        absent_students_count: absentCount,
-                                      }));
-                                    }}
-                                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
-                                      current === statusOpt
-                                        ? statusOpt === 'HADIR'
-                                          ? 'bg-emerald-600 text-white'
-                                          : statusOpt === 'SAKIT'
-                                          ? 'bg-amber-500 text-white'
-                                          : statusOpt === 'IZIN'
-                                          ? 'bg-sky-600 text-white'
-                                          : 'bg-rose-600 text-white'
-                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                    }`}
-                                  >
-                                    {statusOpt[0]}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <BatchStudentAttendanceList
+                        students={classStudents}
+                        statuses={bapStudentStatuses}
+                        onChangeStatus={(studentId, statusOpt) => {
+                          const next = { ...bapStudentStatuses, [studentId]: statusOpt };
+                          setBapStudentStatuses(next);
+                          const presentCount = classStudents.filter(
+                            (x) => (next[x.id] || 'HADIR') === 'HADIR'
+                          ).length;
+                          const absentCount = classStudents.length - presentCount;
+                          setBapForm((prev) => ({
+                            ...prev,
+                            present_students_count: presentCount,
+                            absent_students_count: absentCount,
+                          }));
+                        }}
+                      />
                     );
                   })()}
               </div>
@@ -1664,9 +1659,10 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
               />
               <button
                 type="submit"
-                disabled={isSundayDate(getWibTodayDateString())}
-                className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-semibold py-2 rounded-xl text-xs"
+                disabled={submitting || isSundayDate(getWibTodayDateString())}
+                className="w-full inline-flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-semibold py-2 rounded-xl text-xs transition"
               >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Simpan BAP &amp; Hitung JTM Pengawas
               </button>
             </form>
@@ -1695,18 +1691,20 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                await postUjian(
+                const ok = await postUjian(
                   { action: 'SUBSTITUTE_SUPERVISOR', ...subForm },
                   geofenceEnabled
                     ? 'Pengawas pengganti berhasil ditunjuk. Pengawas pengganti wajib presensi GPS & isi BAP.'
                     : 'Pengawas pengganti berhasil ditunjuk. Pengawas pengganti siap dikonfirmasi & mengisi BAP.'
                 );
-                setSubForm({
-                  committee_attendance_id: '',
-                  exam_supervisor_id: '',
-                  substitute_teacher_id: '',
-                  reason: '',
-                });
+                if (ok) {
+                  setSubForm({
+                    committee_attendance_id: '',
+                    exam_supervisor_id: '',
+                    substitute_teacher_id: '',
+                    reason: '',
+                  });
+                }
               }}
               className="space-y-2.5"
             >
@@ -1787,17 +1785,19 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  await postUjian(
+                  const ok = await postUjian(
                     { action: 'SUBSTITUTE_COMMITTEE', ...subCommitteeForm },
                     geofenceEnabled
                       ? 'Panitia Ujian Pengganti berhasil ditunjuk. Wajib presensi GPS & konfirmasi Admin.'
                       : 'Panitia Ujian Pengganti berhasil ditunjuk. Siap dikonfirmasi Admin.'
                   );
-                  setSubCommitteeForm({
-                    exam_committee_id: '',
-                    substitute_teacher_id: '',
-                    reason: '',
-                  });
+                  if (ok) {
+                    setSubCommitteeForm({
+                      exam_committee_id: '',
+                      substitute_teacher_id: '',
+                      reason: '',
+                    });
+                  }
                 }}
                 className="space-y-2.5"
               >
@@ -1874,23 +1874,25 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  await postUjian(
+                  const ok = await postUjian(
                     {
                       action: 'EXAM_STUDENT_ATTENDANCE',
-                  committee_attendance_id: examStudentAttForm.committee_attendance_id,
-                  exam_period_id: examStudentAttForm.exam_period_id,
-                  exam_room_id: examStudentAttForm.exam_room_id || null,
-                  student_id: examStudentAttForm.student_id,
-                  exam_date: examStudentAttForm.exam_date,
-                  session_name: examStudentAttForm.session_name,
-                  status: examStudentAttForm.status,
-                },
-                'Absensi siswa ujian berhasil dicatat.'
-              );
-              setExamStudentAttForm((prev) => ({ ...prev, student_id: '' }));
-            }}
-            className="lg:col-span-6 space-y-2.5"
-          >
+                      committee_attendance_id: examStudentAttForm.committee_attendance_id,
+                      exam_period_id: examStudentAttForm.exam_period_id,
+                      exam_room_id: examStudentAttForm.exam_room_id || null,
+                      student_id: examStudentAttForm.student_id,
+                      exam_date: examStudentAttForm.exam_date,
+                      session_name: examStudentAttForm.session_name,
+                      status: examStudentAttForm.status,
+                    },
+                    'Absensi siswa ujian berhasil dicatat.'
+                  );
+                  if (ok) {
+                    setExamStudentAttForm((prev) => ({ ...prev, student_id: '' }));
+                  }
+                }}
+                className="lg:col-span-6 space-y-2.5"
+              >
             <select
               required
               value={examStudentAttForm.committee_attendance_id}
@@ -2060,16 +2062,18 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              await postUjian(
+              const ok = await postUjian(
                 { action: 'SUBMIT_COMMITTEE_REPORT', ...committeeReportForm },
                 'LPJ Harian Panitia Ujian disimpan & JTM panitia dihitung.'
               );
-              setCommitteeReportForm({
-                attendance_id: '',
-                activities_summary: '',
-                logistics_notes: '',
-                issues_and_solutions: '',
-              });
+              if (ok) {
+                setCommitteeReportForm({
+                  attendance_id: '',
+                  activities_summary: '',
+                  logistics_notes: '',
+                  issues_and_solutions: '',
+                });
+              }
             }}
             className="lg:col-span-6 space-y-2.5"
           >
@@ -2134,9 +2138,10 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
 
             <button
               type="submit"
-              disabled={pendingCommitteeReports.length === 0}
-              className="w-full bg-sky-700 hover:bg-sky-800 disabled:bg-slate-300 disabled:text-slate-500 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+              disabled={submitting || pendingCommitteeReports.length === 0}
+              className="w-full inline-flex items-center justify-center gap-2 bg-sky-700 hover:bg-sky-800 disabled:bg-slate-300 disabled:text-slate-500 text-white font-semibold py-2.5 rounded-xl text-xs transition"
             >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Simpan LPJ Harian Panitia &amp; Hitung JTM
             </button>
           </form>
@@ -2172,12 +2177,13 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
       )}
 
       {/* Modal 1: Penyesuaian JTM Pengawas Ujian */}
-      {supAdjustModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
-            <h3 className="text-base font-bold text-slate-900">
-              Konfirmasi Kehadiran &amp; Penyesuaian JTM Pengawas
-            </h3>
+      <AkademikModal
+        open={Boolean(supAdjustModal)}
+        onClose={() => setSupAdjustModal(null)}
+        title="Konfirmasi Kehadiran & Penyesuaian JTM Pengawas"
+      >
+        {supAdjustModal && (
+          <>
             <p className="text-xs text-slate-600 leading-relaxed">
               Sesuaikan JTM yang akan diperoleh{' '}
               <strong>{supAdjustModal.sup.teacher?.full_name}</strong> ({supAdjustModal.sup.exam_date} •{' '}
@@ -2197,18 +2203,23 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
                 max={supAdjustModal.expectedJtm}
                 step="0.5"
                 value={supAdjustModal.approvedJtm}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const val = Math.min(
+                    supAdjustModal.expectedJtm,
+                    Math.max(0, Number(e.target.value) || 0)
+                  );
                   setSupAdjustModal({
                     ...supAdjustModal,
-                    approvedJtm: Number(e.target.value),
-                  })
-                }
+                    approvedJtm: val,
+                  });
+                }}
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs"
               />
             </div>
-            <div className="flex justify-end gap-2 pt-1">
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() => setSupAdjustModal(null)}
                 className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
               >
@@ -2216,15 +2227,18 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
               </button>
               <button
                 type="button"
+                disabled={submitting}
                 onClick={async () => {
-                  const diff = Number(
-                    (supAdjustModal.expectedJtm - supAdjustModal.approvedJtm).toFixed(2)
+                  const clampedApproved = Math.min(
+                    supAdjustModal.expectedJtm,
+                    Math.max(0, Number(supAdjustModal.approvedJtm) || 0)
                   );
+                  const diff = Number((supAdjustModal.expectedJtm - clampedApproved).toFixed(2));
                   if (diff > 0) {
                     setSupDiffModal({
                       sup: supAdjustModal.sup,
                       expectedJtm: supAdjustModal.expectedJtm,
-                      approvedJtm: supAdjustModal.approvedJtm,
+                      approvedJtm: clampedApproved,
                       diffJtm: diff,
                       recipientTeacherId: '',
                       reason: '',
@@ -2232,44 +2246,56 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
                     setSupAdjustModal(null);
                     return;
                   }
-                  const res = await fetch('/api/akademik/presensi', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      action: 'CONFIRM_SCHEDULE_SESSION',
-                      session_type: 'PENGAWAS_UJIAN',
-                      session_date: supAdjustModal.sup.exam_date,
-                      teacher_id: supAdjustModal.sup.teacher_id,
-                      exam_supervisor_id: supAdjustModal.sup.id,
-                      committee_attendance_id: confirmCommitteeId || null,
-                      approved_jtm: supAdjustModal.approvedJtm,
-                    }),
-                  });
-                  const data = await res.json();
-                  if (!res.ok) {
-                    showToast(data.error || 'Gagal mengonfirmasi pengawas.');
-                    return;
+                  if (submitting) return;
+                  setSubmitting(true);
+                  try {
+                    const res = await fetch('/api/akademik/presensi', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'CONFIRM_SCHEDULE_SESSION',
+                        session_type: 'PENGAWAS_UJIAN',
+                        session_date: supAdjustModal.sup.exam_date,
+                        teacher_id: supAdjustModal.sup.teacher_id,
+                        exam_supervisor_id: supAdjustModal.sup.id,
+                        committee_attendance_id: confirmCommitteeId || null,
+                        approved_jtm: clampedApproved,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) {
+                      showToast('error', data.error || 'Gagal mengonfirmasi pengawas.');
+                      return;
+                    }
+                    showToast('success', 'Jadwal Pengawas Ujian dikonfirmasi. Pengawas siap mengisi BAP.');
+                    setSupAdjustModal(null);
+                    await loadData();
+                  } catch {
+                    showToast('error', 'Terjadi kesalahan jaringan. Silakan coba lagi.');
+                  } finally {
+                    setSubmitting(false);
                   }
-                  showToast('Jadwal Pengawas Ujian dikonfirmasi. Pengawas siap mengisi BAP.');
-                  setSupAdjustModal(null);
-                  await loadData();
                 }}
-                className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold"
               >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {supAdjustModal.approvedJtm < supAdjustModal.expectedJtm
                   ? 'Lanjut Alokasi Selisih JTM →'
                   : 'Konfirmasi Hadir'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </AkademikModal>
 
       {/* Modal 2: Alokasi Selisih JTM Pengawas Ujian */}
-      {supDiffModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
-            <h3 className="text-base font-bold text-slate-900">Alokasi Selisih JTM Pengawas</h3>
+      <AkademikModal
+        open={Boolean(supDiffModal)}
+        onClose={() => setSupDiffModal(null)}
+        title="Alokasi Selisih JTM Pengawas"
+      >
+        {supDiffModal && (
+          <>
             <p className="text-xs text-slate-600 leading-relaxed">
               Terdapat selisih <strong>{supDiffModal.diffJtm} JTM</strong> (dari{' '}
               {supDiffModal.expectedJtm} JTM menjadi {supDiffModal.approvedJtm} JTM). Pilih pengawas
@@ -2282,7 +2308,7 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
               onChange={(e) =>
                 setSupDiffModal({ ...supDiffModal, recipientTeacherId: e.target.value })
               }
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+              className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
             >
               <option value="">-- Pilih Pengawas Penerima Selisih JTM --</option>
               {teachers
@@ -2299,9 +2325,10 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
               onChange={(e) => setSupDiffModal({ ...supDiffModal, reason: e.target.value })}
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
             />
-            <div className="flex justify-end gap-2 pt-1">
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() => setSupDiffModal(null)}
                 className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
               >
@@ -2309,42 +2336,52 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
               </button>
               <button
                 type="button"
-                disabled={!supDiffModal.recipientTeacherId}
+                disabled={submitting || !supDiffModal.recipientTeacherId}
                 onClick={async () => {
-                  const res = await fetch('/api/akademik/presensi', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      action: 'CONFIRM_SCHEDULE_SESSION',
-                      session_type: 'PENGAWAS_UJIAN',
-                      session_date: supDiffModal.sup.exam_date,
-                      teacher_id: supDiffModal.sup.teacher_id,
-                      exam_supervisor_id: supDiffModal.sup.id,
-                      committee_attendance_id: confirmCommitteeId || null,
-                      approved_jtm: supDiffModal.approvedJtm,
-                      diff_recipient_teacher_id: supDiffModal.recipientTeacherId,
-                      diff_reason: supDiffModal.reason,
-                    }),
-                  });
-                  const data = await res.json();
-                  if (!res.ok) {
-                    showToast(data.error || 'Gagal mengonfirmasi & mengalokasikan selisih.');
-                    return;
+                  if (submitting) return;
+                  setSubmitting(true);
+                  try {
+                    const res = await fetch('/api/akademik/presensi', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'CONFIRM_SCHEDULE_SESSION',
+                        session_type: 'PENGAWAS_UJIAN',
+                        session_date: supDiffModal.sup.exam_date,
+                        teacher_id: supDiffModal.sup.teacher_id,
+                        exam_supervisor_id: supDiffModal.sup.id,
+                        committee_attendance_id: confirmCommitteeId || null,
+                        approved_jtm: supDiffModal.approvedJtm,
+                        diff_recipient_teacher_id: supDiffModal.recipientTeacherId,
+                        diff_reason: supDiffModal.reason,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) {
+                      showToast('error', data.error || 'Gagal mengonfirmasi & mengalokasikan selisih.');
+                      return;
+                    }
+                    showToast(
+                      'success',
+                      `Kehadiran dikonfirmasi (${supDiffModal.approvedJtm} JTM) & selisih ${supDiffModal.diffJtm} JTM dialokasikan.`
+                    );
+                    setSupDiffModal(null);
+                    await loadData();
+                  } catch {
+                    showToast('error', 'Terjadi kesalahan jaringan. Silakan coba lagi.');
+                  } finally {
+                    setSubmitting(false);
                   }
-                  showToast(
-                    `Kehadiran dikonfirmasi (${supDiffModal.approvedJtm} JTM) & selisih ${supDiffModal.diffJtm} JTM dialokasikan.`
-                  );
-                  setSupDiffModal(null);
-                  await loadData();
                 }}
-                className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold"
               >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Konfirmasi &amp; Alokasikan Selisih
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </AkademikModal>
     </div>
   );
 }

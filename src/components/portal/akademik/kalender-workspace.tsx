@@ -1,16 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { CalendarDays, Clock, Loader2, MailCheck, Play, Trash2 } from 'lucide-react';
 import {
-  AlertTriangle,
-  CalendarDays,
-  CheckCircle2,
-  Clock,
-  Loader2,
-  MailCheck,
-  Play,
-  Trash2,
-} from 'lucide-react';
+  AkademikEmptyState,
+  AkademikErrorBanner,
+  AkademikLoading,
+  AkademikToast,
+  useAkademikToast,
+} from './akademik-ui';
 
 export type KalenderSection = 'agenda' | 'log-jtm';
 
@@ -45,8 +43,10 @@ const CATEGORY_LABELS: Record<CalendarEventRow['category'], string> = {
 
 export function KalenderWorkspace({ section }: { section: KalenderSection }) {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [runningAuto, setRunningAuto] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const { toast, showToast, dismissToast } = useAkademikToast();
 
   const [events, setEvents] = useState<CalendarEventRow[]>([]);
   const [logs, setLogs] = useState<PaidHolidayLogRow[]>([]);
@@ -60,15 +60,14 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
     description: '',
   });
 
-  const showToast = useCallback((type: 'success' | 'error', text: string) => {
-    setToast({ type, text });
-    setTimeout(() => setToast(null), 5000);
-  }, []);
-
   const loadData = useCallback(async () => {
     try {
-      const res = await fetch('/api/akademik/kalender');
+      const res = await fetch('/api/akademik/kalender', { cache: 'no-store' });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal memuat Kalender Pendidikan.');
+      }
+      setLoadError(null);
       setEvents(data.events || []);
       setLogs(data.logs || []);
       setCanManageCalendar(Boolean(data.canManageCalendar));
@@ -76,74 +75,74 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
         setRunDate((prev) => prev || data.todayDate);
         setForm((prev) => ({ ...prev, event_date: prev.event_date || data.todayDate }));
       }
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Gagal terhubung ke server.');
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadData();
+    const timer = setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [loadData]);
 
   async function postKalender(body: unknown) {
-    const res = await fetch('/api/akademik/kalender', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      showToast('error', data.error || 'Terjadi kesalahan.');
+    try {
+      const res = await fetch('/api/akademik/kalender', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast('error', data.error || 'Terjadi kesalahan.');
+        return null;
+      }
+      await loadData();
+      return data;
+    } catch {
+      showToast('error', 'Terjadi kesalahan jaringan. Silakan coba lagi.');
       return null;
     }
-    await loadData();
-    return data;
   }
 
   if (loading) {
-    return (
-      <div className="max-w-7xl mx-auto glass-card rounded-3xl p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin" /> Memuat Kalender Pendidikan...
-      </div>
-    );
+    return <AkademikLoading label="Memuat Kalender Pendidikan..." />;
   }
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {toast && (
-        <div
-          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center gap-2 ${
-            toast.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-rose-50 border-rose-200 text-rose-800'
-          }`}
-        >
-          {toast.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-          ) : (
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-          )}
-          <span>{toast.text}</span>
-        </div>
-      )}
+      <AkademikToast toast={toast} onDismiss={dismissToast} />
+      <AkademikErrorBanner error={loadError} onRetry={loadData} />
 
       {section === 'agenda' && (
         <div className="grid lg:grid-cols-12 gap-6">
           {canManageCalendar && (
-            <div className="lg:col-span-4 glass-card rounded-3xl p-6 space-y-4 h-fit">
+            <div className="lg:col-span-4 glass-card rounded-3xl p-5 sm:p-6 space-y-4 h-fit">
               <h1 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <CalendarDays className="w-4 h-4 text-emerald-700" /> Atur Tanggal Kalender
+                <CalendarDays className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>Atur Tanggal Kalender</span>
               </h1>
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  const res = await postKalender({
-                    action: 'CREATE_CALENDAR_EVENT',
-                    ...form,
-                  });
-                  if (res) {
-                    showToast('success', 'Tanggal kalender pendidikan berhasil disimpan.');
-                    setForm((prev) => ({ ...prev, title: '', description: '' }));
+                  if (submitting || !form.title.trim()) return;
+                  setSubmitting(true);
+                  try {
+                    const res = await postKalender({
+                      action: 'CREATE_CALENDAR_EVENT',
+                      ...form,
+                      title: form.title.trim(),
+                    });
+                    if (res) {
+                      showToast('success', 'Tanggal kalender pendidikan berhasil disimpan.');
+                      setForm((prev) => ({ ...prev, title: '', description: '' }));
+                    }
+                  } finally {
+                    setSubmitting(false);
                   }
                 }}
                 className="space-y-3"
@@ -155,7 +154,7 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
                     required
                     value={form.event_date}
                     onChange={(e) => setForm({ ...form, event_date: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                   />
                 </div>
 
@@ -171,7 +170,7 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
                         category: e.target.value as CalendarEventRow['category'],
                       })
                     }
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                    className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                   >
                     <option value="LIBUR_BERBAYAR">Libur Berbayar (JTM Otomatis 10.00 WIB)</option>
                     <option value="LIBUR_TIDAK_BERBAYAR">Libur Tidak Berbayar</option>
@@ -189,7 +188,7 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
                     placeholder="Mis. Hari Kemerdekaan RI / Cuti Bersama"
                     value={form.title}
                     onChange={(e) => setForm({ ...form, title: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                   />
                 </div>
 
@@ -202,14 +201,16 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
                     placeholder="Keterangan tambahan..."
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                   />
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+                  disabled={submitting}
+                  className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition"
                 >
+                  {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   Simpan ke Kalender Pendidikan
                 </button>
               </form>
@@ -217,25 +218,26 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
           )}
 
           <div
-            className={`${canManageCalendar ? 'lg:col-span-8' : 'lg:col-span-12'} glass-card rounded-3xl p-6 space-y-3`}
+            className={`${canManageCalendar ? 'lg:col-span-8' : 'lg:col-span-12'} glass-card rounded-3xl p-5 sm:p-6 space-y-3`}
           >
             <h2 className="text-base font-bold text-slate-900">
               Daftar Tanggal Kalender Pendidikan ({events.length})
             </h2>
             {events.length === 0 ? (
-              <p className="text-xs text-slate-500 py-6 text-center">
-                Belum ada tanggal yang diatur pada Kalender Pendidikan.
-              </p>
+              <AkademikEmptyState
+                icon={<CalendarDays className="w-6 h-6" />}
+                message="Belum ada tanggal yang diatur pada Kalender Pendidikan."
+              />
             ) : (
-              <div className="space-y-2 max-h-[32rem] overflow-y-auto">
+              <div className="space-y-2 max-h-[32rem] overflow-y-auto pr-1">
                 {events.map((ev) => (
                   <div
                     key={ev.id}
-                    className="modular-card rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs"
+                    className="modular-card rounded-2xl p-3.5 flex items-start sm:items-center justify-between gap-3 text-xs"
                   >
-                    <div className="space-y-0.5">
+                    <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-slate-900">
+                        <span className="font-bold text-slate-900 break-words">
                           {ev.event_date} — {ev.title}
                         </span>
                         <span
@@ -264,20 +266,32 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
                           </span>
                         )}
                       </div>
-                      {ev.description && <p className="text-slate-500">{ev.description}</p>}
+                      {ev.description && (
+                        <p className="text-slate-500 break-words">{ev.description}</p>
+                      )}
                     </div>
                     {canManageCalendar && (
                       <button
                         type="button"
+                        disabled={submitting}
                         onClick={async () => {
-                          const res = await postKalender({
-                            action: 'DELETE_CALENDAR_EVENT',
-                            event_id: ev.id,
-                          });
-                          if (res) showToast('success', 'Agenda kalender dihapus.');
+                          if (!window.confirm(`Hapus agenda "${ev.title}" (${ev.event_date})?`)) {
+                            return;
+                          }
+                          setSubmitting(true);
+                          try {
+                            const res = await postKalender({
+                              action: 'DELETE_CALENDAR_EVENT',
+                              event_id: ev.id,
+                            });
+                            if (res) showToast('success', 'Agenda kalender dihapus.');
+                          } finally {
+                            setSubmitting(false);
+                          }
                         }}
-                        className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 transition shrink-0"
+                        className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 disabled:opacity-40 transition shrink-0"
                         title="Hapus tanggal"
+                        aria-label={`Hapus ${ev.title}`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -293,9 +307,10 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
       {section === 'log-jtm' && (
         <div className="space-y-6">
           <div className="glass-card rounded-3xl p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <CalendarDays className="w-5 h-5 text-emerald-700" /> Otomasi JTM Libur Berbayar
+                <CalendarDays className="w-5 h-5 text-emerald-700 shrink-0" />
+                <span>Otomasi JTM Libur Berbayar</span>
               </h1>
               <p className="text-xs text-slate-600 leading-relaxed">
                 Setiap tanggal bertipe <strong>Libur Berbayar</strong> memicu sistem otomatis pada{' '}
@@ -314,8 +329,12 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
                 />
                 <button
                   type="button"
-                  disabled={runningAuto}
+                  disabled={runningAuto || !runDate}
                   onClick={async () => {
+                    if (!runDate) {
+                      showToast('error', 'Pilih tanggal terlebih dahulu.');
+                      return;
+                    }
                     setRunningAuto(true);
                     try {
                       const res = await postKalender({ action: 'RUN_AUTO_JTM_NOW', date: runDate });
@@ -342,32 +361,33 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
             )}
           </div>
 
-          <div className="glass-card rounded-3xl p-6 space-y-3">
+          <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-3">
             <h2 className="text-base font-bold text-slate-900">
               Riwayat Penambahan JTM Otomatis Libur Berbayar ({logs.length})
             </h2>
             {logs.length === 0 ? (
-              <p className="text-xs text-slate-500 py-6 text-center">
-                Belum ada log JTM otomatis hari libur berbayar.
-              </p>
+              <AkademikEmptyState
+                icon={<Clock className="w-6 h-6" />}
+                message="Belum ada log JTM otomatis hari libur berbayar."
+              />
             ) : (
-              <div className="space-y-2 max-h-[32rem] overflow-y-auto">
+              <div className="space-y-2 max-h-[32rem] overflow-y-auto pr-1">
                 {logs.map((log) => (
                   <div
                     key={log.id}
-                    className="modular-card rounded-2xl p-3.5 flex items-start justify-between gap-3 text-xs"
+                    className="modular-card rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-start justify-between gap-3 text-xs"
                   >
-                    <div className="space-y-0.5">
-                      <p className="font-bold text-slate-900">
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <p className="font-bold text-slate-900 break-words">
                         {log.holiday_date} • {log.teacher?.full_name || 'Guru'} —{' '}
                         {log.calendar_event?.title || 'Libur Berbayar'}
                       </p>
-                      <p className="text-slate-600">
+                      <p className="text-slate-600 break-words">
                         Mengajar: {log.teaching_jtm} JTM • Piket: {log.picket_jtm} JTM
                         {log.details ? ` • ${log.details}` : ''}
                       </p>
                     </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className="flex sm:flex-col items-center sm:items-end justify-between gap-1 shrink-0">
                       <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">
                         +{log.total_jtm} JTM
                       </span>
