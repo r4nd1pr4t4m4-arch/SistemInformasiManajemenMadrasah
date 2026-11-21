@@ -1,18 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
+  AlertCircle,
   CheckCircle2,
   CreditCard,
   ExternalLink,
   FileCheck2,
   FileText,
   Loader2,
+  RefreshCw,
   Save,
   Trash2,
   Upload,
-  User,
 } from 'lucide-react';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
@@ -130,8 +131,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
   const { hasPermission } = usePortalSession();
   const canManage = hasPermission(PERMISSIONS.SISWA_BIODATA_MANAGE);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [savingBiodata, setSavingBiodata] = useState(false);
   const [uploadingType, setUploadingType] = useState<string | null>(null);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const [isStaff, setIsStaff] = useState(false);
   const [isOfficialEditor, setIsOfficialEditor] = useState(false);
   const [studentsList, setStudentsList] = useState<StudentRef[]>([]);
@@ -144,16 +148,21 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
   const [documents, setDocuments] = useState<StudentDocument[]>([]);
   const [docNumbers, setDocNumbers] = useState<Record<string, string>>({});
   const [otherTitle, setOtherTitle] = useState('');
+  const [docFilter, setDocFilter] = useState<'ALL' | 'UPLOADED' | 'MISSING' | 'VERIFIED'>('ALL');
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  async function loadData(targetStudentId?: string) {
-    setLoading(true);
-    try {
-      const qs = targetStudentId ? `?studentId=${encodeURIComponent(targetStudentId)}` : '';
-      const res = await fetch(`/api/siswa/biodata-dokumen${qs}`, { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Gagal memuat biodata & dokumen.');
+  const fetchBiodataPayload = useCallback(async (targetStudentId?: string) => {
+    const qs = targetStudentId ? `?studentId=${encodeURIComponent(targetStudentId)}` : '';
+    const res = await fetch(`/api/siswa/biodata-dokumen${qs}`, { cache: 'no-store' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) {
+      throw new Error(data?.error || 'Gagal memuat biodata & dokumen.');
+    }
+    return data;
+  }, []);
 
+  const applyBiodataPayload = useCallback(
+    (data: Awaited<ReturnType<typeof fetchBiodataPayload>>) => {
       setIsStaff(Boolean(data.isStaff));
       setIsOfficialEditor(Boolean(data.isOfficialEditor));
       setStudentsList(data.studentsList || []);
@@ -224,16 +233,54 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
         if (d.document_number) numbersMap[d.document_type] = d.document_number;
       }
       setDocNumbers(numbersMap);
-    } catch (e) {
-      setMessage({ type: 'err', text: (e as Error).message });
-    } finally {
-      setLoading(false);
-    }
-  }
+      setLoadError(null);
+    },
+    []
+  );
+
+  const loadData = useCallback(
+    async (targetStudentId?: string, mode: 'initial' | 'refresh' = 'refresh') => {
+      if (mode === 'refresh') setRefreshing(true);
+      try {
+        const data = await fetchBiodataPayload(targetStudentId);
+        applyBiodataPayload(data);
+      } catch (e) {
+        const errMsg = e instanceof Error ? e.message : 'Gagal memuat biodata & dokumen.';
+        if (mode === 'initial') {
+          setLoadError(errMsg);
+        } else {
+          setMessage({ type: 'err', text: errMsg });
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [applyBiodataPayload, fetchBiodataPayload]
+  );
 
   useEffect(() => {
-    loadData();
-  }, []);
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchBiodataPayload();
+        if (!cancelled) {
+          applyBiodataPayload(data);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setLoadError(e instanceof Error ? e.message : 'Gagal memuat biodata & dokumen.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyBiodataPayload, fetchBiodataPayload]);
 
   const docByType = useMemo(() => {
     const map = new Map<string, StudentDocument>();
@@ -257,6 +304,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
 
   async function handleSaveBiodata(e: React.FormEvent) {
     e.preventDefault();
+    if (savingBiodata) return;
+    if (isOfficialEditor && biodata.full_name.trim().length < 2) {
+      setMessage({ type: 'err', text: 'Nama lengkap siswa minimal 2 karakter.' });
+      return;
+    }
     setSavingBiodata(true);
     setMessage(null);
     try {
@@ -266,14 +318,15 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
         body: JSON.stringify({
           student_id: studentId,
           ...biodata,
+          full_name: biodata.full_name.trim(),
           child_order: biodata.child_order ? Number(biodata.child_order) : null,
           siblings_count: biodata.siblings_count ? Number(biodata.siblings_count) : null,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Gagal menyimpan biodata.');
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) throw new Error(data?.error || 'Gagal menyimpan biodata.');
       setMessage({ type: 'ok', text: 'Biodata lengkap siswa berhasil disimpan.' });
-      await loadData(data.student?.id || studentId || undefined);
+      await loadData(data.student?.id || studentId || undefined, 'refresh');
     } catch (e) {
       setMessage({ type: 'err', text: (e as Error).message });
     } finally {
@@ -282,11 +335,28 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
   }
 
   async function handleUploadDocument(docType: DocumentType, file: File) {
+    if (uploadingType !== null) return;
     if (!studentId) {
       setMessage({
         type: 'err',
         text: 'Silakan simpan Biodata Siswa terlebih dahulu sebelum mengunggah scan dokumen.',
       });
+      return;
+    }
+
+    const allowedTypes = new Set([
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/pdf',
+    ]);
+    if (file.type && !allowedTypes.has(file.type)) {
+      setMessage({ type: 'err', text: 'Format file harus JPG, PNG, WEBP, atau PDF.' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage({ type: 'err', text: 'Ukuran file maksimal 5 MB.' });
       return;
     }
 
@@ -301,8 +371,8 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
         method: 'POST',
         body: formData,
       });
-      const uploadData = await uploadRes.json();
-      if (!uploadRes.ok) throw new Error(uploadData.error || 'Gagal mengunggah file.');
+      const uploadData = await uploadRes.json().catch(() => null);
+      if (!uploadRes.ok || !uploadData) throw new Error(uploadData?.error || 'Gagal mengunggah file.');
 
       const saveRes = await fetch('/api/siswa/biodata-dokumen', {
         method: 'POST',
@@ -310,8 +380,8 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
         body: JSON.stringify({
           student_id: studentId,
           document_type: docType,
-          document_title: docType === 'LAINNYA' ? otherTitle || file.name : null,
-          document_number: docNumbers[docType] || null,
+          document_title: docType === 'LAINNYA' ? otherTitle.trim() || file.name : null,
+          document_number: docNumbers[docType]?.trim() || null,
           file_name: uploadData.fileName,
           file_url: uploadData.fileUrl,
           object_key: uploadData.objectKey,
@@ -319,12 +389,14 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
           file_size: uploadData.fileSize,
         }),
       });
-      const saveData = await saveRes.json();
-      if (!saveRes.ok) throw new Error(saveData.error || 'Gagal menyimpan metadata dokumen.');
+      const saveData = await saveRes.json().catch(() => null);
+      if (!saveRes.ok || !saveData) {
+        throw new Error(saveData?.error || 'Gagal menyimpan metadata dokumen.');
+      }
 
       if (docType === 'LAINNYA') setOtherTitle('');
       setMessage({ type: 'ok', text: `Scan dokumen ${docType.replace(/_/g, ' ')} berhasil diunggah.` });
-      await loadData(studentId);
+      await loadData(studentId, 'refresh');
     } catch (e) {
       setMessage({ type: 'err', text: (e as Error).message });
     } finally {
@@ -333,22 +405,53 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
   }
 
   async function handleDeleteDocument(doc: StudentDocument) {
+    if (deletingDocId !== null) return;
     if (!confirm(`Hapus dokumen "${doc.file_name}"?`)) return;
+    setDeletingDocId(doc.id);
+    setMessage(null);
     try {
-      const res = await fetch(`/api/siswa/biodata-dokumen?id=${doc.id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Gagal menghapus dokumen.');
+      const res = await fetch(`/api/siswa/biodata-dokumen?id=${encodeURIComponent(doc.id)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) throw new Error(data?.error || 'Gagal menghapus dokumen.');
       setMessage({ type: 'ok', text: 'Dokumen berhasil dihapus.' });
-      await loadData(studentId || undefined);
+      await loadData(studentId || undefined, 'refresh');
     } catch (e) {
       setMessage({ type: 'err', text: (e as Error).message });
+    } finally {
+      setDeletingDocId(null);
     }
   }
 
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto glass-card rounded-3xl p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin" /> Memuat Biodata &amp; Dokumen Siswa...
+        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+        <span>Memuat Biodata &amp; Dokumen Siswa...</span>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="max-w-3xl mx-auto glass-card rounded-3xl p-8 text-center space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <div className="space-y-1">
+          <h1 className="text-base font-bold text-slate-900">Gagal Memuat Biodata &amp; Dokumen</h1>
+          <p className="text-xs text-slate-500">{loadError}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void loadData(selectedStudentId || undefined, 'refresh')}
+          disabled={refreshing}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white text-xs font-semibold transition disabled:opacity-60"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          Muat Ulang
+        </button>
       </div>
     );
   }
@@ -356,45 +459,88 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-xl font-bold text-slate-900">Biodata &amp; Dokumen Siswa</h1>
           <p className="text-sm text-slate-500">
             Lengkapi biodata pribadi, keluarga, dan unggah scan dokumen resmi siswa.
           </p>
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <Link
+              href="/portal/siswa/biodata-dokumen/biodata"
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                tab === 'biodata'
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300'
+              }`}
+            >
+              Biodata Lengkap
+            </Link>
+            <Link
+              href="/portal/siswa/biodata-dokumen/dokumen"
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                tab === 'dokumen'
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300'
+              }`}
+            >
+              Scan Dokumen ({uploadedStandardCount}/{STANDARD_DOCUMENTS.length})
+            </Link>
+          </div>
         </div>
 
-        {isStaff && studentsList.length > 0 && (
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-semibold text-slate-600">Pilih Siswa:</label>
-            <select
-              value={selectedStudentId}
-              onChange={(e) => {
-                setSelectedStudentId(e.target.value);
-                if (e.target.value) loadData(e.target.value);
-              }}
-              className="px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-medium"
-            >
-              <option value="">-- Pilih Siswa --</option>
-              {studentsList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.full_name} {s.nis ? `(NIS: ${s.nis})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {isStaff && studentsList.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 min-w-0 w-full sm:w-auto">
+              <label htmlFor="biodata-student-select" className="text-xs font-semibold text-slate-600">
+                Pilih Siswa:
+              </label>
+              <select
+                id="biodata-student-select"
+                value={selectedStudentId}
+                onChange={(e) => {
+                  setSelectedStudentId(e.target.value);
+                  if (e.target.value) void loadData(e.target.value, 'refresh');
+                }}
+                className="w-full sm:w-64 min-w-0 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-medium"
+              >
+                <option value="">-- Pilih Siswa --</option>
+                {studentsList.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name} {s.nis ? `(NIS: ${s.nis})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => void loadData(selectedStudentId || undefined, 'refresh')}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition disabled:opacity-60"
+            title="Segarkan data biodata & dokumen"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Segarkan</span>
+          </button>
+        </div>
       </div>
 
       {message && (
         <div
+          role="status"
+          aria-live="polite"
           className={`p-3.5 rounded-2xl text-xs font-medium border flex items-center gap-2 ${
             message.type === 'ok'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : 'bg-rose-50 border-rose-200 text-rose-800'
           }`}
         >
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{message.text}</span>
+          {message.type === 'ok' ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+          ) : (
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+          )}
+          <span className="min-w-0 break-words">{message.text}</span>
         </div>
       )}
 
@@ -942,10 +1088,14 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
             <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={savingBiodata}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                disabled={savingBiodata || refreshing}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition disabled:opacity-50"
               >
-                <Save className="w-4 h-4" />
+                {savingBiodata ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
                 {savingBiodata ? 'Menyimpan Biodata...' : 'Simpan Biodata Lengkap'}
               </button>
             </div>
@@ -967,7 +1117,16 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
           </div>
         )}
         </div>
-      ) : (
+      ) : (() => {
+        const filteredStdDocs = STANDARD_DOCUMENTS.filter((docDef) => {
+          const existing = docByType.get(docDef.type);
+          if (docFilter === 'UPLOADED') return Boolean(existing);
+          if (docFilter === 'MISSING') return !existing;
+          if (docFilter === 'VERIFIED') return existing?.verification_status === 'TERVERIFIKASI';
+          return true;
+        });
+
+        return (
         <div className="space-y-6">
           {!studentId && (
             <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-xs text-amber-900">
@@ -977,8 +1136,51 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
             </div>
           )}
 
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-slate-600">
+              Menampilkan {filteredStdDocs.length} dari {STANDARD_DOCUMENTS.length} dokumen standar
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  { key: 'ALL', label: 'Semua' },
+                  { key: 'MISSING', label: 'Belum Upload' },
+                  { key: 'UPLOADED', label: 'Sudah Upload' },
+                  { key: 'VERIFIED', label: 'Terverifikasi' },
+                ] as const
+              ).map((tabItem) => (
+                <button
+                  key={tabItem.key}
+                  type="button"
+                  onClick={() => setDocFilter(tabItem.key)}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold border transition ${
+                    docFilter === tabItem.key
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                  }`}
+                >
+                  {tabItem.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredStdDocs.length === 0 ? (
+            <div className="glass-card rounded-2xl p-8 text-center space-y-2">
+              <p className="text-xs font-semibold text-slate-700">
+                Tidak ada dokumen standar pada kategori filter ini.
+              </p>
+              <button
+                type="button"
+                onClick={() => setDocFilter('ALL')}
+                className="text-[11px] font-semibold text-emerald-700 hover:underline"
+              >
+                Tampilkan semua dokumen
+              </button>
+            </div>
+          ) : (
           <div className="grid md:grid-cols-2 gap-4">
-            {STANDARD_DOCUMENTS.map((docDef) => {
+            {filteredStdDocs.map((docDef) => {
               const existing = docByType.get(docDef.type);
               const isUploading = uploadingType === docDef.type;
               return (
@@ -1025,33 +1227,48 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                   )}
 
                   {existing && (
-                    <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 flex items-center justify-between gap-2 text-xs">
-                      <span className="truncate font-medium text-slate-700">{existing.file_name}</span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <a
-                          href={existing.file_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-emerald-700 font-semibold hover:underline"
-                        >
-                          Lihat <ExternalLink className="w-3 h-3" />
-                        </a>
-                        {canManage && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteDocument(existing)}
-                            className="text-rose-600 hover:text-rose-700"
-                            title="Hapus Dokumen"
+                    <div className="space-y-1.5">
+                      <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 flex items-center justify-between gap-2 text-xs min-w-0">
+                        <span className="truncate font-medium text-slate-700 min-w-0">
+                          {existing.file_name}
+                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <a
+                            href={existing.file_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-emerald-700 font-semibold hover:underline"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                            Lihat <ExternalLink className="w-3 h-3" />
+                          </a>
+                          {canManage && (
+                            <button
+                              type="button"
+                              disabled={deletingDocId === existing.id}
+                              onClick={() => void handleDeleteDocument(existing)}
+                              className="text-rose-600 hover:text-rose-700 disabled:opacity-50"
+                              aria-label={`Hapus dokumen ${docDef.label}`}
+                              title="Hapus Dokumen"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
+                      {existing.verification_notes && (
+                        <p className="text-[11px] text-slate-600 bg-amber-50/70 border border-amber-200/80 rounded-lg px-2.5 py-1 break-words">
+                          Catatan Verifikasi: {existing.verification_notes}
+                        </p>
+                      )}
                     </div>
                   )}
 
                   {canManage && (
-                    <label className="inline-flex items-center justify-center gap-2 w-full py-2 px-3 rounded-xl border border-dashed border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-700 text-xs font-semibold cursor-pointer transition">
+                    <label
+                      className={`inline-flex items-center justify-center gap-2 w-full py-2 px-3 rounded-xl border border-dashed border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-700 text-xs font-semibold transition ${
+                        uploadingType !== null ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
+                    >
                       {isUploading ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1060,16 +1277,18 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                       ) : (
                         <>
                           <Upload className="w-3.5 h-3.5" />
-                          {existing ? 'Ganti Scan Dokumen (JPG/PNG/PDF)' : 'Upload Scan (JPG/PNG/PDF)'}
+                          {existing
+                            ? 'Ganti Scan Dokumen (JPG/PNG/PDF)'
+                            : 'Upload Scan (JPG/PNG/PDF)'}
                         </>
                       )}
                       <input
                         type="file"
                         accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
-                        disabled={isUploading}
+                        disabled={uploadingType !== null}
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) handleUploadDocument(docDef.type, file);
+                          if (file) void handleUploadDocument(docDef.type, file);
                           e.target.value = '';
                         }}
                         className="hidden"
@@ -1080,6 +1299,7 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
               );
             })}
           </div>
+          )}
 
           <div className="glass-card rounded-3xl p-5 space-y-4">
             <h3 className="text-sm font-bold text-slate-900">Dokumen Pendukung Lainnya</h3>
@@ -1087,21 +1307,28 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
+                  disabled={uploadingType !== null}
                   placeholder="Nama Dokumen (cth: Sertifikat Prestasi / Surat Pindah)"
                   value={otherTitle}
                   onChange={(e) => setOtherTitle(e.target.value)}
-                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs"
+                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs disabled:bg-slate-100"
                 />
-                <label className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold cursor-pointer hover:bg-slate-800">
+                <label
+                  className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold transition ${
+                    uploadingType !== null
+                      ? 'opacity-60 cursor-not-allowed'
+                      : 'cursor-pointer hover:bg-slate-800'
+                  }`}
+                >
                   <Upload className="w-3.5 h-3.5" />
                   {uploadingType === 'LAINNYA' ? 'Mengunggah...' : 'Upload Dokumen Lainnya'}
                   <input
                     type="file"
                     accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
-                    disabled={uploadingType === 'LAINNYA'}
+                    disabled={uploadingType !== null}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) handleUploadDocument('LAINNYA', file);
+                      if (file) void handleUploadDocument('LAINNYA', file);
                       e.target.value = '';
                     }}
                     className="hidden"
@@ -1110,20 +1337,24 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
               </div>
             )}
 
-            {otherDocs.length > 0 && (
+            {otherDocs.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-4">
+                Belum ada dokumen pendukung lainnya yang diunggah.
+              </p>
+            ) : (
               <div className="space-y-2">
                 {otherDocs.map((d) => (
                   <div
                     key={d.id}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 flex items-center justify-between gap-2 text-xs"
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 flex items-center justify-between gap-2 text-xs min-w-0"
                   >
-                    <div>
-                      <p className="font-semibold text-slate-900">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 break-words">
                         {d.document_title || d.file_name}
                       </p>
-                      <p className="text-[11px] text-slate-400">{d.file_name}</p>
+                      <p className="text-[11px] text-slate-400 truncate">{d.file_name}</p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 shrink-0">
                       <a
                         href={d.file_url}
                         target="_blank"
@@ -1135,8 +1366,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                       {canManage && (
                         <button
                           type="button"
-                          onClick={() => handleDeleteDocument(d)}
-                          className="text-rose-600"
+                          disabled={deletingDocId === d.id}
+                          onClick={() => void handleDeleteDocument(d)}
+                          className="text-rose-600 hover:text-rose-700 disabled:opacity-50"
+                          aria-label={`Hapus dokumen ${d.document_title || d.file_name}`}
+                          title="Hapus Dokumen"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1148,7 +1382,8 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

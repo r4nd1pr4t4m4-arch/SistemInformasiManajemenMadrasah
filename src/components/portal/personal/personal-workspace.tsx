@@ -6,7 +6,6 @@ import {
   Clock,
   Sparkles,
   Wallet,
-  CheckCircle2,
   AlertCircle,
   ClipboardCheck,
   Receipt,
@@ -206,7 +205,24 @@ export function PersonalWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
-  const [todayDay, setTodayDay] = useState<number>(1);
+  const [todayDay] = useState<number>(() => getTodayIsoDay());
+  const [scheduleDayFilter, setScheduleDayFilter] = useState<'ALL' | 'TODAY' | number>('ALL');
+  const [scheduleSearch, setScheduleSearch] = useState('');
+  const [picketFilter, setPicketFilter] = useState<'ALL' | 'MY_DAYS' | 'TODAY'>('ALL');
+  const [absensiStatusFilter, setAbsensiStatusFilter] = useState<
+    'ALL' | 'HADIR' | 'SAKIT' | 'IZIN' | 'ALPA'
+  >('ALL');
+  const [absensiSearch, setAbsensiSearch] = useState('');
+  const [absensiVisibleCount, setAbsensiVisibleCount] = useState(20);
+  const [sppStatusFilter, setSppStatusFilter] = useState<'ALL' | 'UNPAID' | 'CICILAN' | 'LUNAS'>(
+    'ALL'
+  );
+  const [sppSearch, setSppSearch] = useState('');
+  const [examSearch, setExamSearch] = useState('');
+  const [bkTypeFilter, setBkTypeFilter] = useState<
+    'ALL' | 'KONSULTASI' | 'PRESTASI' | 'PELANGGARAN'
+  >('ALL');
+  const [bkSearch, setBkSearch] = useState('');
   const [activeSlip, setActiveSlip] = useState<SavingsSlipData | null>(null);
   const [activeSppSlip, setActiveSppSlip] = useState<SppSlipData | null>(null);
   const [activeHonorSlip, setActiveHonorSlip] = useState<HonorariumSlipData | null>(null);
@@ -216,10 +232,6 @@ export function PersonalWorkspace({
   const [trxTypeFilter, setTrxTypeFilter] = useState<'ALL' | 'SETOR' | 'TARIK'>('ALL');
   const [trxAccountFilter, setTrxAccountFilter] = useState<string>('ALL');
   const [trxVisibleCount, setTrxVisibleCount] = useState<number>(15);
-
-  useEffect(() => {
-    setTodayDay(getTodayIsoDay());
-  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -259,7 +271,7 @@ export function PersonalWorkspace({
   const myPicketDays = useMemo(() => {
     if (!data) return [];
     if (scope === 'gtk') {
-      return Array.from(new Set(data.pickets.map((p) => p.day_of_week)));
+      return Array.from(new Set(data.pickets.map((p) => p.day_of_week))).sort((a, b) => a - b);
     }
     if (!data.student?.id) return [];
     return Array.from(
@@ -268,7 +280,7 @@ export function PersonalWorkspace({
           .filter((p) => p.student_id === data.student?.id)
           .map((p) => p.day_of_week)
       )
-    );
+    ).sort((a, b) => a - b);
   }, [data, scope]);
 
   return (
@@ -380,234 +392,420 @@ export function PersonalWorkspace({
       {!loading && !error && data && (
         <>
           {/* 1. JADWAL PELAJARAN / MENGAJAR SEPEKAN */}
-          {section === 'jadwal-pelajaran' && (
-            <div className="space-y-4">
-              {data.schedules.length === 0 ? (
-                <EmptyState
-                  icon={<CalendarDays className="w-8 h-8 text-slate-300" />}
-                  title="Belum ada jadwal tersedia"
-                  description={
-                    scope === 'gtk'
-                      ? 'Jadwal mengajar Anda belum ditetapkan oleh bagian kurikulum.'
-                      : 'Jadwal pelajaran kelas belum tersedia atau Anda belum ditempatkan di rombel aktif.'
-                  }
-                />
-              ) : (
-                <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {[1, 2, 3, 4, 5, 6].map((day) => {
-                    const dayItems = data.schedules.filter((s) => s.day_of_week === day);
-                    const isToday = day === todayDay;
-                    return (
-                      <div
-                        key={day}
-                        className={`rounded-3xl border p-5 transition ${isToday
-                          ? 'border-emerald-400 bg-emerald-50/40 shadow-sm'
-                          : 'border-slate-200 bg-white'
-                          }`}
-                      >
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
-                          <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                            <CalendarDays
-                              className={`w-4 h-4 ${isToday ? 'text-emerald-600' : 'text-slate-400'}`}
-                            />
-                            {DAY_NAMES[day]}
-                          </h3>
-                          {isToday && (
-                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
-                              HARI INI
-                            </span>
-                          )}
-                        </div>
-                        {dayItems.length === 0 ? (
-                          <p className="text-xs text-slate-400 italic py-4 text-center">
-                            Tidak ada jadwal
-                          </p>
-                        ) : (
-                          <div className="space-y-2.5">
-                            {dayItems.map((item) => (
-                              <div
-                                key={item.id}
-                                className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 space-y-1"
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                                    <Clock className="w-3 h-3" />
-                                    {formatTimeShort(item.start_time)} – {formatTimeShort(item.end_time)}
-                                  </span>
-                                  <span className="text-[10px] font-semibold bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-600">
-                                    {item.jtm_count} JTM
-                                  </span>
-                                </div>
-                                <p className="text-xs font-bold text-slate-900">
-                                  {item.subject?.name || 'Mata Pelajaran'}
-                                </p>
-                                <p className="text-[11px] text-slate-500">
-                                  {scope === 'gtk'
-                                    ? `Kelas: ${item.classroom?.name || '-'}`
-                                    : `Guru: ${item.teacher?.full_name || '-'}`}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+          {section === 'jadwal-pelajaran' && (() => {
+            const q = scheduleSearch.trim().toLowerCase();
+            const matchingSchedules = data.schedules.filter((s) => {
+              if (!q) return true;
+              const haystack = `${s.subject?.name || ''} ${s.subject?.code || ''} ${
+                s.teacher?.full_name || ''
+              } ${s.classroom?.name || ''}`.toLowerCase();
+              return haystack.includes(q);
+            });
+            const totalJtm = matchingSchedules.reduce(
+              (acc, s) => acc + (Number(s.jtm_count) || 0),
+              0
+            );
+            const visibleDays =
+              scheduleDayFilter === 'TODAY'
+                ? [todayDay >= 1 && todayDay <= 6 ? todayDay : 1]
+                : typeof scheduleDayFilter === 'number'
+                  ? [scheduleDayFilter]
+                  : [1, 2, 3, 4, 5, 6];
 
-          {/* 2. JADWAL PIKET (KELAS UNTUK SISWA/ORTU, PIKET GURU UNTUK GTK) */}
-          {section === 'jadwal-piket' && (
-            <div className="space-y-5">
-              {/* Banner penanda khusus hari piketnya */}
-              <div
-                className={`rounded-3xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${myPicketDays.includes(todayDay)
-                  ? 'border-amber-300 bg-amber-50 text-amber-950'
-                  : 'border-emerald-200 bg-emerald-50/60 text-emerald-950'
-                  }`}
-              >
-                <div className="flex items-start gap-3">
-                  <Sparkles
-                    className={`w-5 h-5 shrink-0 mt-0.5 ${myPicketDays.includes(todayDay) ? 'text-amber-600' : 'text-emerald-600'
-                      }`}
-                  />
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide">
-                      {scope === 'orang-tua'
-                        ? 'Jadwal Piket Putra/Putri Anda'
-                        : 'Jadwal Piket Anda'}
-                    </p>
-                    <p className="text-sm font-black mt-0.5">
-                      {myPicketDays.length > 0
-                        ? `Hari ${myPicketDays.map((d) => DAY_NAMES[d]).join(', ')}`
-                        : 'Belum ada hari piket yang ditetapkan'}
-                    </p>
-                    {myPicketDays.includes(todayDay) && (
-                      <p className="text-xs font-semibold text-amber-800 mt-1">
-                        🔔 Hari ini ({DAY_NAMES[todayDay]}) adalah jadwal piket! Pastikan melaksanakan tugas piket tepat waktu.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {scope === 'gtk' ? (
-                data.pickets.length === 0 ? (
+            return (
+              <div className="space-y-4">
+                {data.schedules.length === 0 ? (
                   <EmptyState
-                    icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
-                    title="Belum ada jadwal piket guru"
-                    description="Jadwal piket guru/petugas piket Anda belum ditetapkan."
+                    icon={<CalendarDays className="w-8 h-8 text-slate-300" />}
+                    title="Belum ada jadwal tersedia"
+                    description={
+                      scope === 'gtk'
+                        ? 'Jadwal mengajar Anda belum ditetapkan oleh bagian kurikulum.'
+                        : 'Jadwal pelajaran kelas belum tersedia atau Anda belum ditempatkan di rombel aktif.'
+                    }
                   />
                 ) : (
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {data.pickets.map((p) => {
-                      const isToday = p.day_of_week === todayDay;
+                  <>
+                    <div className="glass-card rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setScheduleDayFilter('ALL')}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
+                            scheduleDayFilter === 'ALL'
+                              ? 'bg-slate-900 text-white'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          Semua Hari
+                        </button>
+                        {todayDay >= 1 && todayDay <= 6 && (
+                          <button
+                            type="button"
+                            onClick={() => setScheduleDayFilter('TODAY')}
+                            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
+                              scheduleDayFilter === 'TODAY'
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            Hari Ini ({DAY_NAMES[todayDay]})
+                          </button>
+                        )}
+                        {[1, 2, 3, 4, 5, 6].map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setScheduleDayFilter(d)}
+                            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
+                              scheduleDayFilter === d
+                                ? 'bg-slate-900 text-white'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                            }`}
+                          >
+                            {DAY_NAMES[d]}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+                        <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl shrink-0">
+                          {matchingSchedules.length} Sesi • {totalJtm} JTM
+                        </span>
+                        <div className="relative min-w-0 sm:w-64">
+                          <label htmlFor="schedule-search-input" className="sr-only">
+                            Cari mata pelajaran atau guru
+                          </label>
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            id="schedule-search-input"
+                            type="search"
+                            value={scheduleSearch}
+                            onChange={(e) => setScheduleSearch(e.target.value)}
+                            placeholder={
+                              scope === 'gtk' ? 'Cari mapel atau kelas...' : 'Cari mapel atau guru...'
+                            }
+                            className="w-full rounded-xl border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {matchingSchedules.length === 0 ? (
+                      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center space-y-2">
+                        <p className="text-xs font-semibold text-slate-700">
+                          Tidak ada jadwal yang cocok dengan pencarian &ldquo;{scheduleSearch}
+                          &rdquo;.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setScheduleSearch('');
+                            setScheduleDayFilter('ALL');
+                          }}
+                          className="text-[11px] font-semibold text-emerald-700 hover:underline"
+                        >
+                          Reset pencarian &amp; filter hari
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className={`grid gap-4 ${
+                          visibleDays.length === 1
+                            ? 'grid-cols-1 max-w-2xl'
+                            : 'md:grid-cols-2 xl:grid-cols-3'
+                        }`}
+                      >
+                        {visibleDays.map((day) => {
+                          const dayItems = matchingSchedules
+                            .filter((s) => s.day_of_week === day)
+                            .sort((a, b) => a.start_time.localeCompare(b.start_time));
+                          const isToday = day === todayDay;
+                          return (
+                            <div
+                              key={day}
+                              className={`rounded-3xl border p-5 transition min-w-0 ${
+                                isToday
+                                  ? 'border-emerald-400 bg-emerald-50/40 shadow-sm'
+                                  : 'border-slate-200 bg-white'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 mb-3">
+                                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                                  <CalendarDays
+                                    className={`w-4 h-4 shrink-0 ${
+                                      isToday ? 'text-emerald-600' : 'text-slate-400'
+                                    }`}
+                                  />
+                                  <span>{DAY_NAMES[day]}</span>
+                                </h3>
+                                {isToday && (
+                                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold shrink-0">
+                                    HARI INI
+                                  </span>
+                                )}
+                              </div>
+                              {dayItems.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic py-4 text-center">
+                                  Tidak ada jadwal
+                                </p>
+                              ) : (
+                                <div className="space-y-2.5">
+                                  {dayItems.map((item) => (
+                                    <div
+                                      key={item.id}
+                                      className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 space-y-1 min-w-0"
+                                    >
+                                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
+                                          <Clock className="w-3 h-3 shrink-0" />
+                                          {formatTimeShort(item.start_time)} –{' '}
+                                          {formatTimeShort(item.end_time)}
+                                        </span>
+                                        <span className="text-[10px] font-semibold bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-600 shrink-0">
+                                          {item.jtm_count} JTM
+                                        </span>
+                                      </div>
+                                      <p className="text-xs font-bold text-slate-900 break-words">
+                                        {item.subject?.name || 'Mata Pelajaran'}
+                                      </p>
+                                      <p className="text-[11px] text-slate-500 break-words">
+                                        {scope === 'gtk'
+                                          ? `Kelas: ${item.classroom?.name || '-'}`
+                                          : `Guru: ${item.teacher?.full_name || '-'}`}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* 2. JADWAL PIKET (KELAS UNTUK SISWA/ORTU, PIKET GURU UNTUK GTK) */}
+          {section === 'jadwal-piket' && (() => {
+            const picketDaysToRender =
+              picketFilter === 'TODAY'
+                ? [todayDay >= 1 && todayDay <= 6 ? todayDay : 1]
+                : picketFilter === 'MY_DAYS' && myPicketDays.length > 0
+                  ? myPicketDays.filter((d) => d >= 1 && d <= 6)
+                  : [1, 2, 3, 4, 5, 6];
+
+            return (
+              <div className="space-y-5">
+                {/* Banner penanda khusus hari piketnya */}
+                <div
+                  className={`rounded-3xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    myPicketDays.includes(todayDay)
+                      ? 'border-amber-300 bg-amber-50 text-amber-950'
+                      : 'border-emerald-200 bg-emerald-50/60 text-emerald-950'
+                  }`}
+                >
+                  <div className="flex items-start gap-3 min-w-0">
+                    <Sparkles
+                      className={`w-5 h-5 shrink-0 mt-0.5 ${
+                        myPicketDays.includes(todayDay) ? 'text-amber-600' : 'text-emerald-600'
+                      }`}
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold uppercase tracking-wide">
+                        {scope === 'orang-tua'
+                          ? 'Jadwal Piket Putra/Putri Anda'
+                          : 'Jadwal Piket Anda'}
+                      </p>
+                      <p className="text-sm font-black mt-0.5 break-words">
+                        {myPicketDays.length > 0
+                          ? `Hari ${myPicketDays.map((d) => DAY_NAMES[d] || `Hari ${d}`).join(', ')}`
+                          : 'Belum ada hari piket yang ditetapkan'}
+                      </p>
+                      {myPicketDays.includes(todayDay) && (
+                        <p className="text-xs font-semibold text-amber-800 mt-1">
+                          🔔 Hari ini ({DAY_NAMES[todayDay]}) adalah jadwal piket! Pastikan
+                          melaksanakan tugas piket tepat waktu.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {scope !== 'gtk' && data.pickets.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setPicketFilter('ALL')}
+                        className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
+                          picketFilter === 'ALL'
+                            ? 'bg-slate-900 text-white'
+                            : 'bg-white/80 hover:bg-white text-slate-700 border border-slate-200'
+                        }`}
+                      >
+                        Semua Hari
+                      </button>
+                      {myPicketDays.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setPicketFilter('MY_DAYS')}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
+                            picketFilter === 'MY_DAYS'
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-white/80 hover:bg-white text-amber-800 border border-amber-200'
+                          }`}
+                        >
+                          {scope === 'orang-tua' ? 'Piket Anak' : 'Piket Saya'}
+                        </button>
+                      )}
+                      {todayDay >= 1 && todayDay <= 6 && (
+                        <button
+                          type="button"
+                          onClick={() => setPicketFilter('TODAY')}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
+                            picketFilter === 'TODAY'
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-white/80 hover:bg-white text-emerald-800 border border-emerald-200'
+                          }`}
+                        >
+                          Hari Ini
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {scope === 'gtk' ? (
+                  data.pickets.length === 0 ? (
+                    <EmptyState
+                      icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
+                      title="Belum ada jadwal piket guru"
+                      description="Jadwal piket guru/petugas piket Anda belum ditetapkan."
+                    />
+                  ) : (
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {data.pickets.map((p) => {
+                        const isToday = p.day_of_week === todayDay;
+                        return (
+                          <div
+                            key={p.id}
+                            className={`rounded-3xl border p-5 min-w-0 ${
+                              isToday
+                                ? 'border-amber-400 bg-amber-50/70 shadow-sm'
+                                : 'border-emerald-200 bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-black text-slate-900">
+                                {DAY_NAMES[p.day_of_week] || `Hari ${p.day_of_week}`}
+                              </span>
+                              <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold shrink-0">
+                                {isToday ? 'PIKET HARI INI' : 'TUGAS PIKET'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600 mt-2 break-words">
+                              {p.notes || 'Piket harian madrasah / pemantauan gerbang & KBM.'}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : data.pickets.length === 0 ? (
+                  <EmptyState
+                    icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
+                    title="Jadwal piket kelas belum tersedia"
+                    description="Wali kelas belum menambahkan jadwal piket untuk kelas Anda."
+                  />
+                ) : (
+                  <div
+                    className={`grid gap-4 ${
+                      picketDaysToRender.length === 1
+                        ? 'grid-cols-1 max-w-2xl'
+                        : 'md:grid-cols-2 xl:grid-cols-3'
+                    }`}
+                  >
+                    {picketDaysToRender.map((day) => {
+                      const dayPickets = data.pickets.filter((p) => p.day_of_week === day);
+                      const isMyDay = myPicketDays.includes(day);
+                      const isToday = day === todayDay;
                       return (
                         <div
-                          key={p.id}
-                          className={`rounded-3xl border p-5 ${isToday
-                            ? 'border-amber-400 bg-amber-50/70 shadow-sm'
-                            : 'border-emerald-200 bg-white'
-                            }`}
+                          key={day}
+                          className={`rounded-3xl border p-5 transition min-w-0 ${
+                            isMyDay
+                              ? 'border-amber-400 bg-amber-50/60 ring-2 ring-amber-300/60 shadow-sm'
+                              : isToday
+                                ? 'border-emerald-300 bg-emerald-50/30'
+                                : 'border-slate-200 bg-white'
+                          }`}
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-black text-slate-900">
-                              {DAY_NAMES[p.day_of_week]}
-                            </span>
-                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
-                              {isToday ? 'PIKET HARI INI' : 'TUGAS PIKET'}
-                            </span>
+                          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 mb-3 flex-wrap">
+                            <h3 className="font-bold text-slate-900 text-sm">
+                              {DAY_NAMES[day] || `Hari ${day}`}
+                            </h3>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {isToday && (
+                                <span className="px-2 py-0.5 rounded-full bg-slate-800 text-white text-[10px] font-bold">
+                                  HARI INI
+                                </span>
+                              )}
+                              {isMyDay && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">
+                                  <Sparkles className="w-3 h-3" />
+                                  {scope === 'orang-tua' ? 'PIKET ANAK' : 'PIKET SAYA'}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <p className="text-xs text-slate-600 mt-2">
-                            {p.notes || 'Piket harian madrasah / pemantauan gerbang & KBM.'}
-                          </p>
+
+                          {dayPickets.length === 0 ? (
+                            <p className="text-xs text-slate-400 italic py-4 text-center">
+                              Belum ada petugas
+                            </p>
+                          ) : (
+                            <ul className="space-y-2">
+                              {dayPickets.map((p) => {
+                                const isSelf = p.student_id === data.student?.id;
+                                return (
+                                  <li
+                                    key={p.id}
+                                    className={`rounded-xl px-3 py-2 text-xs flex items-center justify-between gap-2 min-w-0 ${
+                                      isSelf
+                                        ? 'bg-amber-100 border border-amber-300 font-bold text-amber-950'
+                                        : 'bg-slate-50 border border-slate-100 text-slate-700'
+                                    }`}
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="break-words">
+                                        {p.student?.full_name || 'Siswa'}
+                                      </p>
+                                      {p.task_notes && (
+                                        <p className="text-[10px] text-slate-500 font-normal break-words">
+                                          Tugas: {p.task_notes}
+                                        </p>
+                                      )}
+                                    </div>
+                                    {isSelf && (
+                                      <span className="text-[10px] font-black text-amber-800 bg-white px-2 py-0.5 rounded-md border border-amber-300 shrink-0">
+                                        ★ {scope === 'orang-tua' ? 'Anak' : 'Anda'}
+                                      </span>
+                                    )}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
                         </div>
                       );
                     })}
                   </div>
-                )
-              ) : data.pickets.length === 0 ? (
-                <EmptyState
-                  icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
-                  title="Jadwal piket kelas belum tersedia"
-                  description="Wali kelas belum menambahkan jadwal piket untuk kelas Anda."
-                />
-              ) : (
-                <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {[1, 2, 3, 4, 5, 6].map((day) => {
-                    const dayPickets = data.pickets.filter((p) => p.day_of_week === day);
-                    const isMyDay = myPicketDays.includes(day);
-                    const isToday = day === todayDay;
-                    return (
-                      <div
-                        key={day}
-                        className={`rounded-3xl border p-5 transition ${isMyDay
-                          ? 'border-amber-400 bg-amber-50/60 ring-2 ring-amber-300/60 shadow-sm'
-                          : isToday
-                            ? 'border-emerald-300 bg-emerald-50/30'
-                            : 'border-slate-200 bg-white'
-                          }`}
-                      >
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
-                          <h3 className="font-bold text-slate-900 text-sm">{DAY_NAMES[day]}</h3>
-                          <div className="flex items-center gap-1.5">
-                            {isToday && (
-                              <span className="px-2 py-0.5 rounded-full bg-slate-800 text-white text-[10px] font-bold">
-                                HARI INI
-                              </span>
-                            )}
-                            {isMyDay && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">
-                                <Sparkles className="w-3 h-3" />
-                                {scope === 'orang-tua' ? 'PIKET ANAK' : 'PIKET SAYA'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {dayPickets.length === 0 ? (
-                          <p className="text-xs text-slate-400 italic py-4 text-center">
-                            Belum ada petugas
-                          </p>
-                        ) : (
-                          <ul className="space-y-2">
-                            {dayPickets.map((p) => {
-                              const isSelf = p.student_id === data.student?.id;
-                              return (
-                                <li
-                                  key={p.id}
-                                  className={`rounded-xl px-3 py-2 text-xs flex items-center justify-between gap-2 ${isSelf
-                                    ? 'bg-amber-100 border border-amber-300 font-bold text-amber-950'
-                                    : 'bg-slate-50 border border-slate-100 text-slate-700'
-                                    }`}
-                                >
-                                  <div>
-                                    <p>{p.student?.full_name || 'Siswa'}</p>
-                                    {p.task_notes && (
-                                      <p className="text-[10px] text-slate-500 font-normal">
-                                        Tugas: {p.task_notes}
-                                      </p>
-                                    )}
-                                  </div>
-                                  {isSelf && (
-                                    <span className="text-[10px] font-black text-amber-800 bg-white px-2 py-0.5 rounded-md border border-amber-300 shrink-0">
-                                      ★ Anda
-                                    </span>
-                                  )}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            );
+          })()}
 
           {/* 3. TABUNGAN DIGITAL & RIWAYAT TRANSAKSI */}
           {section === 'tabungan' && (
@@ -1104,83 +1302,233 @@ export function PersonalWorkspace({
                     )}
                   </div>
                 </>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    {(['HADIR', 'SAKIT', 'IZIN', 'ALPA'] as const).map((status) => (
-                      <StatCard
-                        key={status}
-                        label={status}
-                        value={String(
-                          data.attendances.filter((a) => a.status === status).length
-                        )}
-                        tone={
-                          status === 'HADIR'
-                            ? 'emerald'
-                            : status === 'ALPA'
-                              ? 'rose'
-                              : 'amber'
-                        }
-                      />
-                    ))}
-                  </div>
-                  <div className="glass-card rounded-3xl p-6">
-                    {data.attendances.length === 0 ? (
-                      <p className="text-xs text-slate-400 text-center py-6">
-                        Belum ada riwayat absensi tercatat.
-                      </p>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead>
-                            <tr className="border-b border-slate-200 text-slate-500">
-                              <th className="py-2.5 px-3">Tanggal</th>
-                              <th className="py-2.5 px-3">Jenis / Mata Pelajaran</th>
-                              <th className="py-2.5 px-3 text-center">Status</th>
-                              <th className="py-2.5 px-3">Catatan</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {data.attendances.map((a) => {
+              ) : (() => {
+                const q = absensiSearch.trim().toLowerCase();
+                const filteredAttendances = data.attendances.filter((a) => {
+                  const status = String(a.status || '');
+                  if (absensiStatusFilter !== 'ALL' && status !== absensiStatusFilter) return false;
+                  if (q) {
+                    const sched = a.schedule as {
+                      subject?: { name?: string | null } | null;
+                    } | null;
+                    const haystack = `${sched?.subject?.name || 'Absensi Harian Kelas'} ${
+                      a.notes || ''
+                    } ${a.attendance_date || ''} ${status}`.toLowerCase();
+                    if (!haystack.includes(q)) return false;
+                  }
+                  return true;
+                });
+                const displayedAttendances = filteredAttendances.slice(0, absensiVisibleCount);
+                const hasMoreAttendances = absensiVisibleCount < filteredAttendances.length;
+                const hasAbsensiFilter =
+                  absensiSearch.trim().length > 0 || absensiStatusFilter !== 'ALL';
+
+                return (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 sm:gap-4">
+                      {(['HADIR', 'SAKIT', 'IZIN', 'ALPA'] as const).map((status) => (
+                        <StatCard
+                          key={status}
+                          label={status}
+                          value={String(
+                            data.attendances.filter((a) => a.status === status).length
+                          )}
+                          tone={
+                            status === 'HADIR'
+                              ? 'emerald'
+                              : status === 'ALPA'
+                                ? 'rose'
+                                : 'amber'
+                          }
+                        />
+                      ))}
+                    </div>
+
+                    <div className="glass-card rounded-3xl p-4 sm:p-6 space-y-4">
+                      {data.attendances.length > 0 && (
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                          <div className="relative flex-1 min-w-0">
+                            <label htmlFor="absensi-search-input" className="sr-only">
+                              Cari riwayat absensi
+                            </label>
+                            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              id="absensi-search-input"
+                              type="search"
+                              value={absensiSearch}
+                              onChange={(e) => {
+                                setAbsensiSearch(e.target.value);
+                                setAbsensiVisibleCount(20);
+                              }}
+                              placeholder="Cari mata pelajaran, tanggal, atau catatan..."
+                              className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                            />
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                            {(['ALL', 'HADIR', 'SAKIT', 'IZIN', 'ALPA'] as const).map((st) => (
+                              <button
+                                key={st}
+                                type="button"
+                                onClick={() => {
+                                  setAbsensiStatusFilter(st);
+                                  setAbsensiVisibleCount(20);
+                                }}
+                                className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                                  absensiStatusFilter === st
+                                    ? 'bg-slate-900 text-white border-slate-900'
+                                    : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                                }`}
+                              >
+                                {st === 'ALL' ? 'Semua' : st}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {data.attendances.length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-6">
+                          Belum ada riwayat absensi tercatat.
+                        </p>
+                      ) : filteredAttendances.length === 0 ? (
+                        <div className="py-8 text-center space-y-2.5">
+                          <p className="text-xs font-semibold text-slate-600">
+                            Tidak ada catatan absensi yang sesuai filter.
+                          </p>
+                          {hasAbsensiFilter && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAbsensiSearch('');
+                                setAbsensiStatusFilter('ALL');
+                                setAbsensiVisibleCount(20);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Mobile Card List */}
+                          <div className="space-y-2.5 md:hidden">
+                            {displayedAttendances.map((a) => {
                               const sched = a.schedule as {
                                 subject?: { name?: string | null } | null;
                               } | null;
-                              const status = String(a.status);
+                              const status = String(a.status || '-');
+                              const dateVal = a.attendance_date
+                                ? String(a.attendance_date)
+                                : null;
                               return (
-                                <tr key={String(a.id)}>
-                                  <td className="py-2.5 px-3 font-medium">
-                                    {formatDateId(String(a.attendance_date))}
-                                  </td>
-                                  <td className="py-2.5 px-3 text-slate-700">
-                                    {sched?.subject?.name
-                                      ? `Mapel: ${sched.subject.name}`
-                                      : 'Absensi Harian Kelas'}
-                                  </td>
-                                  <td className="py-2.5 px-3 text-center">
+                                <div
+                                  key={String(a.id)}
+                                  className="modular-card rounded-2xl p-3.5 space-y-1.5 text-xs min-w-0"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold text-slate-800">
+                                      {formatDateId(dateVal)}
+                                    </span>
                                     <span
-                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${status === 'HADIR'
-                                        ? 'bg-emerald-100 text-emerald-800'
-                                        : status === 'ALPA'
-                                          ? 'bg-rose-100 text-rose-800'
-                                          : 'bg-amber-100 text-amber-800'
-                                        }`}
+                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                                        status === 'HADIR'
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : status === 'ALPA'
+                                            ? 'bg-rose-100 text-rose-800'
+                                            : 'bg-amber-100 text-amber-800'
+                                      }`}
                                     >
                                       {status}
                                     </span>
-                                  </td>
-                                  <td className="py-2.5 px-3 text-slate-500">
-                                    {a.notes ? String(a.notes) : '-'}
-                                  </td>
-                                </tr>
+                                  </div>
+                                  <p className="font-bold text-slate-900 break-words">
+                                    {sched?.subject?.name
+                                      ? `Mapel: ${sched.subject.name}`
+                                      : 'Absensi Harian Kelas'}
+                                  </p>
+                                  {Boolean(a.notes) && (
+                                    <p className="text-[11px] text-slate-500 break-words">
+                                      Catatan: {String(a.notes)}
+                                    </p>
+                                  )}
+                                </div>
                               );
                             })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
+                          </div>
+
+                          {/* Desktop Table */}
+                          <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="border-b border-slate-200 text-slate-500">
+                                  <th className="py-2.5 px-3">Tanggal</th>
+                                  <th className="py-2.5 px-3">Jenis / Mata Pelajaran</th>
+                                  <th className="py-2.5 px-3 text-center">Status</th>
+                                  <th className="py-2.5 px-3">Catatan</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {displayedAttendances.map((a) => {
+                                  const sched = a.schedule as {
+                                    subject?: { name?: string | null } | null;
+                                  } | null;
+                                  const status = String(a.status || '-');
+                                  const dateVal = a.attendance_date
+                                    ? String(a.attendance_date)
+                                    : null;
+                                  return (
+                                    <tr key={String(a.id)}>
+                                      <td className="py-2.5 px-3 font-medium whitespace-nowrap">
+                                        {formatDateId(dateVal)}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-slate-700">
+                                        {sched?.subject?.name
+                                          ? `Mapel: ${sched.subject.name}`
+                                          : 'Absensi Harian Kelas'}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center">
+                                        <span
+                                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                            status === 'HADIR'
+                                              ? 'bg-emerald-100 text-emerald-800'
+                                              : status === 'ALPA'
+                                                ? 'bg-rose-100 text-rose-800'
+                                                : 'bg-amber-100 text-amber-800'
+                                          }`}
+                                        >
+                                          {status}
+                                        </span>
+                                      </td>
+                                      <td className="py-2.5 px-3 text-slate-500">
+                                        {a.notes ? String(a.notes) : '-'}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {hasMoreAttendances && (
+                            <div className="pt-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => setAbsensiVisibleCount((c) => c + 20)}
+                                className="min-h-[40px] px-5 py-2 rounded-xl bg-white border border-slate-200 hover:border-emerald-300 text-xs font-semibold text-slate-700 hover:text-emerald-800 transition"
+                              >
+                                Muat Lebih Banyak (
+                                {filteredAttendances.length - displayedAttendances.length} tersisa)
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -1193,93 +1541,292 @@ export function PersonalWorkspace({
                   title="Belum ada tagihan SPP / Komite"
                   description="Belum ada tagihan yang diterbitkan untuk akun siswa ini."
                 />
-              ) : (
-                <div className="glass-card rounded-3xl p-6 space-y-4">
-                  <h2 className="text-sm font-bold text-slate-900">Daftar Tagihan &amp; Status Pembayaran</h2>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-slate-500">
-                          <th className="py-2.5 px-3">Jenis Biaya</th>
-                          <th className="py-2.5 px-3">Periode</th>
-                          <th className="py-2.5 px-3 text-right">Nominal Tagihan</th>
-                          <th className="py-2.5 px-3 text-right">Sudah Dibayar</th>
-                          <th className="py-2.5 px-3 text-center">Status</th>
-                          <th className="py-2.5 px-3 text-center">Slip</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {data.bills.map((b) => {
-                          const canDownloadSlip =
-                            Number(b.paid_amount) > 0 || b.status === 'LUNAS';
-                          const relatedPay = data.payments.find((p) => p.bill_id === b.id);
-                          return (
-                            <tr key={b.id}>
-                              <td className="py-2.5 px-3 font-semibold text-slate-900">
-                                {b.title || b.fee_type?.name || 'Tagihan'}
-                              </td>
-                              <td className="py-2.5 px-3 text-slate-600">
-                                {b.billing_month && b.billing_year
+              ) : (() => {
+                const totalTagihan = data.bills.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+                const totalDibayar = data.bills.reduce(
+                  (sum, b) => sum + (Number(b.paid_amount) || 0),
+                  0
+                );
+                const totalSisa = Math.max(0, totalTagihan - totalDibayar);
+
+                const q = sppSearch.trim().toLowerCase();
+                const filteredBills = data.bills.filter((b) => {
+                  if (sppStatusFilter === 'LUNAS' && b.status !== 'LUNAS') return false;
+                  if (sppStatusFilter === 'CICILAN' && b.status !== 'CICILAN') return false;
+                  if (sppStatusFilter === 'UNPAID' && b.status === 'LUNAS') return false;
+                  if (q) {
+                    const feeName = b.title || b.fee_type?.name || 'Tagihan';
+                    const period =
+                      b.billing_month && b.billing_year
+                        ? `${b.billing_month}/${b.billing_year}`
+                        : '';
+                    const haystack = `${feeName} ${period} ${b.status}`.toLowerCase();
+                    if (!haystack.includes(q)) return false;
+                  }
+                  return true;
+                });
+
+                const openSppSlip = (b: PersonalPayload['bills'][number]) => {
+                  const relatedPay = data.payments.find((p) => p.bill_id === b.id);
+                  setActiveSppSlip({
+                    billId: b.id,
+                    referenceNumber: relatedPay?.reference_number || null,
+                    studentName: data.student?.full_name || data.profile.fullName,
+                    studentNis: data.student?.nis || null,
+                    feeName: b.title || b.fee_type?.name || 'SPP / Iuran Komite',
+                    periodLabel:
+                      b.billing_month && b.billing_year
+                        ? `${b.billing_month}/${b.billing_year}`
+                        : null,
+                    amount: Number(b.amount) || 0,
+                    paidAmount: Number(b.paid_amount) || 0,
+                    status: b.status,
+                    paymentDate: relatedPay?.payment_date || null,
+                    paymentMethod: relatedPay?.payment_method || null,
+                  });
+                };
+
+                const hasSppFilter = sppSearch.trim().length > 0 || sppStatusFilter !== 'ALL';
+
+                return (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                      <StatCard
+                        label="Total Tagihan"
+                        value={formatRupiah(totalTagihan)}
+                        tone="slate"
+                      />
+                      <StatCard
+                        label="Sudah Dibayar"
+                        value={formatRupiah(totalDibayar)}
+                        tone="emerald"
+                      />
+                      <StatCard
+                        label="Sisa Tagihan"
+                        value={formatRupiah(totalSisa)}
+                        tone={totalSisa > 0 ? 'rose' : 'emerald'}
+                      />
+                    </div>
+
+                    <div className="glass-card rounded-3xl p-4 sm:p-6 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                          <Receipt className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <span>Daftar Tagihan &amp; Status Pembayaran</span>
+                        </h2>
+                        <span className="text-[11px] font-medium text-slate-500">
+                          Menampilkan {filteredBills.length} dari {data.bills.length} tagihan
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                        <div className="relative flex-1 min-w-0">
+                          <label htmlFor="spp-search-input" className="sr-only">
+                            Cari tagihan SPP
+                          </label>
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            id="spp-search-input"
+                            type="search"
+                            value={sppSearch}
+                            onChange={(e) => setSppSearch(e.target.value)}
+                            placeholder="Cari jenis biaya atau periode (mis. 11/2026)..."
+                            className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                          {(
+                            [
+                              { key: 'ALL', label: 'Semua' },
+                              { key: 'UNPAID', label: 'Belum Lunas' },
+                              { key: 'CICILAN', label: 'Cicilan' },
+                              { key: 'LUNAS', label: 'Lunas' },
+                            ] as const
+                          ).map((tab) => (
+                            <button
+                              key={tab.key}
+                              type="button"
+                              onClick={() => setSppStatusFilter(tab.key)}
+                              className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                                sppStatusFilter === tab.key
+                                  ? 'bg-slate-900 text-white border-slate-900'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                              }`}
+                            >
+                              {tab.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {filteredBills.length === 0 ? (
+                        <div className="py-8 text-center space-y-2.5">
+                          <p className="text-xs font-semibold text-slate-600">
+                            Tidak ada tagihan yang sesuai filter.
+                          </p>
+                          {hasSppFilter && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSppSearch('');
+                                setSppStatusFilter('ALL');
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Mobile Card List */}
+                          <div className="space-y-3 md:hidden">
+                            {filteredBills.map((b) => {
+                              const amount = Number(b.amount) || 0;
+                              const paid = Number(b.paid_amount) || 0;
+                              const remaining = Math.max(0, amount - paid);
+                              const canDownloadSlip = paid > 0 || b.status === 'LUNAS';
+                              const periodLabel =
+                                b.billing_month && b.billing_year
                                   ? `${b.billing_month}/${b.billing_year}`
-                                  : '-'}
-                              </td>
-                              <td className="py-2.5 px-3 text-right font-bold">
-                                {formatRupiah(Number(b.amount) || 0)}
-                              </td>
-                              <td className="py-2.5 px-3 text-right text-emerald-700 font-semibold">
-                                {formatRupiah(Number(b.paid_amount) || 0)}
-                              </td>
-                              <td className="py-2.5 px-3 text-center">
-                                <span
-                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${b.status === 'LUNAS'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : b.status === 'CICILAN'
-                                      ? 'bg-amber-100 text-amber-800'
-                                      : 'bg-rose-100 text-rose-800'
-                                    }`}
+                                  : '-';
+                              return (
+                                <div
+                                  key={b.id}
+                                  className="modular-card rounded-2xl p-4 space-y-2.5 text-xs min-w-0"
                                 >
-                                  {b.status}
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-3 text-center">
-                                {canDownloadSlip ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setActiveSppSlip({
-                                        billId: b.id,
-                                        referenceNumber: relatedPay?.reference_number || null,
-                                        studentName: data.student?.full_name || data.profile.fullName,
-                                        studentNis: data.student?.nis || null,
-                                        feeName: b.title || b.fee_type?.name || 'SPP / Iuran Komite',
-                                        periodLabel:
-                                          b.billing_month && b.billing_year
-                                            ? `${b.billing_month}/${b.billing_year}`
-                                            : null,
-                                        amount: Number(b.amount) || 0,
-                                        paidAmount: Number(b.paid_amount) || 0,
-                                        status: b.status,
-                                        paymentDate: relatedPay?.payment_date || null,
-                                        paymentMethod: relatedPay?.payment_method || null,
-                                      })
-                                    }
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
-                                    title="Lihat & Unduh Slip PNG"
-                                  >
-                                    <Download className="w-3 h-3" /> PNG
-                                  </button>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400">-</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-slate-900 break-words">
+                                        {b.title || b.fee_type?.name || 'Tagihan'}
+                                      </p>
+                                      <p className="text-[11px] text-slate-500">
+                                        Periode: {periodLabel}
+                                      </p>
+                                    </div>
+                                    <span
+                                      className={`shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                        b.status === 'LUNAS'
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : b.status === 'CICILAN'
+                                            ? 'bg-amber-100 text-amber-800'
+                                            : 'bg-rose-100 text-rose-800'
+                                      }`}
+                                    >
+                                      {b.status}
+                                    </span>
+                                  </div>
+
+                                  <div className="space-y-1 pt-2 border-t border-slate-100">
+                                    <div className="flex justify-between gap-2">
+                                      <span className="text-slate-500">Nominal Tagihan</span>
+                                      <span className="font-bold text-slate-900">
+                                        {formatRupiah(amount)}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between gap-2">
+                                      <span className="text-slate-500">Sudah Dibayar</span>
+                                      <span className="font-semibold text-emerald-700">
+                                        {formatRupiah(paid)}
+                                      </span>
+                                    </div>
+                                    {remaining > 0 && (
+                                      <div className="flex justify-between gap-2">
+                                        <span className="text-slate-500">Sisa</span>
+                                        <span className="font-semibold text-rose-600">
+                                          {formatRupiah(remaining)}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {canDownloadSlip && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openSppSlip(b)}
+                                      className="w-full min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-xs transition"
+                                    >
+                                      <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip PNG
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Desktop Table */}
+                          <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="border-b border-slate-200 text-slate-500">
+                                  <th className="py-2.5 px-3">Jenis Biaya</th>
+                                  <th className="py-2.5 px-3">Periode</th>
+                                  <th className="py-2.5 px-3 text-right">Nominal Tagihan</th>
+                                  <th className="py-2.5 px-3 text-right">Sudah Dibayar</th>
+                                  <th className="py-2.5 px-3 text-center">Status</th>
+                                  <th className="py-2.5 px-3 text-center">Slip</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {filteredBills.map((b) => {
+                                  const canDownloadSlip =
+                                    Number(b.paid_amount) > 0 || b.status === 'LUNAS';
+                                  return (
+                                    <tr key={b.id}>
+                                      <td className="py-2.5 px-3 font-semibold text-slate-900">
+                                        {b.title || b.fee_type?.name || 'Tagihan'}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-slate-600">
+                                        {b.billing_month && b.billing_year
+                                          ? `${b.billing_month}/${b.billing_year}`
+                                          : '-'}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-right font-bold">
+                                        {formatRupiah(Number(b.amount) || 0)}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-right text-emerald-700 font-semibold">
+                                        {formatRupiah(Number(b.paid_amount) || 0)}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center">
+                                        <span
+                                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                            b.status === 'LUNAS'
+                                              ? 'bg-emerald-100 text-emerald-800'
+                                              : b.status === 'CICILAN'
+                                                ? 'bg-amber-100 text-amber-800'
+                                                : 'bg-rose-100 text-rose-800'
+                                          }`}
+                                        >
+                                          {b.status}
+                                        </span>
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center">
+                                        {canDownloadSlip ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => openSppSlip(b)}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                                            title="Lihat & Unduh Slip PNG"
+                                          >
+                                            <Download className="w-3 h-3" /> PNG
+                                          </button>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400">-</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -1369,72 +1916,259 @@ export function PersonalWorkspace({
           )}
 
           {/* 7. JADWAL & RUANG UJIAN */}
-          {section === 'ujian' && (
-            <div className="space-y-4">
-              {data.examRooms.length === 0 ? (
-                <EmptyState
-                  icon={<BookOpen className="w-8 h-8 text-slate-300" />}
-                  title="Belum ada penempatan ruang ujian"
-                  description="Penempatan ruang dan nomor kursi ujian akan muncul saat periode ujian aktif."
-                />
-              ) : (
-                <div className="grid md:grid-cols-2 gap-4">
-                  {data.examRooms.map((er) => (
-                    <div key={er.id} className="glass-card rounded-3xl p-5 space-y-2">
-                      <p className="text-xs font-bold text-emerald-700">
-                        {er.exam_room?.period?.name || 'Periode Ujian'}
-                      </p>
-                      <h3 className="text-base font-black text-slate-900">
-                        Ruang: {er.exam_room?.room_name || '-'}
-                      </h3>
-                      <p className="text-xs text-slate-600">
-                        Nomor Kursi: <strong>{er.seat_number || '-'}</strong>
-                      </p>
-                      {er.exam_room?.exam_date && (
-                        <p className="text-xs text-slate-500">
-                          Tanggal: {formatDateId(er.exam_room.exam_date)} ({formatTimeShort(er.exam_room.start_time)} – {formatTimeShort(er.exam_room.end_time)})
+          {section === 'ujian' && (() => {
+            const q = examSearch.trim().toLowerCase();
+            const sortedRooms = [...data.examRooms].sort((a, b) => {
+              const dateA = a.exam_room?.exam_date || a.exam_room?.period?.start_date || '';
+              const dateB = b.exam_room?.exam_date || b.exam_room?.period?.start_date || '';
+              if (dateA !== dateB) return dateA.localeCompare(dateB);
+              return (a.exam_room?.start_time || '').localeCompare(b.exam_room?.start_time || '');
+            });
+            const filteredRooms = q
+              ? sortedRooms.filter((er) => {
+                  const haystack = `${er.exam_room?.period?.name || ''} ${
+                    er.exam_room?.room_name || ''
+                  } ${er.seat_number || ''} ${er.exam_room?.exam_date || ''}`.toLowerCase();
+                  return haystack.includes(q);
+                })
+              : sortedRooms;
+
+            return (
+              <div className="space-y-4">
+                {data.examRooms.length === 0 ? (
+                  <EmptyState
+                    icon={<BookOpen className="w-8 h-8 text-slate-300" />}
+                    title="Belum ada penempatan ruang ujian"
+                    description="Penempatan ruang dan nomor kursi ujian akan muncul saat periode ujian aktif."
+                  />
+                ) : (
+                  <>
+                    {data.examRooms.length > 2 && (
+                      <div className="glass-card rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <span className="text-xs font-semibold text-slate-700">
+                          Menampilkan {filteredRooms.length} dari {data.examRooms.length} ruang ujian
+                        </span>
+                        <div className="relative min-w-0 sm:w-64">
+                          <label htmlFor="exam-search-input" className="sr-only">
+                            Cari ruang atau periode ujian
+                          </label>
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            id="exam-search-input"
+                            type="search"
+                            value={examSearch}
+                            onChange={(e) => setExamSearch(e.target.value)}
+                            placeholder="Cari ruang, kursi, atau periode..."
+                            className="w-full rounded-xl border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {filteredRooms.length === 0 ? (
+                      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center space-y-2">
+                        <p className="text-xs font-semibold text-slate-700">
+                          Tidak ada ruang ujian yang cocok dengan pencarian &ldquo;{examSearch}
+                          &rdquo;.
                         </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                        <button
+                          type="button"
+                          onClick={() => setExamSearch('')}
+                          className="text-[11px] font-semibold text-emerald-700 hover:underline"
+                        >
+                          Reset pencarian
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {filteredRooms.map((er) => {
+                          const period = er.exam_room?.period;
+                          return (
+                            <div
+                              key={er.id}
+                              className="glass-card rounded-3xl p-5 space-y-3 min-w-0 border border-slate-200/80"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 space-y-0.5">
+                                  <p className="text-xs font-bold text-emerald-700 break-words">
+                                    {period?.name || 'Periode Ujian'}
+                                  </p>
+                                  <h3 className="text-base font-black text-slate-900 break-words">
+                                    Ruang: {er.exam_room?.room_name || '-'}
+                                  </h3>
+                                </div>
+                                <span className="shrink-0 px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold font-mono">
+                                  Kursi: {er.seat_number || '-'}
+                                </span>
+                              </div>
+
+                              <div className="pt-2 border-t border-slate-100 text-xs text-slate-500 space-y-1">
+                                {er.exam_room?.exam_date ? (
+                                  <p className="flex items-center gap-1.5 flex-wrap">
+                                    <CalendarDays className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    <span>
+                                      {formatDateId(er.exam_room.exam_date)} (
+                                      {formatTimeShort(er.exam_room.start_time)} –{' '}
+                                      {formatTimeShort(er.exam_room.end_time)})
+                                    </span>
+                                  </p>
+                                ) : (
+                                  (period?.start_date || period?.end_date) && (
+                                    <p className="flex items-center gap-1.5 flex-wrap">
+                                      <CalendarDays className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                      <span>
+                                        Periode: {formatDateId(period?.start_date)} –{' '}
+                                        {formatDateId(period?.end_date)}
+                                      </span>
+                                    </p>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* 8. CATATAN BK (NON-RAHASIA) */}
-          {section === 'bk' && (
-            <div className="space-y-4">
-              {data.bkRecords.length === 0 ? (
-                <EmptyState
-                  icon={<ShieldAlert className="w-8 h-8 text-slate-300" />}
-                  title="Tidak ada catatan BK"
-                  description="Belum ada catatan bimbingan konseling atau pembinaan yang tercatat."
-                />
-              ) : (
-                <div className="space-y-3">
-                  {data.bkRecords.map((rec) => (
-                    <div key={rec.id} className="glass-card rounded-3xl p-5 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[10px] font-bold">
-                          {rec.record_type} {rec.category ? `• ${rec.category}` : ''}
-                        </span>
-                        <span className="text-[11px] text-slate-500">
-                          {formatDateId(rec.incident_date)}
-                        </span>
+          {section === 'bk' && (() => {
+            const q = bkSearch.trim().toLowerCase();
+            const sortedBk = [...data.bkRecords].sort((a, b) =>
+              (b.incident_date || '').localeCompare(a.incident_date || '')
+            );
+            const filteredBk = sortedBk.filter((rec) => {
+              if (bkTypeFilter !== 'ALL' && rec.record_type !== bkTypeFilter) return false;
+              if (q) {
+                const haystack = `${rec.record_type} ${rec.category || ''} ${rec.description} ${
+                  rec.follow_up || ''
+                } ${rec.counselor?.full_name || ''}`.toLowerCase();
+                if (!haystack.includes(q)) return false;
+              }
+              return true;
+            });
+            const hasBkFilter = bkSearch.trim().length > 0 || bkTypeFilter !== 'ALL';
+
+            return (
+              <div className="space-y-4">
+                {data.bkRecords.length === 0 ? (
+                  <EmptyState
+                    icon={<ShieldAlert className="w-8 h-8 text-slate-300" />}
+                    title="Tidak ada catatan BK"
+                    description="Belum ada catatan bimbingan konseling atau pembinaan yang tercatat."
+                  />
+                ) : (
+                  <>
+                    <div className="glass-card rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                      <div className="relative flex-1 min-w-0">
+                        <label htmlFor="personal-bk-search" className="sr-only">
+                          Cari catatan BK
+                        </label>
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          id="personal-bk-search"
+                          type="search"
+                          value={bkSearch}
+                          onChange={(e) => setBkSearch(e.target.value)}
+                          placeholder="Cari catatan, tindak lanjut, atau konselor..."
+                          className="w-full min-h-[38px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                        />
                       </div>
-                      <p className="text-xs text-slate-800 font-medium">{rec.description}</p>
-                      {rec.follow_up && (
-                        <p className="text-[11px] text-emerald-700">
-                          Tindak Lanjut: {rec.follow_up}
-                        </p>
-                      )}
+
+                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                        {(
+                          [
+                            { key: 'ALL', label: 'Semua' },
+                            { key: 'KONSULTASI', label: 'Konsultasi' },
+                            { key: 'PRESTASI', label: 'Prestasi' },
+                            { key: 'PELANGGARAN', label: 'Pelanggaran' },
+                          ] as const
+                        ).map((tab) => (
+                          <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setBkTypeFilter(tab.key)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                              bkTypeFilter === tab.key
+                                ? 'bg-slate-900 text-white border-slate-900'
+                                : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+
+                    {filteredBk.length === 0 ? (
+                      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center space-y-2">
+                        <p className="text-xs font-semibold text-slate-700">
+                          Tidak ada catatan BK yang sesuai dengan filter pencarian.
+                        </p>
+                        {hasBkFilter && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBkSearch('');
+                              setBkTypeFilter('ALL');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {filteredBk.map((rec) => {
+                          const badgeClass =
+                            rec.record_type === 'PELANGGARAN'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : rec.record_type === 'PRESTASI'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-sky-50 text-sky-700 border-sky-200';
+                          return (
+                            <div
+                              key={rec.id}
+                              className="glass-card rounded-3xl p-5 space-y-2 min-w-0"
+                            >
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold ${badgeClass}`}
+                                >
+                                  {rec.record_type} {rec.category ? `• ${rec.category}` : ''}
+                                </span>
+                                <span className="text-[11px] font-mono text-slate-500">
+                                  {formatDateId(rec.incident_date)}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-800 font-medium break-words">
+                                {rec.description}
+                              </p>
+                              {rec.follow_up && (
+                                <p className="text-[11px] text-emerald-700 break-words">
+                                  Tindak Lanjut: {rec.follow_up}
+                                </p>
+                              )}
+                              {rec.counselor?.full_name && (
+                                <p className="text-[11px] text-slate-400 break-words">
+                                  Guru BK: {rec.counselor.full_name}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
 

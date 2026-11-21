@@ -4,7 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import type { AuthenticatedSession } from '@/lib/auth/session';
 import type { AppRole } from '@/types/database';
-import { isR2Configured } from '@/lib/storage/r2';
+import { isR2Configured } from '@/lib/storage/r2-config';
 import {
   syncBasicProfileFields,
   syncStudentDocToGuardians,

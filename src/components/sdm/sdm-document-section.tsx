@@ -8,6 +8,7 @@ import {
   Loader2,
   Trash2,
   Upload,
+  X,
   XCircle,
 } from 'lucide-react';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
@@ -54,9 +55,15 @@ export function SdmDocumentSection({
   const [docTitle, setDocTitle] = useState('');
   const [docNumber, setDocNumber] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [busyDocId, setBusyDocId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   async function handleUpload(file: File) {
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage({ type: 'err', text: 'Ukuran file maksimal 5 MB.' });
+      return;
+    }
     setUploading(true);
     setMessage(null);
     try {
@@ -86,6 +93,8 @@ export function SdmDocumentSection({
   }
 
   async function handleVerify(docId: string, status: 'TERVERIFIKASI' | 'DITOLAK') {
+    if (busyDocId) return;
+    setBusyDocId(docId);
     try {
       const res = await fetch('/api/sdm/documents', {
         method: 'PATCH',
@@ -97,11 +106,14 @@ export function SdmDocumentSection({
       await onRefresh();
     } catch (e) {
       setMessage({ type: 'err', text: (e as Error).message });
+    } finally {
+      setBusyDocId(null);
     }
   }
 
   async function handleDelete(doc: SdmDocumentItem) {
-    if (!confirm(`Hapus dokumen "${doc.file_name}"?`)) return;
+    if (busyDocId) return;
+    setBusyDocId(doc.id);
     try {
       const res = await fetch(
         `/api/sdm/documents?entity_type=${entityType}&id=${doc.id}`,
@@ -109,10 +121,13 @@ export function SdmDocumentSection({
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Gagal menghapus dokumen.');
+      setConfirmDeleteId(null);
       setMessage({ type: 'ok', text: `Dokumen "${doc.file_name}" dihapus.` });
       await onRefresh();
     } catch (e) {
       setMessage({ type: 'err', text: (e as Error).message });
+    } finally {
+      setBusyDocId(null);
     }
   }
 
@@ -133,22 +148,32 @@ export function SdmDocumentSection({
 
       {message && (
         <div
-          className={`p-3 rounded-xl text-xs border ${
+          role={message.type === 'ok' ? 'status' : 'alert'}
+          className={`p-3 rounded-xl text-xs border flex items-start sm:items-center justify-between gap-2 ${
             message.type === 'ok'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : 'bg-rose-50 border-rose-200 text-rose-800'
           }`}
         >
-          {message.text}
+          <span className="break-words">{message.text}</span>
+          <button
+            type="button"
+            onClick={() => setMessage(null)}
+            aria-label="Tutup pesan dokumen"
+            className="p-0.5 rounded-md hover:bg-black/5 shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
       {canManage && (
-      <div className="grid sm:grid-cols-4 gap-2.5 text-xs bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl">
         <select
+          aria-label="Jenis dokumen"
           value={docType}
           onChange={(e) => setDocType(e.target.value)}
-          className="px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium"
+          className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium"
         >
           {documentOptions.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -159,18 +184,20 @@ export function SdmDocumentSection({
 
         <input
           type="text"
+          aria-label="Nomor dokumen"
           placeholder="Nomor Dokumen (opsional)"
           value={docNumber}
           onChange={(e) => setDocNumber(e.target.value)}
-          className="px-3 py-2 rounded-xl border border-slate-200 bg-white"
+          className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white"
         />
 
         <input
           type="text"
+          aria-label="Keterangan atau judul dokumen"
           placeholder="Keterangan / Judul (opsional)"
           value={docTitle}
           onChange={(e) => setDocTitle(e.target.value)}
-          className="px-3 py-2 rounded-xl border border-slate-200 bg-white"
+          className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white"
         />
 
         <label className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 cursor-pointer">
@@ -243,17 +270,21 @@ export function SdmDocumentSection({
                   <>
                     <button
                       type="button"
+                      disabled={busyDocId === doc.id}
                       onClick={() => handleVerify(doc.id, 'TERVERIFIKASI')}
                       title="Verifikasi Dokumen"
-                      className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50"
+                      aria-label={`Verifikasi ${doc.file_name}`}
+                      className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 disabled:opacity-40"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                     </button>
                     <button
                       type="button"
+                      disabled={busyDocId === doc.id}
                       onClick={() => handleVerify(doc.id, 'DITOLAK')}
                       title="Tolak Dokumen"
-                      className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50"
+                      aria-label={`Tolak ${doc.file_name}`}
+                      className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 disabled:opacity-40"
                     >
                       <XCircle className="w-4 h-4" />
                     </button>
@@ -265,19 +296,43 @@ export function SdmDocumentSection({
                   rel="noreferrer"
                   className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
                   title="Buka / Pratinjau"
+                  aria-label={`Buka ${doc.file_name}`}
                 >
                   <ExternalLink className="w-4 h-4" />
                 </a>
-                {canManage && (
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(doc)}
-                    className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50"
-                    title="Hapus"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
+                {canManage &&
+                  (confirmDeleteId === doc.id ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busyDocId === doc.id}
+                        onClick={() => handleDelete(doc)}
+                        className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-semibold disabled:opacity-50 inline-flex items-center gap-1"
+                      >
+                        {busyDocId === doc.id && <Loader2 className="w-3 h-3 animate-spin" />}
+                        Hapus
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyDocId === doc.id}
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 text-[11px]"
+                      >
+                        Batal
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={Boolean(busyDocId)}
+                      onClick={() => setConfirmDeleteId(doc.id)}
+                      className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                      title="Hapus"
+                      aria-label={`Hapus ${doc.file_name}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  ))}
               </div>
             </div>
           ))}

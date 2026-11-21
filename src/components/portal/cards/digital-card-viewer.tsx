@@ -82,9 +82,9 @@ export function DigitalStudentCard({
   student: StudentCardData;
   institution?: CardInstitutionInfo | null;
 }) {
-  const [institution, setInstitution] = useState<CardInstitutionInfo>(
-    institutionProp || DEFAULT_INSTITUTION
-  );
+  const [fetchedInstitution, setFetchedInstitution] =
+    useState<CardInstitutionInfo>(DEFAULT_INSTITUTION);
+  const institution = institutionProp || fetchedInstitution;
   const [viewMode, setViewMode] = useState<'both' | 'front' | 'back'>('both');
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [downloading, setDownloading] = useState<'front' | 'back' | 'both' | null>(null);
@@ -92,11 +92,14 @@ export function DigitalStudentCard({
   const hasProfilePhoto = Boolean(student.photo_url?.trim());
 
   useEffect(() => {
-    if (institutionProp) {
-      setInstitution(institutionProp);
-      return;
-    }
-    fetchInstitutionInfo().then(setInstitution);
+    if (institutionProp) return;
+    let active = true;
+    fetchInstitutionInfo().then((info) => {
+      if (active) setFetchedInstitution(info);
+    });
+    return () => {
+      active = false;
+    };
   }, [institutionProp]);
 
   useEffect(() => {
@@ -134,6 +137,10 @@ export function DigitalStudentCard({
         const combined = combineFrontBackCanvases(front, back);
         downloadCanvasAsPng(combined, `kartu-pelajar-${slug}-lengkap.png`);
       }
+    } catch (err) {
+      setDownloadError(
+        err instanceof Error ? err.message : 'Gagal membuat file PNG kartu pelajar.'
+      );
     } finally {
       setDownloading(null);
     }
@@ -266,7 +273,7 @@ export function DigitalStudentCard({
               </div>
 
               {/* Body */}
-              <div className="p-4 flex gap-3.5 items-start">
+              <div className="p-3.5 sm:p-4 flex flex-wrap sm:flex-nowrap gap-3 sm:gap-3.5 items-start">
                 <div className="shrink-0 space-y-1.5">
                   <div className="w-16 h-20 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white font-bold text-lg flex items-center justify-center overflow-hidden border border-slate-300 shadow-inner">
                     {student.photo_url ? (
@@ -404,9 +411,9 @@ export function DigitalLibraryCard({
   member: LibraryCardData;
   institution?: CardInstitutionInfo | null;
 }) {
-  const [institution, setInstitution] = useState<CardInstitutionInfo>(
-    institutionProp || DEFAULT_INSTITUTION
-  );
+  const [fetchedInstitution, setFetchedInstitution] =
+    useState<CardInstitutionInfo>(DEFAULT_INSTITUTION);
+  const institution = institutionProp || fetchedInstitution;
   const [viewMode, setViewMode] = useState<'both' | 'front' | 'back'>('both');
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [downloading, setDownloading] = useState<'front' | 'back' | 'both' | null>(null);
@@ -414,11 +421,14 @@ export function DigitalLibraryCard({
   const hasProfilePhoto = Boolean(member.avatar_url?.trim() || member.photo_url?.trim());
 
   useEffect(() => {
-    if (institutionProp) {
-      setInstitution(institutionProp);
-      return;
-    }
-    fetchInstitutionInfo().then(setInstitution);
+    if (institutionProp) return;
+    let active = true;
+    fetchInstitutionInfo().then((info) => {
+      if (active) setFetchedInstitution(info);
+    });
+    return () => {
+      active = false;
+    };
   }, [institutionProp]);
 
   useEffect(() => {

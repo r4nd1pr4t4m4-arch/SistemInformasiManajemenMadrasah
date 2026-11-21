@@ -1,5 +1,7 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import type { S3Client } from '@aws-sdk/client-s3';
+import { isR2Configured } from './r2-config';
+
+export { isR2Configured };
 
 export type StorageFolder =
   | 'ppdb'
@@ -10,16 +12,7 @@ export type StorageFolder =
   | 'avatars'
   | 'student-documents';
 
-export function isR2Configured(): boolean {
-  return Boolean(
-    process.env.R2_ACCOUNT_ID &&
-      process.env.R2_ACCESS_KEY_ID &&
-      process.env.R2_SECRET_ACCESS_KEY &&
-      process.env.R2_BUCKET_NAME
-  );
-}
-
-function getR2Client(): S3Client {
+async function getR2Client(): Promise<S3Client> {
   const accountId = process.env.R2_ACCOUNT_ID;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
@@ -28,7 +21,8 @@ function getR2Client(): S3Client {
     throw new Error('Cloudflare R2 belum dikonfigurasi pada environment variables.');
   }
 
-  return new S3Client({
+  const { S3Client: Client } = await import('@aws-sdk/client-s3');
+  return new Client({
     region: 'auto',
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
     credentials: {
@@ -52,7 +46,9 @@ export async function createR2PresignedUploadUrl(params: {
   const sanitizedName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
   const objectKey = `${params.folder}/${Date.now()}-${sanitizedName}`;
 
-  const client = getR2Client();
+  const client = await getR2Client();
+  const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+  const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
   const command = new PutObjectCommand({
     Bucket: bucket,
     Key: objectKey,
@@ -83,7 +79,8 @@ export async function uploadBufferToR2(params: {
   const sanitizedName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
   const objectKey = `${params.folder}/${Date.now()}-${sanitizedName}`;
 
-  const client = getR2Client();
+  const client = await getR2Client();
+  const { PutObjectCommand } = await import('@aws-sdk/client-s3');
   await client.send(
     new PutObjectCommand({
       Bucket: bucket,
@@ -104,7 +101,8 @@ export async function getR2ObjectBuffer(objectKey: string): Promise<Uint8Array> 
   if (!bucket) {
     throw new Error('R2_BUCKET_NAME belum dikonfigurasi.');
   }
-  const client = getR2Client();
+  const client = await getR2Client();
+  const { GetObjectCommand } = await import('@aws-sdk/client-s3');
   const res = await client.send(
     new GetObjectCommand({
       Bucket: bucket,
@@ -122,7 +120,8 @@ export async function getR2ObjectStream(objectKey: string, range?: string | null
   if (!bucket) {
     throw new Error('R2_BUCKET_NAME belum dikonfigurasi.');
   }
-  const client = getR2Client();
+  const client = await getR2Client();
+  const { GetObjectCommand } = await import('@aws-sdk/client-s3');
   const res = await client.send(
     new GetObjectCommand({
       Bucket: bucket,
