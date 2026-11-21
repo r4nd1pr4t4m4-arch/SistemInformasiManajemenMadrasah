@@ -56,6 +56,19 @@ const SubjectSchema = z.object({
   subject_group: z.string().optional().default('Umum'),
 });
 
+const UpdateSubjectSchema = z.object({
+  action: z.literal('UPDATE_SUBJECT'),
+  id: z.string().uuid(),
+  code: z.string().min(2),
+  name: z.string().min(2),
+  subject_group: z.string().optional().default('Umum'),
+});
+
+const DeleteSubjectSchema = z.object({
+  action: z.literal('DELETE_SUBJECT'),
+  id: z.string().uuid(),
+});
+
 const ScheduleSchema = z.object({
   action: z.literal('CREATE_SCHEDULE'),
   classroom_id: z.string().uuid(),
@@ -65,6 +78,23 @@ const ScheduleSchema = z.object({
   start_time: z.string().min(4),
   end_time: z.string().min(4),
   jtm_count: z.number().min(1).max(12).default(2),
+});
+
+const UpdateScheduleSchema = z.object({
+  action: z.literal('UPDATE_SCHEDULE'),
+  id: z.string().uuid(),
+  classroom_id: z.string().uuid(),
+  subject_id: z.string().uuid(),
+  teacher_id: z.string().uuid(),
+  day_of_week: z.number().min(1).max(7),
+  start_time: z.string().min(4),
+  end_time: z.string().min(4),
+  jtm_count: z.number().min(1).max(12).default(2),
+});
+
+const DeleteScheduleSchema = z.object({
+  action: z.literal('DELETE_SCHEDULE'),
+  id: z.string().uuid(),
 });
 
 const PicketSchema = z.object({
@@ -256,6 +286,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ subject: data });
     }
 
+    if (body.action === 'UPDATE_SUBJECT') {
+      const parsed = UpdateSubjectSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Data pembaruan mata pelajaran tidak valid.' }, { status: 400 });
+      }
+      const { data, error } = await supabase
+        .from('subjects')
+        .update({
+          code: parsed.data.code.trim().toUpperCase(),
+          name: parsed.data.name.trim(),
+          subject_group: parsed.data.subject_group.trim() || 'Umum',
+        })
+        .eq('id', parsed.data.id)
+        .select('*')
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ subject: data });
+    }
+
+    if (body.action === 'DELETE_SUBJECT') {
+      const parsed = DeleteSubjectSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'ID mata pelajaran tidak valid.' }, { status: 400 });
+      }
+      const { count: scheduleCount, error: checkError } = await supabase
+        .from('schedules')
+        .select('id', { count: 'exact', head: true })
+        .eq('subject_id', parsed.data.id);
+      if (checkError) return NextResponse.json({ error: checkError.message }, { status: 500 });
+      if ((scheduleCount || 0) > 0) {
+        return NextResponse.json(
+          {
+            error: `Mata pelajaran tidak dapat dihapus karena masih digunakan pada ${scheduleCount} jadwal pelajaran.`,
+          },
+          { status: 409 }
+        );
+      }
+      const { error } = await supabase.from('subjects').delete().eq('id', parsed.data.id);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
     if (body.action === 'CREATE_SCHEDULE') {
       const parsed = ScheduleSchema.safeParse(body);
       if (!parsed.success) {
@@ -269,6 +341,41 @@ export async function POST(request: Request) {
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ schedule: data });
+    }
+
+    if (body.action === 'UPDATE_SCHEDULE') {
+      const parsed = UpdateScheduleSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Data pembaruan jadwal tidak valid.' }, { status: 400 });
+      }
+      const { action: _, id, ...payload } = parsed.data;
+      void _;
+      const { data, error } = await supabase
+        .from('schedules')
+        .update(payload)
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ schedule: data });
+    }
+
+    if (body.action === 'DELETE_SCHEDULE') {
+      const parsed = DeleteScheduleSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'ID jadwal tidak valid.' }, { status: 400 });
+      }
+      const { error } = await supabase.from('schedules').delete().eq('id', parsed.data.id);
+      if (error) {
+        return NextResponse.json(
+          {
+            error:
+              'Jadwal tidak dapat dihapus karena sudah terhubung dengan data presensi atau jurnal pembelajaran.',
+          },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json({ ok: true });
     }
 
     if (body.action === 'CREATE_PICKET') {
