@@ -257,8 +257,24 @@ export async function PATCH(request: Request) {
             .limit(1)
             .maybeSingle();
 
-          const origin = request.headers.get('origin') || inst?.website_url || '';
-          const loginUrl = origin ? `${origin.replace(/\/$/, '')}/login` : null;
+          const rawWebsiteUrl = inst?.website_url?.trim();
+          const normalizedWebsiteUrl = rawWebsiteUrl
+            ? /^https?:\/\//i.test(rawWebsiteUrl)
+              ? rawWebsiteUrl
+              : `https://${rawWebsiteUrl}`
+            : '';
+          const envAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || '';
+          const reqOrigin = request.headers.get('origin')?.trim() || '';
+          const isLocalReqOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(reqOrigin);
+          const baseOrigin =
+            normalizedWebsiteUrl ||
+            (envAppUrl && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(envAppUrl)
+              ? envAppUrl
+              : '') ||
+            (!isLocalReqOrigin ? reqOrigin : '') ||
+            envAppUrl ||
+            reqOrigin;
+          const loginUrl = baseOrigin ? `${baseOrigin.replace(/\/$/, '')}/login` : null;
           const emailStatus =
             action === 'APPROVE'
               ? 'AKTIF'

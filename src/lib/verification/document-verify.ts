@@ -8,15 +8,39 @@ export type VerifiableDocType =
   | 'PENILAIAN'
   | 'SURAT';
 
+function normalizeOriginUrl(raw?: string | null): string {
+  const trimmed = raw?.trim();
+  if (!trimmed) return '';
+  const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return withProto.replace(/\/$/, '');
+}
+
+function isLocalhostOrigin(url: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url);
+}
+
 export function buildVerificationUrl(params: {
   ref: string;
   type?: VerifiableDocType;
   origin?: string;
 }): string {
+  const explicitOrigin = normalizeOriginUrl(params.origin);
+  const globalWebsiteOrigin =
+    typeof globalThis !== 'undefined'
+      ? normalizeOriginUrl((globalThis as Record<string, unknown>).__simmsWebsiteUrl as string | undefined)
+      : '';
+  const envOrigin = normalizeOriginUrl(process.env.NEXT_PUBLIC_APP_URL);
+  const windowOrigin =
+    typeof window !== 'undefined' ? normalizeOriginUrl(window.location.origin) : '';
+
   const baseOrigin =
-    params.origin ||
-    (typeof window !== 'undefined' ? window.location.origin : '') ||
-    process.env.NEXT_PUBLIC_APP_URL ||
+    explicitOrigin ||
+    (globalWebsiteOrigin && !isLocalhostOrigin(globalWebsiteOrigin) ? globalWebsiteOrigin : '') ||
+    (envOrigin && !isLocalhostOrigin(envOrigin) ? envOrigin : '') ||
+    (windowOrigin && !isLocalhostOrigin(windowOrigin) ? windowOrigin : '') ||
+    globalWebsiteOrigin ||
+    envOrigin ||
+    windowOrigin ||
     '';
 
   const query = new URLSearchParams({ ref: params.ref.trim() });

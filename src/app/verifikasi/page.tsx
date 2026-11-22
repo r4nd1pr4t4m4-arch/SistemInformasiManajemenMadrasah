@@ -127,6 +127,7 @@ function VerifikasiContent() {
     })
       .then((res) => res.json().catch(() => null))
       .then((json: VerificationResult | null) => {
+        setInputRef(extracted.ref);
         if (!json) {
           setResult({
             valid: false,

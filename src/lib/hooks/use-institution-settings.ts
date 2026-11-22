@@ -25,19 +25,31 @@ const EMPTY_LOADING_SETTINGS: InstitutionSettings = {
 let cachedSettings: InstitutionSettings | null = null;
 let inflightPromise: Promise<InstitutionSettings> | null = null;
 
+function syncGlobalWebsiteUrl(url?: string | null) {
+  if (typeof globalThis === 'undefined') return;
+  const trimmed = url?.trim();
+  if (!trimmed) return;
+  const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  (globalThis as Record<string, unknown>).__simmsWebsiteUrl = normalized.replace(/\/$/, '');
+}
+
 export function invalidateInstitutionSettingsCache() {
   cachedSettings = null;
   inflightPromise = null;
 }
 
-async function fetchInstitutionSettings(): Promise<InstitutionSettings> {
-  if (cachedSettings) return cachedSettings;
+export async function fetchInstitutionSettings(): Promise<InstitutionSettings> {
+  if (cachedSettings) {
+    syncGlobalWebsiteUrl(cachedSettings.website_url);
+    return cachedSettings;
+  }
   if (!inflightPromise) {
     inflightPromise = fetch('/api/cms/settings', { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.settings) {
           cachedSettings = data.settings as InstitutionSettings;
+          syncGlobalWebsiteUrl(cachedSettings.website_url);
           return cachedSettings;
         }
         return DEFAULT_INSTITUTION_SETTINGS;

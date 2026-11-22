@@ -5,6 +5,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
 import { buildVerificationUrl } from '@/lib/verification/document-verify';
+import { fetchInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 
 export interface ExportTablePayload {
   fileName: string;
@@ -63,7 +64,12 @@ export async function exportAssessmentToPdf(payload: ExportTablePayload) {
   });
 
   try {
-    const qrUrl = buildVerificationUrl({ ref: refCode, type: 'PENILAIAN' });
+    const settings = await fetchInstitutionSettings().catch(() => null);
+    const qrUrl = buildVerificationUrl({
+      ref: refCode,
+      type: 'PENILAIAN',
+      origin: settings?.website_url || undefined,
+    });
     const qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 120, margin: 1 });
     doc.addImage(qrDataUrl, 'PNG', qrX, 8, qrSize, qrSize);
   } catch {

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  ArrowUpRight,
+  Building2,
   Mail,
   MapPin,
   Menu,
@@ -24,6 +26,15 @@ const PUBLIC_NAV_LINKS = [
   { href: '/ppdb', label: 'PPDB Online', desc: 'Pendaftaran peserta didik baru' },
   { href: '/kontak', label: 'Kontak & FAQ', desc: 'Alamat, kontak & pertanyaan umum' },
 ];
+
+const DESKTOP_PRIMARY_HREFS = new Set([
+  '/',
+  '/profil',
+  '/berita',
+  '/e-library',
+  '/verifikasi',
+  '/ppdb',
+]);
 
 export function PublicNavbar() {
   const pathname = usePathname();
@@ -71,26 +82,33 @@ export function PublicNavbar() {
   }, [mobileOpen]);
 
   const isLoadingBrand = !school.name && !school.short_name;
+  const desktopLinks = PUBLIC_NAV_LINKS.filter((item) => DESKTOP_PRIMARY_HREFS.has(item.href));
 
   return (
     <>
       {/* Top Info Strip */}
-      <div className="bg-slate-900/95 text-slate-200 text-xs py-2 px-4">
+      <div className="bg-slate-900/95 text-slate-200 text-xs py-2 px-4 border-b border-slate-800">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 min-w-0">
             {school.phone ? (
-              <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
+              <a
+                href={`tel:${school.phone.replace(/[^+\d]/g, '')}`}
+                className="inline-flex items-center gap-1.5 min-w-0 truncate hover:text-emerald-300 transition"
+              >
                 <Phone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span className="truncate">{school.phone}</span>
-              </span>
+              </a>
             ) : isLoadingBrand ? (
               <span className="h-3.5 w-28 rounded bg-slate-800 animate-pulse" />
             ) : null}
             {school.email ? (
-              <span className="hidden sm:inline-flex items-center gap-1.5 min-w-0 truncate">
+              <a
+                href={`mailto:${school.email}`}
+                className="hidden sm:inline-flex items-center gap-1.5 min-w-0 truncate hover:text-emerald-300 transition"
+              >
                 <Mail className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span className="truncate">{school.email}</span>
-              </span>
+              </a>
             ) : isLoadingBrand ? (
               <span className="hidden sm:inline-block h-3.5 w-36 rounded bg-slate-800 animate-pulse" />
             ) : null}
@@ -110,10 +128,10 @@ export function PublicNavbar() {
       </div>
 
       {/* Sticky Glassmorphic Navbar */}
-      <header ref={headerRef} className="sticky top-0 z-40 glass-nav">
+      <header ref={headerRef} className="sticky top-0 z-40 glass-nav border-b border-slate-200/70">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 sm:gap-4 relative z-40">
-          <Link href="/" className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0">
+          <Link href="/" className="flex items-center gap-3 min-w-0 group">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0 group-hover:scale-105 transition">
               {(school.short_name || school.name || 'S').slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0">
@@ -136,17 +154,23 @@ export function PublicNavbar() {
           </Link>
 
           <div className="flex items-center gap-2 shrink-0">
-            <nav className="hidden xl:flex items-center gap-1 text-sm font-medium mr-1" aria-label="Navigasi Utama">
-              {PUBLIC_NAV_LINKS.slice(0, 6).map((item) => {
-                const active = pathname === item.href;
+            <nav
+              className="hidden xl:flex items-center gap-1 text-xs font-semibold mr-1"
+              aria-label="Navigasi Utama"
+            >
+              {desktopLinks.map((item) => {
+                const active =
+                  item.href === '/'
+                    ? pathname === '/'
+                    : pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`px-2.5 py-1.5 rounded-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+                    className={`px-3 py-2 rounded-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                       active
-                        ? 'bg-emerald-50 text-emerald-700 font-semibold'
-                        : 'text-slate-600 hover:text-emerald-700 hover:bg-white/70'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/70'
                     }`}
                   >
                     {item.label}
@@ -169,7 +193,7 @@ export function PublicNavbar() {
               className={`inline-flex items-center justify-center gap-1.5 min-h-[40px] px-3 py-2 rounded-xl border text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                 mobileOpen
                   ? 'bg-emerald-600 border-emerald-600 text-white'
-                  : 'bg-white/85 hover:bg-white border-slate-200/80 text-slate-700'
+                  : 'bg-white/90 hover:bg-white border-slate-200/80 text-slate-700'
               }`}
               aria-label="Toggle Menu Semua Halaman Publik"
               aria-expanded={mobileOpen}
@@ -185,7 +209,7 @@ export function PublicNavbar() {
         <>
           <div
             onClick={() => setOpenPathname(null)}
-            className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-[1px]"
+            className="fixed inset-0 z-40 bg-slate-900/25 backdrop-blur-[1px]"
             aria-hidden="true"
           />
           <div
@@ -200,27 +224,33 @@ export function PublicNavbar() {
                 <button
                   type="button"
                   onClick={() => setOpenPathname(null)}
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg"
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-100 transition"
                 >
-                  Tutup
+                  Tutup (Esc)
                 </button>
               </div>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {PUBLIC_NAV_LINKS.map((item) => {
-                  const active = pathname === item.href;
+                  const active =
+                    item.href === '/'
+                      ? pathname === '/'
+                      : pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
                       onClick={() => setOpenPathname(null)}
-                      className={`block px-3.5 py-2.5 rounded-2xl border transition ${
+                      className={`flex items-start justify-between gap-2 px-3.5 py-2.5 rounded-2xl border transition ${
                         active
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
                           : 'bg-white border-slate-200/70 hover:border-emerald-300 hover:bg-emerald-50/40 text-slate-700'
                       }`}
                     >
-                      <p className="text-sm font-bold">{item.label}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold">{item.label}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{item.desc}</p>
+                      </div>
+                      <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-1" />
                     </Link>
                   );
                 })}
@@ -232,7 +262,7 @@ export function PublicNavbar() {
                   className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-emerald-700 text-white px-4 py-3 rounded-2xl font-bold text-sm transition shadow-sm"
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  Masuk Portal Terpadu
+                  <span>Masuk Portal Terpadu</span>
                 </Link>
               </div>
             </div>
@@ -245,59 +275,142 @@ export function PublicNavbar() {
 
 export function PublicFooter() {
   const school = useInstitutionSettings();
+  const [currentYear, setCurrentYear] = useState(2026);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      setCurrentYear(new Date().getFullYear());
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   return (
-    <footer className="border-t border-slate-200/80 bg-white/75 backdrop-blur mt-auto">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-8 text-xs text-slate-600">
-        <div className="space-y-2.5">
-          <p className="font-bold text-slate-900 text-sm">{school.name}</p>
-          <p className="leading-relaxed">{school.vision}</p>
+    <footer className="border-t border-slate-200/80 bg-white/85 backdrop-blur mt-auto">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 text-xs text-slate-600">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <Building2 className="w-4 h-4" />
+            </div>
+            <p className="font-bold text-slate-900 text-sm leading-tight">
+              {school.name || school.short_name || 'SIMMS'}
+            </p>
+          </div>
+          {school.vision && <p className="leading-relaxed text-slate-600">{school.vision}</p>}
+          {school.accreditation && (
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold">
+              Terakreditasi {school.accreditation}
+            </span>
+          )}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <p className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">
             Informasi Publik
           </p>
-          <ul className="space-y-1.5">
-            <li><Link href="/profil" className="hover:text-emerald-700">Profil &amp; Fasilitas</Link></li>
-            <li><Link href="/berita" className="hover:text-emerald-700">Berita &amp; Artikel</Link></li>
-            <li><Link href="/galeri" className="hover:text-emerald-700">Galeri &amp; Multimedia</Link></li>
-            <li><Link href="/direktori" className="hover:text-emerald-700">Direktori GTK &amp; Prestasi</Link></li>
+          <ul className="space-y-2">
+            <li>
+              <Link href="/profil" className="hover:text-emerald-700 transition">
+                Profil &amp; Fasilitas
+              </Link>
+            </li>
+            <li>
+              <Link href="/berita" className="hover:text-emerald-700 transition">
+                Berita &amp; Artikel
+              </Link>
+            </li>
+            <li>
+              <Link href="/galeri" className="hover:text-emerald-700 transition">
+                Galeri &amp; Multimedia
+              </Link>
+            </li>
+            <li>
+              <Link href="/direktori" className="hover:text-emerald-700 transition">
+                Direktori GTK &amp; Prestasi
+              </Link>
+            </li>
+            <li>
+              <Link href="/e-library" className="hover:text-emerald-700 transition">
+                Perpustakaan Digital (E-Library)
+              </Link>
+            </li>
           </ul>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <p className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">
             Layanan Digital
           </p>
-          <ul className="space-y-1.5">
-            <li><Link href="/ppdb" className="hover:text-emerald-700">PPDB Siswa Baru</Link></li>
-            <li><Link href="/ppdb/mutasi" className="hover:text-emerald-700">PPDB Mutasi Masuk</Link></li>
-            <li><Link href="/kontak" className="hover:text-emerald-700">Pengaduan &amp; FAQ</Link></li>
-            <li><Link href="/portal" className="hover:text-emerald-700">Portal Akademik &amp; TU</Link></li>
-            <li><Link href="/login" className="hover:text-emerald-700">Login Akun</Link></li>
+          <ul className="space-y-2">
+            <li>
+              <Link href="/ppdb" className="hover:text-emerald-700 transition">
+                PPDB Siswa Baru
+              </Link>
+            </li>
+            <li>
+              <Link href="/ppdb/mutasi" className="hover:text-emerald-700 transition">
+                PPDB Mutasi Masuk
+              </Link>
+            </li>
+            <li>
+              <Link href="/verifikasi" className="hover:text-emerald-700 transition">
+                Verifikasi Dokumen &amp; QR Code
+              </Link>
+            </li>
+            <li>
+              <Link href="/kontak" className="hover:text-emerald-700 transition">
+                Pengaduan &amp; FAQ
+              </Link>
+            </li>
+            <li>
+              <Link href="/portal" className="hover:text-emerald-700 transition">
+                Portal Akademik &amp; TU
+              </Link>
+            </li>
+            <li>
+              <Link href="/login" className="hover:text-emerald-700 transition">
+                Login Akun
+              </Link>
+            </li>
           </ul>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <p className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">
             Kontak Resmi
           </p>
-          <p className="flex items-start gap-2">
-            <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0 mt-0.5" />
-            <span>{school.address}</span>
-          </p>
-          <p className="flex items-center gap-2">
-            <Phone className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-            <span>{school.phone}</span>
-          </p>
-          <p className="flex items-center gap-2">
-            <Mail className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-            <span>{school.email}</span>
-          </p>
+          {school.address && (
+            <p className="flex items-start gap-2">
+              <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0 mt-0.5" />
+              <span className="leading-relaxed break-words">{school.address}</span>
+            </p>
+          )}
+          {school.phone && (
+            <p className="flex items-center gap-2">
+              <Phone className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <a
+                href={`tel:${school.phone.replace(/[^+\d]/g, '')}`}
+                className="hover:text-emerald-700 transition"
+              >
+                {school.phone}
+              </a>
+            </p>
+          )}
+          {school.email && (
+            <p className="flex items-center gap-2">
+              <Mail className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <a
+                href={`mailto:${school.email}`}
+                className="hover:text-emerald-700 transition break-all"
+              >
+                {school.email}
+              </a>
+            </p>
+          )}
           {(school.social_links?.facebook ||
             school.social_links?.instagram ||
-            school.social_links?.youtube) && (
+            school.social_links?.youtube ||
+            school.social_links?.tiktok) && (
             <div className="flex flex-wrap gap-2 pt-1.5">
               {school.social_links?.facebook && (
                 <a
@@ -329,13 +442,24 @@ export function PublicFooter() {
                   YouTube
                 </a>
               )}
+              {school.social_links?.tiktok && (
+                <a
+                  href={school.social_links.tiktok}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
+                >
+                  TikTok
+                </a>
+              )}
             </div>
           )}
         </div>
       </div>
 
       <div className="border-t border-slate-200/70 py-4 px-4 text-center text-[11px] text-slate-500">
-        © 2026 {school.name}. SIMMS — Sistem Informasi Manajemen Madrasah &amp; Sekolah.
+        © {currentYear} {school.name || 'SIMMS'}. SIMMS — Sistem Informasi Manajemen Madrasah &amp;
+        Sekolah.
       </div>
     </footer>
   );

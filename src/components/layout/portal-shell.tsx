@@ -1,8 +1,8 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   Award,
   BookOpen,
@@ -29,6 +29,7 @@ import {
   Percent,
   PiggyBank,
   Receipt,
+  Search,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -1262,14 +1263,14 @@ const PAGE_TITLES: Record<string, string> = {
 function PortalShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [menuSearch, setMenuSearch] = useState('');
 
-  // Default: seluruh kelompok accordion dalam keadaan collapse (tertutup)
+  // Track user manual accordion toggles; active route groups auto-open unless manually collapsed
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -1293,6 +1294,28 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
       window.removeEventListener('penilaian-chapters-updated', onChaptersUpdated);
     };
   }, []);
+
+  // Lock body scroll & close mobile drawer / logout modal on Escape
+  useEffect(() => {
+    if (!sidebarOpen && !logoutModalOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (logoutModalOpen && !loggingOut) {
+          setLogoutModalOpen(false);
+        } else if (sidebarOpen) {
+          setSidebarOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [sidebarOpen, logoutModalOpen, loggingOut]);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -1468,85 +1491,157 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
     ...dynamicPenilaianGroups,
   ];
 
-  const currentTab = searchParams.get('tab');
+  const normalizedSearch = menuSearch.trim().toLowerCase();
+  const filteredVisibleGroups = useMemo(() => {
+    if (!normalizedSearch) return visibleGroups;
+    return visibleGroups
+      .map((group) => {
+        const groupMatches = group.label.toLowerCase().includes(normalizedSearch);
+        if (groupMatches) return group;
+        const matchedItems = group.items
+          .map((item) => {
+            const itemMatches = item.label.toLowerCase().includes(normalizedSearch);
+            if (itemMatches) return item;
+            if (item.children) {
+              const matchedChildren = item.children.filter((ch) =>
+                ch.label.toLowerCase().includes(normalizedSearch)
+              );
+              if (matchedChildren.length > 0) {
+                return { ...item, children: matchedChildren };
+              }
+            }
+            return null;
+          })
+          .filter((item): item is NavItem => item !== null);
+        return matchedItems.length > 0 ? { ...group, items: matchedItems } : null;
+      })
+      .filter((g): g is AccordionGroup => g !== null);
+  }, [visibleGroups, normalizedSearch]);
+
   const currentChapterId = searchParams.get('chapterId');
   const currentClassroomId = searchParams.get('classroomId');
   const normalizedPath = pathname.replace(/\/$/, '') || '/portal';
   const pageTitle =
     PAGE_TITLES[normalizedPath] ||
     (normalizedPath.startsWith('/portal/penilaian/') ? 'Penilaian Mata Pelajaran' : 'Portal Terpadu');
+  const [currentYear, setCurrentYear] = useState(2026);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      setCurrentYear(new Date().getFullYear());
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   const SidebarContent = (
     <div className="flex flex-col h-full">
-      <div className="px-4 py-5 border-b border-slate-200/70 flex items-center justify-between">
-        <Link href="/portal" className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold shadow-sm">
+      <div className="px-4 py-4 border-b border-slate-200/70 flex items-center justify-between gap-2">
+        <Link href="/portal" onClick={() => setSidebarOpen(false)} className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold shadow-sm shrink-0">
             <Building2 className="w-5 h-5" />
           </div>
-          <div>
-            <p className="font-bold text-slate-900 text-sm leading-tight">SIMMS Portal</p>
-            <p className="text-[11px] text-slate-500">Sistem Informasi Terpadu</p>
+          <div className="min-w-0">
+            <p className="font-bold text-slate-900 text-sm leading-tight truncate">SIMMS Portal</p>
+            <p className="text-[11px] text-slate-500 truncate">Sistem Informasi Terpadu</p>
           </div>
         </Link>
         <button
           type="button"
           onClick={() => setSidebarOpen(false)}
-          className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100"
+          aria-label="Tutup Menu Sidebar"
+          className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 shrink-0"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
+      {/* Quick Menu Search */}
+      <div className="px-3 pt-3 pb-1">
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={menuSearch}
+            onChange={(e) => setMenuSearch(e.target.value)}
+            placeholder="Cari menu cepat..."
+            aria-label="Cari menu portal"
+            className="w-full pl-8 pr-7 py-2 rounded-xl border border-slate-200/80 bg-white/85 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          {menuSearch && (
+            <button
+              type="button"
+              onClick={() => setMenuSearch('')}
+              aria-label="Hapus pencarian menu"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
         {/* Dashboard Link */}
-        <Link
-          href="/portal"
-          onClick={() => setSidebarOpen(false)}
-          className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
-            pathname === '/portal'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-700 hover:bg-white/80 hover:text-emerald-700'
-          }`}
-        >
-          <LayoutDashboard className="w-4 h-4" />
-          <span>Dashboard</span>
-        </Link>
+        {(!normalizedSearch || 'dashboard'.includes(normalizedSearch)) && (
+          <Link
+            href="/portal"
+            onClick={() => setSidebarOpen(false)}
+            className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+              pathname === '/portal'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-700 hover:bg-white/80 hover:text-emerald-700'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4 shrink-0" />
+            <span>Dashboard</span>
+          </Link>
+        )}
 
         {/* Accordion Menu Groups */}
         <div className="pt-1 space-y-1.5">
-          {visibleGroups.map((group) => {
-            const isOpen = Boolean(openGroups[group.id]);
-            const hasActiveChild = group.items.some((item) => isItemActive(item));
+          {filteredVisibleGroups.length === 0 ? (
+            <p className="px-3 py-4 text-center text-[11px] text-slate-400">
+              Menu tidak ditemukan.
+            </p>
+          ) : (
+            filteredVisibleGroups.map((group) => {
+              const hasActiveChild = group.items.some((item) => isItemActive(item));
+              const isOpen = normalizedSearch
+                ? true
+                : openGroups[group.id] ?? hasActiveChild;
 
-            return (
-              <div key={group.id} className="rounded-xl overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(group.id)}
-                  className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left transition ${
-                    hasActiveChild
-                      ? 'bg-emerald-50/90 text-emerald-800'
-                      : 'text-slate-700 hover:bg-white/80 hover:text-emerald-700'
-                  }`}
-                >
-                  <span className="flex items-center gap-2.5 min-w-0 text-left">
-                    <span className="shrink-0">{group.icon}</span>
-                    <span className="text-left leading-snug">{group.label}</span>
-                  </span>
-                  {isOpen ? (
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                  )}
-                </button>
+              return (
+                <div key={group.id} className="rounded-xl overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.id)}
+                    aria-expanded={isOpen}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left transition ${
+                      hasActiveChild
+                        ? 'bg-emerald-50/90 text-emerald-800'
+                        : 'text-slate-700 hover:bg-white/80 hover:text-emerald-700'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5 min-w-0 text-left">
+                      <span className="shrink-0">{group.icon}</span>
+                      <span className="text-left leading-snug">{group.label}</span>
+                    </span>
+                    {isOpen ? (
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    )}
+                  </button>
 
-                {isOpen && (
-                  <div className="mt-1 ml-3 pl-3 border-l border-slate-200/80 space-y-1">
-                    {group.items.map((item) => {
-                      if (item.children && item.children.length > 0) {
-                        const subId = item.id || item.label;
-                        const isSubOpen = Boolean(openGroups[subId]);
-                        const hasActiveSubChild = item.children.some((c) => isItemActive(c));
+                  {isOpen && (
+                    <div className="mt-1 ml-3 pl-3 border-l border-slate-200/80 space-y-1">
+                      {group.items.map((item) => {
+                        if (item.children && item.children.length > 0) {
+                          const subId = item.id || item.label;
+                          const hasActiveSubChild = item.children.some((c) => isItemActive(c));
+                          const isSubOpen = normalizedSearch
+                            ? true
+                            : openGroups[subId] ?? hasActiveSubChild;
 
                         return (
                           <div key={subId} className="rounded-lg overflow-hidden">
@@ -1628,16 +1723,35 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
                 )}
               </div>
             );
-          })}
+          })
+          )}
         </div>
       </div>
 
-      <div className="p-3 border-t border-slate-200/70 space-y-2">
+      <div className="p-3 border-t border-slate-200/70 space-y-1.5">
+        {user && (
+          <Link
+            href="/portal/akun/profil"
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden flex items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/70 text-xs"
+          >
+            <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[11px] font-bold shrink-0">
+              {(user.fullName || 'U').slice(0, 2).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-slate-800 truncate">{user.fullName}</p>
+              <p className="text-[10px] font-semibold text-emerald-700 truncate">
+                {user.primaryRole}
+              </p>
+            </div>
+          </Link>
+        )}
         <Link
           href="/"
+          onClick={() => setSidebarOpen(false)}
           className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-white/80 hover:text-emerald-700 transition"
         >
-          <Globe className="w-4 h-4" />
+          <Globe className="w-4 h-4 shrink-0" />
           <span>Lihat Website Resmi</span>
         </Link>
       </div>
@@ -1687,11 +1801,12 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             {user && (
               <Link
                 href="/portal/akun/profil"
-                className="hidden sm:flex items-center gap-2.5 bg-white/85 hover:bg-white border border-slate-200/80 rounded-xl px-3 py-1.5 transition"
+                aria-label="Profil Akun"
+                className="flex items-center gap-2.5 bg-white/85 hover:bg-white border border-slate-200/80 rounded-xl p-1.5 sm:px-3 sm:py-1.5 transition"
               >
                 {user.avatarUrl ? (
                   <img
@@ -1704,8 +1819,8 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
                     {(user.fullName || 'U').slice(0, 2).toUpperCase()}
                   </div>
                 )}
-                <div className="text-left">
-                  <p className="text-xs font-bold text-slate-800 leading-tight">
+                <div className="hidden sm:block text-left">
+                  <p className="text-xs font-bold text-slate-800 leading-tight max-w-[160px] truncate">
                     {user.fullName}
                   </p>
                   <p className="text-[10px] font-semibold text-emerald-700">
@@ -1755,9 +1870,19 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         </main>
 
         {/* Portal Footer */}
-        <footer className="border-t border-slate-200/70 bg-white/60 backdrop-blur px-6 py-4 text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-2">
-          <span>© 2026 SIMMS — Sistem Informasi Manajemen Madrasah &amp; Sekolah</span>
-          <span>Portal Resmi &amp; Sistem Informasi Terpadu</span>
+        <footer className="border-t border-slate-200/70 bg-white/70 backdrop-blur px-4 sm:px-6 py-4 text-[11px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
+          <span>© {currentYear} SIMMS — Sistem Informasi Manajemen Madrasah &amp; Sekolah</span>
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 font-medium">
+            <Link href="/" className="hover:text-emerald-700 transition">
+              Website Resmi
+            </Link>
+            <Link href="/verifikasi" className="hover:text-emerald-700 transition">
+              Verifikasi QR
+            </Link>
+            <Link href="/portal/akun/profil" className="hover:text-emerald-700 transition">
+              Profil Akun
+            </Link>
+          </div>
         </footer>
       </div>
 
@@ -1768,8 +1893,14 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
           role="dialog"
           aria-modal="true"
           aria-labelledby="logout-modal-title"
+          onClick={() => {
+            if (!loggingOut) setLogoutModalOpen(false);
+          }}
         >
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto"
+          >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
