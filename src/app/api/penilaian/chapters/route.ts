@@ -44,6 +44,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'subjectId dan gradeLevel wajib diisi.' }, { status: 400 });
   }
 
+  const canRead =
+    canManageSubjectGrade(session, subjectId, gradeLevel) ||
+    session.roles.some((r) => PERMISSIONS.PENILAIAN_ADMIN_READ.includes(r));
+  if (!canRead) {
+    return NextResponse.json({ error: 'Akses ditolak.' }, { status: 403 });
+  }
+
   const db = createSupabaseAdminClient();
   const activeYear = await getActiveAcademicYear(db);
   if (!activeYear) {

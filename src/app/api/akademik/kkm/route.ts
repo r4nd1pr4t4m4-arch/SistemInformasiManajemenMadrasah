@@ -2,7 +2,11 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
-import { getActiveAcademicYear, DEFAULT_KKM_SCORE } from '@/lib/domain/penilaian';
+import {
+  getActiveAcademicYear,
+  DEFAULT_KKM_SCORE,
+  sortGradeLevelsAsc,
+} from '@/lib/domain/penilaian';
 
 const UpdateModeSchema = z.object({
   action: z.literal('UPDATE_MODE'),
@@ -54,9 +58,11 @@ export async function GET() {
       db.from('subjects').select('id, code, name, subject_group').order('name', { ascending: true }),
     ]);
 
-  const gradeLevels = Array.from(
-    new Set((classrooms || []).map((c) => String(c.grade_level || '')).filter(Boolean))
-  ).sort();
+  const gradeLevels = sortGradeLevelsAsc(
+    Array.from(
+      new Set((classrooms || []).map((c) => String(c.grade_level || '').trim()).filter(Boolean))
+    )
+  );
 
   return NextResponse.json({
     academicYear: activeYear,

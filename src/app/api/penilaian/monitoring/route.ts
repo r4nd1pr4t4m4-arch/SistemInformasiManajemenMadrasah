@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
-import { getActiveAcademicYear } from '@/lib/domain/penilaian';
+import { getActiveAcademicYear, sortClassroomsAsc } from '@/lib/domain/penilaian';
 
 export async function GET() {
   const { session, errorResponse } = await requireApiRoles(PERMISSIONS.PENILAIAN_ADMIN_READ);
@@ -39,11 +39,20 @@ export async function GET() {
     };
   });
 
+  const sortedClassrooms = sortClassroomsAsc(
+    (classrooms || []).map((c) => ({
+      id: c.id as string,
+      name: String(c.name || ''),
+      grade_level: String(c.grade_level || ''),
+      gradeLevel: String(c.grade_level || ''),
+    }))
+  ).map(({ id, name, grade_level }) => ({ id, name, grade_level }));
+
   return NextResponse.json({
     academicYear: activeYear,
     isSuperadmin: session.roles.includes('SUPERADMIN'),
     subjects: subjects || [],
-    classrooms: classrooms || [],
+    classrooms: sortedClassrooms,
     schedulePairs,
   });
 }

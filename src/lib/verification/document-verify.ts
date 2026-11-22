@@ -5,6 +5,7 @@ export type VerifiableDocType =
   | 'KARTU_SISWA'
   | 'KARTU_PERPUSTAKAAN'
   | 'REKAP_ABSENSI'
+  | 'PENILAIAN'
   | 'SURAT';
 
 export function buildVerificationUrl(params: {

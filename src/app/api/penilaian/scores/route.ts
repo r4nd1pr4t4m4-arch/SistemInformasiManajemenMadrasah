@@ -302,11 +302,31 @@ export async function POST(request: Request) {
       parsed.data.subject_id
     );
 
+    const columnIds = Array.from(new Set(parsed.data.scores.map((s) => s.column_id)));
+    if (columnIds.length > 0) {
+      const { data: validCols } = await db
+        .from('assessment_columns')
+        .select('id')
+        .eq('academic_year_id', activeYear.id)
+        .eq('subject_id', parsed.data.subject_id)
+        .eq('grade_level', classroom.grade_level)
+        .eq('category', parsed.data.category)
+        .in('id', columnIds);
+
+      const validColSet = new Set((validCols || []).map((c) => c.id as string));
+      if (columnIds.some((id) => !validColSet.has(id))) {
+        return NextResponse.json(
+          { error: 'Terdapat kolom penilaian yang tidak sesuai dengan mata pelajaran/tingkat kelas ini.' },
+          { status: 400 }
+        );
+      }
+    }
+
     const studentIds = Array.from(new Set(parsed.data.scores.map((s) => s.student_id)));
-    const { data: studentRows } = await db
-      .from('students')
-      .select('id, full_name')
-      .in('id', studentIds);
+    const { data: studentRows } =
+      studentIds.length > 0
+        ? await db.from('students').select('id, full_name').in('id', studentIds)
+        : { data: [] };
     const nameMap = new Map((studentRows || []).map((s) => [s.id as string, String(s.full_name)]));
 
     for (const item of parsed.data.scores) {
@@ -373,10 +393,10 @@ export async function POST(request: Request) {
     );
 
     const studentIds = Array.from(new Set(parsed.data.scores.map((s) => s.student_id)));
-    const { data: studentRows } = await db
-      .from('students')
-      .select('id, full_name')
-      .in('id', studentIds);
+    const { data: studentRows } =
+      studentIds.length > 0
+        ? await db.from('students').select('id, full_name').in('id', studentIds)
+        : { data: [] };
     const nameMap = new Map((studentRows || []).map((s) => [s.id as string, String(s.full_name)]));
 
     for (const item of parsed.data.scores) {

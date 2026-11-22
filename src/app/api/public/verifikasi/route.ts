@@ -277,6 +277,49 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // 8. PENILAIAN & RAPORT PDF (PNL-...)
+  if (docType === 'PENILAIAN' || ref.toUpperCase().startsWith('PNL-')) {
+    const upperRef = ref.toUpperCase();
+    const parts = upperRef.split('-');
+    if (parts.length >= 3) {
+      const docKey = parts.slice(1, -1).join('-');
+      const tsToken = parts[parts.length - 1];
+      const tsMs = Number.parseInt(tsToken, 36);
+      const parsedDate =
+        !Number.isNaN(tsMs) && tsMs >= 1577836800000 && tsMs <= 4102444800000
+          ? new Date(tsMs).toISOString()
+          : undefined;
+
+      const docCategory = docKey.includes('RAPORT')
+        ? 'Laporan Nilai Raport Mata Pelajaran'
+        : docKey.includes('REKAPNILAI')
+        ? 'Rekapitulasi Nilai Siswa / Anak'
+        : 'Dokumen Penilaian Mata Pelajaran';
+
+      return NextResponse.json({
+        valid: true,
+        documentType: 'PENILAIAN',
+        reference: upperRef,
+        title: docCategory,
+        statusLabel: 'FORMAT DOKUMEN VALID',
+        issuedAt: parsedDate,
+        details: [
+          { label: 'Kategori Dokumen', value: docCategory },
+          { label: 'Identitas Berkas', value: docKey || '-' },
+          { label: 'Kode Referensi', value: upperRef },
+          ...(parsedDate
+            ? [
+                {
+                  label: 'Waktu Cetak',
+                  value: new Date(parsedDate).toLocaleString('id-ID'),
+                },
+              ]
+            : []),
+        ],
+      });
+    }
+  }
+
   return NextResponse.json(
     {
       valid: false,

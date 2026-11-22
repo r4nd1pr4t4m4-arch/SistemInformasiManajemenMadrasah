@@ -42,7 +42,11 @@ import {
 } from 'lucide-react';
 import type { AppRole } from '@/types/database';
 import { PERMISSIONS, canAccessPortalPath, hasRolePermission } from '@/lib/auth/rbac';
-import { formatChapterLabel, type TaughtSubjectMenu } from '@/lib/domain/penilaian';
+import {
+  formatChapterLabel,
+  sortClassroomsAsc,
+  type TaughtSubjectMenu,
+} from '@/lib/domain/penilaian';
 import { clearPortalSessionCache } from '@/lib/hooks/use-portal-session';
 
 interface TeacherOperationalAssignments {
@@ -1377,25 +1381,32 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
   const dynamicPenilaianGroups: AccordionGroup[] = (
     user?.teacherAssignments?.taughtSubjects || []
   ).map((sub) => {
-    const formatifChildren: NavItem[] =
-      sub.chapters.length > 0
-        ? sub.chapters.map((ch) => ({
-            href: `/portal/penilaian/${sub.subjectId}/formatif?chapterId=${ch.id}`,
-            path: `/portal/penilaian/${sub.subjectId}/formatif`,
-            label:
-              sub.classrooms.length > 1
-                ? `${formatChapterLabel(ch.chapterNumber, ch.title)} (${ch.gradeLevel})`
-                : formatChapterLabel(ch.chapterNumber, ch.title),
-            icon: <BookOpen className="w-3 h-3" />,
-          }))
-        : [
-            {
-              href: `/portal/penilaian/${sub.subjectId}/formatif`,
-              path: `/portal/penilaian/${sub.subjectId}/formatif`,
-              label: 'Kelola BAB (Formatif)',
-              icon: <BookOpen className="w-3 h-3" />,
-            },
-          ];
+    const sortedClassrooms = sortClassroomsAsc(sub.classrooms);
+    const formatifChildren: NavItem[] = [];
+
+    for (const cls of sortedClassrooms) {
+      const gradeChapters = [...sub.chapters]
+        .filter((ch) => ch.gradeLevel === cls.gradeLevel)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.chapterNumber - b.chapterNumber);
+
+      for (const ch of gradeChapters) {
+        formatifChildren.push({
+          href: `/portal/penilaian/${sub.subjectId}/formatif?chapterId=${ch.id}&classroomId=${cls.id}`,
+          path: `/portal/penilaian/${sub.subjectId}/formatif`,
+          label: `(${cls.name}) ${formatChapterLabel(ch.chapterNumber, ch.title)}`,
+          icon: <BookOpen className="w-3 h-3" />,
+        });
+      }
+    }
+
+    if (formatifChildren.length === 0) {
+      formatifChildren.push({
+        href: `/portal/penilaian/${sub.subjectId}/formatif`,
+        path: `/portal/penilaian/${sub.subjectId}/formatif`,
+        label: 'Kelola BAB (Formatif)',
+        icon: <BookOpen className="w-3 h-3" />,
+      });
+    }
 
     return {
       id: `penilaian-${sub.subjectId}`,
@@ -1432,6 +1443,12 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
           label: 'Praktik',
           icon: <Award className="w-3.5 h-3.5" />,
         },
+        {
+          href: `/portal/penilaian/${sub.subjectId}/raport`,
+          path: `/portal/penilaian/${sub.subjectId}/raport`,
+          label: 'Raport',
+          icon: <GraduationCap className="w-3.5 h-3.5" />,
+        },
       ],
     };
   });
@@ -1453,6 +1470,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
 
   const currentTab = searchParams.get('tab');
   const currentChapterId = searchParams.get('chapterId');
+  const currentClassroomId = searchParams.get('classroomId');
   const normalizedPath = pathname.replace(/\/$/, '') || '/portal';
   const pageTitle =
     PAGE_TITLES[normalizedPath] ||
@@ -1505,15 +1523,15 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left transition ${
                     hasActiveChild
                       ? 'bg-emerald-50/90 text-emerald-800'
                       : 'text-slate-700 hover:bg-white/80 hover:text-emerald-700'
                   }`}
                 >
-                  <span className="flex items-center gap-2.5">
-                    {group.icon}
-                    <span>{group.label}</span>
+                  <span className="flex items-center gap-2.5 min-w-0 text-left">
+                    <span className="shrink-0">{group.icon}</span>
+                    <span className="text-left leading-snug">{group.label}</span>
                   </span>
                   {isOpen ? (
                     <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
@@ -1555,11 +1573,17 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
                             {isSubOpen && (
                               <div className="mt-1 ml-2.5 pl-2.5 border-l border-slate-200/80 space-y-0.5">
                                 {item.children.map((subItem) => {
-                                  const subHrefChapter = subItem.href?.includes('chapterId=')
-                                    ? subItem.href.split('chapterId=')[1]
+                                  const subParams = subItem.href?.includes('?')
+                                    ? new URLSearchParams(subItem.href.split('?')[1])
                                     : null;
+                                  const subHrefChapter = subParams?.get('chapterId') ?? null;
+                                  const subHrefClassroom = subParams?.get('classroomId') ?? null;
                                   const isSubActive = subHrefChapter
-                                    ? pathname === subItem.path && currentChapterId === subHrefChapter
+                                    ? pathname === subItem.path &&
+                                      currentChapterId === subHrefChapter &&
+                                      (!subHrefClassroom ||
+                                        !currentClassroomId ||
+                                        currentClassroomId === subHrefClassroom)
                                     : pathname === subItem.path;
                                   return (
                                     <Link

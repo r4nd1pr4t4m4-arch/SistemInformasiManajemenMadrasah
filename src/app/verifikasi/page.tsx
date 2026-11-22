@@ -321,8 +321,8 @@ function VerifikasiContent() {
         </h1>
         <p className="text-xs sm:text-sm text-slate-200/90 max-w-2xl leading-relaxed">
           Periksa keaslian Slip Tabungan, Slip SPP/Komite, Slip Honorarium, Kartu Pelajar, Kartu
-          E-Library, Rekap Absensi, maupun Surat Resmi yang diterbitkan lembaga melalui scan QR
-          Code atau input nomor referensi.
+          E-Library, Rekap Absensi, Dokumen Penilaian &amp; Raport, maupun Surat Resmi yang
+          diterbitkan lembaga melalui scan QR Code atau input nomor referensi.
         </p>
       </section>
 
