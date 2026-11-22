@@ -61,6 +61,21 @@ function formatTimeShort(t?: string | null): string {
   return String(t).slice(0, 5);
 }
 
+function parseTimeToMinutes(t?: string | null): number | null {
+  if (!t) return null;
+  const parts = String(t).trim().split(':');
+  if (parts.length < 2) return null;
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+function getCurrentMinutesOfDay(): number {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
 function formatDateId(dateStr?: string | null): string {
   if (!dateStr) return '-';
   const d = new Date(dateStr);
@@ -112,9 +127,9 @@ interface PersonalPayload {
     start_time: string;
     end_time: string;
     jtm_count: number;
-    subject?: { name?: string | null; code?: string | null } | null;
+    subject?: { name?: string | null; code?: string | null; subject_group?: string | null } | null;
     teacher?: { full_name?: string | null } | null;
-    classroom?: { name?: string | null } | null;
+    classroom?: { name?: string | null; grade_level?: string | null } | null;
   }>;
   pickets: Array<{
     id: string;
@@ -205,7 +220,8 @@ export function PersonalWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
-  const [todayDay] = useState<number>(() => getTodayIsoDay());
+  const [todayDay, setTodayDay] = useState<number>(() => getTodayIsoDay());
+  const [nowMinutes, setNowMinutes] = useState<number | null>(null);
   const [scheduleDayFilter, setScheduleDayFilter] = useState<'ALL' | 'TODAY' | number>('ALL');
   const [scheduleSearch, setScheduleSearch] = useState('');
   const [picketFilter, setPicketFilter] = useState<'ALL' | 'MY_DAYS' | 'TODAY'>('ALL');
@@ -234,6 +250,16 @@ export function PersonalWorkspace({
   const [trxVisibleCount, setTrxVisibleCount] = useState<number>(15);
 
   useEffect(() => {
+    const syncTime = () => {
+      setTodayDay(getTodayIsoDay());
+      setNowMinutes(getCurrentMinutesOfDay());
+    };
+    syncTime();
+    const timer = setInterval(syncTime, 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     const controller = new AbortController();
 
     const params = new URLSearchParams({ scope, section });
@@ -251,9 +277,6 @@ export function PersonalWorkspace({
       .then((json) => {
         setData(json);
         setError(null);
-        if (!selectedChildId && json.children?.length > 0 && json.student?.id) {
-          setSelectedChildId(json.student.id);
-        }
       })
       .catch((err) => {
         if ((err as { name?: string })?.name === 'AbortError') return;
@@ -294,13 +317,15 @@ export function PersonalWorkspace({
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">{subtitle}</p>
           {data?.student && (
             <div className="flex flex-wrap items-center gap-2 mt-3">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
-                <UserCheck className="w-3.5 h-3.5" />
-                {data.student.full_name}
-                {data.student.nis ? ` (NIS: ${data.student.nis})` : ''}
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold max-w-full break-words">
+                <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="break-words">
+                  {data.student.full_name}
+                  {data.student.nis ? ` (NIS: ${data.student.nis})` : ''}
+                </span>
               </span>
               {data.classroom && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold max-w-full break-words">
                   Kelas: {data.classroom.name}
                   {data.classroom.homeroom_teacher?.full_name
                     ? ` • Wali: ${data.classroom.homeroom_teacher.full_name}`
@@ -311,30 +336,37 @@ export function PersonalWorkspace({
           )}
           {data?.teacher && scope === 'gtk' && (
             <div className="flex flex-wrap items-center gap-2 mt-3">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
-                <UserCheck className="w-3.5 h-3.5" />
-                {data.teacher.full_name}
-                {data.teacher.nip ? ` (NIP: ${data.teacher.nip})` : ''}
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold max-w-full break-words">
+                <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="break-words">
+                  {data.teacher.full_name}
+                  {data.teacher.nip ? ` (NIP: ${data.teacher.nip})` : ''}
+                </span>
               </span>
             </div>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+        <div className="flex flex-wrap items-end gap-2.5 w-full md:w-auto shrink-0">
           {/* Child selector for Orang Tua */}
           {scope === 'orang-tua' && data && data.children.length > 1 && (
-            <div className="min-w-[220px] flex-1 sm:flex-none">
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+            <div className="w-full sm:w-auto sm:min-w-[220px] min-w-0 flex-1 sm:flex-none">
+              <label
+                htmlFor="personal-child-select"
+                className="block text-[11px] font-semibold text-slate-500 mb-1"
+              >
                 Pilih Putra / Putri:
               </label>
               <select
-                value={selectedChildId}
+                id="personal-child-select"
+                value={selectedChildId || data.student?.id || ''}
                 onChange={(e) => {
                   setLoading(true);
                   setError(null);
+                  setPicketFilter('ALL');
                   setSelectedChildId(e.target.value);
                 }}
-                className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800"
+                className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
               >
                 {data.children.map((child) => (
                   <option key={child.id} value={child.id}>
@@ -352,7 +384,7 @@ export function PersonalWorkspace({
               setReloadTick((t) => t + 1);
             }}
             disabled={loading}
-            className="self-end min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 transition disabled:opacity-50"
+            className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-xs font-semibold text-slate-700 transition disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Segarkan</span>
@@ -393,6 +425,9 @@ export function PersonalWorkspace({
         <>
           {/* 1. JADWAL PELAJARAN / MENGAJAR SEPEKAN */}
           {section === 'jadwal-pelajaran' && (() => {
+            const hasSunday = data.schedules.some((s) => s.day_of_week === 7);
+            const activeDayNumbers = hasSunday ? [1, 2, 3, 4, 5, 6, 7] : [1, 2, 3, 4, 5, 6];
+
             const q = scheduleSearch.trim().toLowerCase();
             const matchingSchedules = data.schedules.filter((s) => {
               if (!q) return true;
@@ -401,65 +436,204 @@ export function PersonalWorkspace({
               } ${s.classroom?.name || ''}`.toLowerCase();
               return haystack.includes(q);
             });
-            const totalJtm = matchingSchedules.reduce(
+
+            const effectiveDayFilter =
+              scheduleDayFilter === 'TODAY' && !activeDayNumbers.includes(todayDay)
+                ? 'ALL'
+                : scheduleDayFilter;
+
+            const visibleDays =
+              effectiveDayFilter === 'TODAY'
+                ? [todayDay]
+                : typeof effectiveDayFilter === 'number'
+                  ? [effectiveDayFilter]
+                  : activeDayNumbers;
+
+            const displayedSchedules = matchingSchedules.filter((s) =>
+              visibleDays.includes(s.day_of_week)
+            );
+            const displayedJtm = displayedSchedules.reduce(
               (acc, s) => acc + (Number(s.jtm_count) || 0),
               0
             );
-            const visibleDays =
-              scheduleDayFilter === 'TODAY'
-                ? [todayDay >= 1 && todayDay <= 6 ? todayDay : 1]
-                : typeof scheduleDayFilter === 'number'
-                  ? [scheduleDayFilter]
-                  : [1, 2, 3, 4, 5, 6];
+            const totalWeeklyJtm = data.schedules.reduce(
+              (acc, s) => acc + (Number(s.jtm_count) || 0),
+              0
+            );
+
+            const todaySchedules = data.schedules
+              .filter((s) => s.day_of_week === todayDay)
+              .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
+            const todayJtm = todaySchedules.reduce(
+              (acc, s) => acc + (Number(s.jtm_count) || 0),
+              0
+            );
+
+            const ongoingToday =
+              nowMinutes !== null
+                ? todaySchedules.find((s) => {
+                    const start = parseTimeToMinutes(s.start_time);
+                    const end = parseTimeToMinutes(s.end_time);
+                    return start !== null && end !== null && nowMinutes >= start && nowMinutes < end;
+                  })
+                : undefined;
+
+            const nextToday =
+              nowMinutes !== null && !ongoingToday
+                ? todaySchedules.find((s) => {
+                    const start = parseTimeToMinutes(s.start_time);
+                    return start !== null && start > nowMinutes;
+                  })
+                : undefined;
+
+            const emptyTitle =
+              scope === 'orang-tua' && !data.student
+                ? 'Belum ada data putra/putri terhubung'
+                : scope === 'orang-tua' && !data.classroom
+                  ? 'Rombel kelas anak belum ditetapkan'
+                  : 'Belum ada jadwal tersedia';
+
+            const emptyDescription =
+              scope === 'orang-tua' && !data.student
+                ? 'Akun Anda belum terhubung dengan data siswa. Silakan hubungi bagian Tata Usaha atau Operator Madrasah.'
+                : scope === 'orang-tua' && !data.classroom
+                  ? 'Putra/putri Anda belum ditempatkan pada rombongan belajar aktif pada tahun ajaran ini.'
+                  : scope === 'gtk'
+                    ? 'Jadwal mengajar Anda belum ditetapkan oleh bagian kurikulum.'
+                    : 'Jadwal pelajaran kelas belum tersedia atau Anda belum ditempatkan di rombel aktif.';
 
             return (
               <div className="space-y-4">
                 {data.schedules.length === 0 ? (
                   <EmptyState
                     icon={<CalendarDays className="w-8 h-8 text-slate-300" />}
-                    title="Belum ada jadwal tersedia"
-                    description={
-                      scope === 'gtk'
-                        ? 'Jadwal mengajar Anda belum ditetapkan oleh bagian kurikulum.'
-                        : 'Jadwal pelajaran kelas belum tersedia atau Anda belum ditempatkan di rombel aktif.'
-                    }
+                    title={emptyTitle}
+                    description={emptyDescription}
                   />
                 ) : (
                   <>
-                    <div className="glass-card rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Ringkasan Jadwal Sepekan & Hari Ini */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Total Sepekan
+                          </p>
+                          <p className="text-lg font-black text-slate-900 mt-0.5">
+                            {data.schedules.length} Sesi{' '}
+                            <span className="text-xs font-bold text-slate-500">
+                              • {totalWeeklyJtm} JTM
+                            </span>
+                          </p>
+                        </div>
+                        <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                          <CalendarDays className="w-4 h-4" />
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                            Hari Ini ({DAY_NAMES[todayDay] || 'Hari Ini'})
+                          </p>
+                          <p className="text-lg font-black text-emerald-950 mt-0.5">
+                            {todaySchedules.length > 0 ? (
+                              <>
+                                {todaySchedules.length} Sesi{' '}
+                                <span className="text-xs font-bold text-emerald-700">
+                                  • {todayJtm} JTM
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-sm font-bold text-emerald-800">
+                                Tidak ada jadwal
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                          <BookOpen className="w-4 h-4" />
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            {ongoingToday
+                              ? 'Sedang Berlangsung'
+                              : nextToday
+                                ? 'Sesi Berikutnya'
+                                : 'Status Hari Ini'}
+                          </p>
+                          {ongoingToday ? (
+                            <p className="text-xs font-bold text-emerald-700 mt-0.5 truncate">
+                              {ongoingToday.subject?.name || 'Mapel'} (
+                              {formatTimeShort(ongoingToday.start_time)}–
+                              {formatTimeShort(ongoingToday.end_time)})
+                            </p>
+                          ) : nextToday ? (
+                            <p className="text-xs font-bold text-slate-900 mt-0.5 truncate">
+                              {nextToday.subject?.name || 'Mapel'} (
+                              {formatTimeShort(nextToday.start_time)})
+                            </p>
+                          ) : (
+                            <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                              {todaySchedules.length > 0
+                                ? 'Seluruh sesi hari ini selesai'
+                                : 'Hari libur / di luar jam KBM'}
+                            </p>
+                          )}
+                        </div>
+                        <div
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                            ongoingToday
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          <Clock className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Filter Hari & Pencarian */}
+                    <div className="glass-card rounded-2xl p-3.5 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap sm:overflow-visible -mx-1 px-1">
                         <button
                           type="button"
+                          aria-pressed={effectiveDayFilter === 'ALL'}
                           onClick={() => setScheduleDayFilter('ALL')}
-                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
-                            scheduleDayFilter === 'ALL'
-                              ? 'bg-slate-900 text-white'
+                          className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${
+                            effectiveDayFilter === 'ALL'
+                              ? 'bg-slate-900 text-white shadow-xs'
                               : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                           }`}
                         >
                           Semua Hari
                         </button>
-                        {todayDay >= 1 && todayDay <= 6 && (
+                        {activeDayNumbers.includes(todayDay) && (
                           <button
                             type="button"
+                            aria-pressed={effectiveDayFilter === 'TODAY'}
                             onClick={() => setScheduleDayFilter('TODAY')}
-                            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
-                              scheduleDayFilter === 'TODAY'
-                                ? 'bg-emerald-600 text-white'
-                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                            className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${
+                              effectiveDayFilter === 'TODAY'
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/70'
                             }`}
                           >
                             Hari Ini ({DAY_NAMES[todayDay]})
                           </button>
                         )}
-                        {[1, 2, 3, 4, 5, 6].map((d) => (
+                        {activeDayNumbers.map((d) => (
                           <button
                             key={d}
                             type="button"
+                            aria-pressed={effectiveDayFilter === d}
                             onClick={() => setScheduleDayFilter(d)}
-                            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
-                              scheduleDayFilter === d
-                                ? 'bg-slate-900 text-white'
+                            className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${
+                              effectiveDayFilter === d
+                                ? 'bg-slate-900 text-white shadow-xs'
                                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                             }`}
                           >
@@ -468,77 +642,116 @@ export function PersonalWorkspace({
                         ))}
                       </div>
 
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
-                        <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl shrink-0">
-                          {matchingSchedules.length} Sesi • {totalJtm} JTM
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 shrink-0">
+                        <span className="inline-flex items-center justify-center text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-2 rounded-xl shrink-0">
+                          {displayedSchedules.length} Sesi • {displayedJtm} JTM
                         </span>
                         <div className="relative min-w-0 sm:w-64">
                           <label htmlFor="schedule-search-input" className="sr-only">
-                            Cari mata pelajaran atau guru
+                            {scope === 'gtk'
+                              ? 'Cari mata pelajaran atau kelas'
+                              : 'Cari mata pelajaran atau guru'}
                           </label>
-                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                           <input
                             id="schedule-search-input"
-                            type="search"
+                            type="text"
                             value={scheduleSearch}
                             onChange={(e) => setScheduleSearch(e.target.value)}
                             placeholder={
                               scope === 'gtk' ? 'Cari mapel atau kelas...' : 'Cari mapel atau guru...'
                             }
-                            className="w-full rounded-xl border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                            className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                           />
+                          {scheduleSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setScheduleSearch('')}
+                              aria-label="Hapus pencarian"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    {matchingSchedules.length === 0 ? (
-                      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center space-y-2">
-                        <p className="text-xs font-semibold text-slate-700">
-                          Tidak ada jadwal yang cocok dengan pencarian &ldquo;{scheduleSearch}
-                          &rdquo;.
+                    {displayedSchedules.length === 0 ? (
+                      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center space-y-3">
+                        <p className="text-xs sm:text-sm font-semibold text-slate-700">
+                          {scheduleSearch.trim()
+                            ? `Tidak ada jadwal yang cocok dengan pencarian "${scheduleSearch.trim()}"${
+                                effectiveDayFilter !== 'ALL' ? ' pada hari terpilih' : ''
+                              }.`
+                            : 'Tidak ada jadwal pelajaran pada hari yang dipilih.'}
                         </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setScheduleSearch('');
-                            setScheduleDayFilter('ALL');
-                          }}
-                          className="text-[11px] font-semibold text-emerald-700 hover:underline"
-                        >
-                          Reset pencarian &amp; filter hari
-                        </button>
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                          {effectiveDayFilter !== 'ALL' && matchingSchedules.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setScheduleDayFilter('ALL')}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition"
+                            >
+                              Lihat di Semua Hari ({matchingSchedules.length})
+                            </button>
+                          )}
+                          {(scheduleSearch || effectiveDayFilter !== 'ALL') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setScheduleSearch('');
+                                setScheduleDayFilter('ALL');
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <div
                         className={`grid gap-4 ${
                           visibleDays.length === 1
-                            ? 'grid-cols-1 max-w-2xl'
-                            : 'md:grid-cols-2 xl:grid-cols-3'
+                            ? 'grid-cols-1'
+                            : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
                         }`}
                       >
                         {visibleDays.map((day) => {
                           const dayItems = matchingSchedules
                             .filter((s) => s.day_of_week === day)
-                            .sort((a, b) => a.start_time.localeCompare(b.start_time));
+                            .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
+                          const dayTotalJtm = dayItems.reduce(
+                            (acc, s) => acc + (Number(s.jtm_count) || 0),
+                            0
+                          );
                           const isToday = day === todayDay;
                           return (
                             <div
                               key={day}
-                              className={`rounded-3xl border p-5 transition min-w-0 ${
+                              className={`rounded-3xl border p-4 sm:p-5 transition min-w-0 ${
                                 isToday
                                   ? 'border-emerald-400 bg-emerald-50/40 shadow-sm'
                                   : 'border-slate-200 bg-white'
                               }`}
                             >
-                              <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 mb-3">
-                                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                              <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 mb-3 flex-wrap">
+                                <div className="flex items-center gap-2 min-w-0">
                                   <CalendarDays
                                     className={`w-4 h-4 shrink-0 ${
                                       isToday ? 'text-emerald-600' : 'text-slate-400'
                                     }`}
                                   />
-                                  <span>{DAY_NAMES[day]}</span>
-                                </h3>
+                                  <h3 className="font-bold text-slate-900 text-sm">
+                                    {DAY_NAMES[day] || `Hari ${day}`}
+                                  </h3>
+                                  {dayItems.length > 0 && (
+                                    <span className="text-[11px] font-medium text-slate-500">
+                                      ({dayItems.length} sesi • {dayTotalJtm} JTM)
+                                    </span>
+                                  )}
+                                </div>
                                 {isToday && (
                                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold shrink-0">
                                     HARI INI
@@ -546,36 +759,72 @@ export function PersonalWorkspace({
                                 )}
                               </div>
                               {dayItems.length === 0 ? (
-                                <p className="text-xs text-slate-400 italic py-4 text-center">
+                                <p className="text-xs text-slate-400 italic py-6 text-center">
                                   Tidak ada jadwal
                                 </p>
                               ) : (
-                                <div className="space-y-2.5">
-                                  {dayItems.map((item) => (
-                                    <div
-                                      key={item.id}
-                                      className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 space-y-1 min-w-0"
-                                    >
-                                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                                          <Clock className="w-3 h-3 shrink-0" />
-                                          {formatTimeShort(item.start_time)} –{' '}
-                                          {formatTimeShort(item.end_time)}
-                                        </span>
-                                        <span className="text-[10px] font-semibold bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-600 shrink-0">
-                                          {item.jtm_count} JTM
-                                        </span>
+                                <div
+                                  className={
+                                    visibleDays.length === 1
+                                      ? 'grid grid-cols-1 md:grid-cols-2 gap-2.5'
+                                      : 'space-y-2.5'
+                                  }
+                                >
+                                  {dayItems.map((item) => {
+                                    const startMin = parseTimeToMinutes(item.start_time);
+                                    const endMin = parseTimeToMinutes(item.end_time);
+                                    const isOngoing =
+                                      isToday &&
+                                      nowMinutes !== null &&
+                                      startMin !== null &&
+                                      endMin !== null &&
+                                      nowMinutes >= startMin &&
+                                      nowMinutes < endMin;
+
+                                    return (
+                                      <div
+                                        key={item.id}
+                                        className={`rounded-2xl border p-3.5 space-y-1.5 min-w-0 transition ${
+                                          isOngoing
+                                            ? 'border-emerald-400 bg-emerald-50/80 ring-1 ring-emerald-300'
+                                            : 'border-slate-100 bg-slate-50/70 hover:bg-slate-50'
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
+                                            <Clock className="w-3 h-3 shrink-0" />
+                                            {formatTimeShort(item.start_time)} –{' '}
+                                            {formatTimeShort(item.end_time)}
+                                          </span>
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            {isOngoing && (
+                                              <span className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+                                                BERLANGSUNG
+                                              </span>
+                                            )}
+                                            <span className="text-[10px] font-semibold bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-600">
+                                              {item.jtm_count || 0} JTM
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-start justify-between gap-2">
+                                          <p className="text-xs sm:text-[13px] font-bold text-slate-900 break-words leading-snug">
+                                            {item.subject?.name || 'Mata Pelajaran'}
+                                          </p>
+                                          {item.subject?.code && (
+                                            <span className="text-[10px] font-mono font-semibold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded shrink-0">
+                                              {item.subject.code}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 break-words">
+                                          {scope === 'gtk'
+                                            ? `Kelas: ${item.classroom?.name || '-'}`
+                                            : `Guru: ${item.teacher?.full_name || '-'}`}
+                                        </p>
                                       </div>
-                                      <p className="text-xs font-bold text-slate-900 break-words">
-                                        {item.subject?.name || 'Mata Pelajaran'}
-                                      </p>
-                                      <p className="text-[11px] text-slate-500 break-words">
-                                        {scope === 'gtk'
-                                          ? `Kelas: ${item.classroom?.name || '-'}`
-                                          : `Guru: ${item.teacher?.full_name || '-'}`}
-                                      </p>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
@@ -591,58 +840,112 @@ export function PersonalWorkspace({
 
           {/* 2. JADWAL PIKET (KELAS UNTUK SISWA/ORTU, PIKET GURU UNTUK GTK) */}
           {section === 'jadwal-piket' && (() => {
+            const hasSundayPicket = data.pickets.some((p) => p.day_of_week === 7);
+            const activePicketDays = hasSundayPicket
+              ? [1, 2, 3, 4, 5, 6, 7]
+              : [1, 2, 3, 4, 5, 6];
+
+            const effectivePicketFilter =
+              (picketFilter === 'MY_DAYS' && myPicketDays.length === 0) ||
+              (picketFilter === 'TODAY' && !activePicketDays.includes(todayDay))
+                ? 'ALL'
+                : picketFilter;
+
             const picketDaysToRender =
-              picketFilter === 'TODAY'
-                ? [todayDay >= 1 && todayDay <= 6 ? todayDay : 1]
-                : picketFilter === 'MY_DAYS' && myPicketDays.length > 0
-                  ? myPicketDays.filter((d) => d >= 1 && d <= 6)
-                  : [1, 2, 3, 4, 5, 6];
+              effectivePicketFilter === 'TODAY'
+                ? [todayDay]
+                : effectivePicketFilter === 'MY_DAYS'
+                  ? myPicketDays.filter((d) => activePicketDays.includes(d))
+                  : activePicketDays;
+
+            const emptyPicketTitle =
+              scope === 'orang-tua' && !data.student
+                ? 'Belum ada data putra/putri terhubung'
+                : scope === 'orang-tua' && !data.classroom
+                  ? 'Rombel kelas anak belum ditetapkan'
+                  : 'Jadwal piket kelas belum tersedia';
+
+            const emptyPicketDescription =
+              scope === 'orang-tua' && !data.student
+                ? 'Akun Anda belum terhubung dengan data siswa. Silakan hubungi bagian Tata Usaha atau Operator Madrasah.'
+                : scope === 'orang-tua' && !data.classroom
+                  ? 'Putra/putri Anda belum ditempatkan pada rombongan belajar aktif pada tahun ajaran ini.'
+                  : scope === 'orang-tua'
+                    ? 'Wali kelas belum menambahkan jadwal piket untuk kelas putra/putri Anda.'
+                    : 'Wali kelas belum menambahkan jadwal piket untuk kelas Anda.';
+
+            if (scope !== 'gtk' && data.pickets.length === 0) {
+              return (
+                <EmptyState
+                  icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
+                  title={emptyPicketTitle}
+                  description={emptyPicketDescription}
+                />
+              );
+            }
+
+            if (scope === 'gtk' && data.pickets.length === 0) {
+              return (
+                <EmptyState
+                  icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
+                  title="Belum ada jadwal piket guru"
+                  description="Jadwal piket guru/petugas piket Anda belum ditetapkan."
+                />
+              );
+            }
+
+            const isMyPicketToday = myPicketDays.includes(todayDay);
 
             return (
-              <div className="space-y-5">
+              <div className="space-y-4">
                 {/* Banner penanda khusus hari piketnya */}
                 <div
-                  className={`rounded-3xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                    myPicketDays.includes(todayDay)
+                  className={`rounded-3xl border p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 ${
+                    isMyPicketToday
                       ? 'border-amber-300 bg-amber-50 text-amber-950'
                       : 'border-emerald-200 bg-emerald-50/60 text-emerald-950'
                   }`}
                 >
                   <div className="flex items-start gap-3 min-w-0">
-                    <Sparkles
-                      className={`w-5 h-5 shrink-0 mt-0.5 ${
-                        myPicketDays.includes(todayDay) ? 'text-amber-600' : 'text-emerald-600'
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                        isMyPicketToday
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-emerald-100 text-emerald-700'
                       }`}
-                    />
+                    >
+                      <Sparkles className="w-4 h-4" />
+                    </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-bold uppercase tracking-wide">
+                      <p className="text-[11px] font-bold uppercase tracking-wide opacity-80">
                         {scope === 'orang-tua'
                           ? 'Jadwal Piket Putra/Putri Anda'
                           : 'Jadwal Piket Anda'}
                       </p>
-                      <p className="text-sm font-black mt-0.5 break-words">
+                      <p className="text-sm sm:text-base font-black mt-0.5 break-words">
                         {myPicketDays.length > 0
                           ? `Hari ${myPicketDays.map((d) => DAY_NAMES[d] || `Hari ${d}`).join(', ')}`
                           : 'Belum ada hari piket yang ditetapkan'}
                       </p>
-                      {myPicketDays.includes(todayDay) && (
-                        <p className="text-xs font-semibold text-amber-800 mt-1">
-                          🔔 Hari ini ({DAY_NAMES[todayDay]}) adalah jadwal piket! Pastikan
+                      {isMyPicketToday && (
+                        <p className="text-xs font-semibold text-amber-800 mt-1 leading-relaxed">
+                          Hari ini ({DAY_NAMES[todayDay]}) adalah jadwal piket! Pastikan
                           melaksanakan tugas piket tepat waktu.
                         </p>
                       )}
                     </div>
                   </div>
 
-                  {scope !== 'gtk' && data.pickets.length > 0 && (
-                    <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                  {scope !== 'gtk' && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap sm:overflow-visible -mx-1 px-1 shrink-0">
                       <button
                         type="button"
+                        aria-pressed={effectivePicketFilter === 'ALL'}
                         onClick={() => setPicketFilter('ALL')}
-                        className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
-                          picketFilter === 'ALL'
-                            ? 'bg-slate-900 text-white'
-                            : 'bg-white/80 hover:bg-white text-slate-700 border border-slate-200'
+                        className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${
+                          effectivePicketFilter === 'ALL'
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'bg-white/85 hover:bg-white text-slate-700 border border-slate-200'
                         }`}
                       >
                         Semua Hari
@@ -650,27 +953,29 @@ export function PersonalWorkspace({
                       {myPicketDays.length > 0 && (
                         <button
                           type="button"
+                          aria-pressed={effectivePicketFilter === 'MY_DAYS'}
                           onClick={() => setPicketFilter('MY_DAYS')}
-                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
-                            picketFilter === 'MY_DAYS'
-                              ? 'bg-amber-500 text-white'
-                              : 'bg-white/80 hover:bg-white text-amber-800 border border-amber-200'
+                          className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${
+                            effectivePicketFilter === 'MY_DAYS'
+                              ? 'bg-amber-500 text-white shadow-xs'
+                              : 'bg-white/85 hover:bg-white text-amber-800 border border-amber-200'
                           }`}
                         >
-                          {scope === 'orang-tua' ? 'Piket Anak' : 'Piket Saya'}
+                          {scope === 'orang-tua' ? 'Piket Anak' : 'Piket Saya'} ({myPicketDays.length})
                         </button>
                       )}
-                      {todayDay >= 1 && todayDay <= 6 && (
+                      {activePicketDays.includes(todayDay) && (
                         <button
                           type="button"
+                          aria-pressed={effectivePicketFilter === 'TODAY'}
                           onClick={() => setPicketFilter('TODAY')}
-                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
-                            picketFilter === 'TODAY'
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-white/80 hover:bg-white text-emerald-800 border border-emerald-200'
+                          className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${
+                            effectivePicketFilter === 'TODAY'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'bg-white/85 hover:bg-white text-emerald-800 border border-emerald-200'
                           }`}
                         >
-                          Hari Ini
+                          Hari Ini ({DAY_NAMES[todayDay]})
                         </button>
                       )}
                     </div>
@@ -678,63 +983,58 @@ export function PersonalWorkspace({
                 </div>
 
                 {scope === 'gtk' ? (
-                  data.pickets.length === 0 ? (
-                    <EmptyState
-                      icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
-                      title="Belum ada jadwal piket guru"
-                      description="Jadwal piket guru/petugas piket Anda belum ditetapkan."
-                    />
-                  ) : (
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {data.pickets.map((p) => {
-                        const isToday = p.day_of_week === todayDay;
-                        return (
-                          <div
-                            key={p.id}
-                            className={`rounded-3xl border p-5 min-w-0 ${
-                              isToday
-                                ? 'border-amber-400 bg-amber-50/70 shadow-sm'
-                                : 'border-emerald-200 bg-white'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-sm font-black text-slate-900">
-                                {DAY_NAMES[p.day_of_week] || `Hari ${p.day_of_week}`}
-                              </span>
-                              <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold shrink-0">
-                                {isToday ? 'PIKET HARI INI' : 'TUGAS PIKET'}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-600 mt-2 break-words">
-                              {p.notes || 'Piket harian madrasah / pemantauan gerbang & KBM.'}
-                            </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {data.pickets.map((p) => {
+                      const isToday = p.day_of_week === todayDay;
+                      return (
+                        <div
+                          key={p.id}
+                          className={`rounded-3xl border p-4 sm:p-5 min-w-0 ${
+                            isToday
+                              ? 'border-amber-400 bg-amber-50/70 shadow-sm'
+                              : 'border-emerald-200 bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-black text-slate-900">
+                              {DAY_NAMES[p.day_of_week] || `Hari ${p.day_of_week}`}
+                            </span>
+                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold shrink-0">
+                              {isToday ? 'PIKET HARI INI' : 'TUGAS PIKET'}
+                            </span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )
-                ) : data.pickets.length === 0 ? (
-                  <EmptyState
-                    icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
-                    title="Jadwal piket kelas belum tersedia"
-                    description="Wali kelas belum menambahkan jadwal piket untuk kelas Anda."
-                  />
+                          <p className="text-xs text-slate-600 mt-2 break-words leading-relaxed">
+                            {p.notes || 'Piket harian madrasah / pemantauan gerbang & KBM.'}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <div
                     className={`grid gap-4 ${
                       picketDaysToRender.length === 1
-                        ? 'grid-cols-1 max-w-2xl'
-                        : 'md:grid-cols-2 xl:grid-cols-3'
+                        ? 'grid-cols-1'
+                        : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
                     }`}
                   >
                     {picketDaysToRender.map((day) => {
-                      const dayPickets = data.pickets.filter((p) => p.day_of_week === day);
+                      const dayPickets = data.pickets
+                        .filter((p) => p.day_of_week === day)
+                        .sort((a, b) => {
+                          const aSelf = Boolean(data.student?.id && a.student_id === data.student.id);
+                          const bSelf = Boolean(data.student?.id && b.student_id === data.student.id);
+                          if (aSelf !== bSelf) return aSelf ? -1 : 1;
+                          return (a.student?.full_name || '').localeCompare(
+                            b.student?.full_name || ''
+                          );
+                        });
                       const isMyDay = myPicketDays.includes(day);
                       const isToday = day === todayDay;
                       return (
                         <div
                           key={day}
-                          className={`rounded-3xl border p-5 transition min-w-0 ${
+                          className={`rounded-3xl border p-4 sm:p-5 transition min-w-0 ${
                             isMyDay
                               ? 'border-amber-400 bg-amber-50/60 ring-2 ring-amber-300/60 shadow-sm'
                               : isToday
@@ -743,9 +1043,14 @@ export function PersonalWorkspace({
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 mb-3 flex-wrap">
-                            <h3 className="font-bold text-slate-900 text-sm">
-                              {DAY_NAMES[day] || `Hari ${day}`}
-                            </h3>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <h3 className="font-bold text-slate-900 text-sm">
+                                {DAY_NAMES[day] || `Hari ${day}`}
+                              </h3>
+                              <span className="text-[11px] font-medium text-slate-500">
+                                ({dayPickets.length} petugas)
+                              </span>
+                            </div>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {isToday && (
                                 <span className="px-2 py-0.5 rounded-full bg-slate-800 text-white text-[10px] font-bold">
@@ -762,28 +1067,36 @@ export function PersonalWorkspace({
                           </div>
 
                           {dayPickets.length === 0 ? (
-                            <p className="text-xs text-slate-400 italic py-4 text-center">
+                            <p className="text-xs text-slate-400 italic py-6 text-center">
                               Belum ada petugas
                             </p>
                           ) : (
-                            <ul className="space-y-2">
+                            <ul
+                              className={
+                                picketDaysToRender.length === 1
+                                  ? 'grid grid-cols-1 md:grid-cols-2 gap-2.5'
+                                  : 'space-y-2'
+                              }
+                            >
                               {dayPickets.map((p) => {
-                                const isSelf = p.student_id === data.student?.id;
+                                const isSelf = Boolean(
+                                  data.student?.id && p.student_id === data.student.id
+                                );
                                 return (
                                   <li
                                     key={p.id}
-                                    className={`rounded-xl px-3 py-2 text-xs flex items-center justify-between gap-2 min-w-0 ${
+                                    className={`rounded-2xl px-3.5 py-2.5 text-xs flex items-center justify-between gap-2 min-w-0 ${
                                       isSelf
                                         ? 'bg-amber-100 border border-amber-300 font-bold text-amber-950'
                                         : 'bg-slate-50 border border-slate-100 text-slate-700'
                                     }`}
                                   >
                                     <div className="min-w-0">
-                                      <p className="break-words">
+                                      <p className="break-words leading-snug">
                                         {p.student?.full_name || 'Siswa'}
                                       </p>
                                       {p.task_notes && (
-                                        <p className="text-[10px] text-slate-500 font-normal break-words">
+                                        <p className="text-[11px] text-slate-500 font-normal break-words mt-0.5">
                                           Tugas: {p.task_notes}
                                         </p>
                                       )}

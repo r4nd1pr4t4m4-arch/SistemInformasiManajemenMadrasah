@@ -99,20 +99,25 @@ export async function GET(request: NextRequest) {
     if (tc) activeTeacher = tc;
   }
 
-  // Resolve active classroom for activeStudent
+  // Resolve active classroom for activeStudent (prefer active academic year)
   if (activeStudent?.id) {
-    const { data: enr } = await supabase
+    const { data: enrollments } = await supabase
       .from('student_enrollments')
       .select(
         'classroom_id, academic_year_id, classroom:classrooms(id, name, grade_level, homeroom_teacher:teachers_staff(full_name)), academic_year:academic_years(id, name, is_active)'
       )
       .eq('student_id', activeStudent.id as string)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(10);
 
-    if (enr?.classroom) {
-      activeClassroom = enr.classroom as unknown as Record<string, unknown>;
+    const activeEnrollment =
+      (enrollments || []).find((e) => {
+        const ay = e.academic_year as unknown as { is_active?: boolean } | null;
+        return Boolean(ay?.is_active);
+      }) || enrollments?.[0];
+
+    if (activeEnrollment?.classroom) {
+      activeClassroom = activeEnrollment.classroom as unknown as Record<string, unknown>;
     }
   }
 
