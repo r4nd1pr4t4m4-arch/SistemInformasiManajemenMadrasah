@@ -61,6 +61,18 @@ function formatTimeShort(t?: string | null): string {
   return String(t).slice(0, 5);
 }
 
+function formatTimeValue(t?: unknown): string {
+  if (!t) return '-';
+  const raw = String(t).trim();
+  if (!raw) return '-';
+  if (/^\d{2}:\d{2}/.test(raw)) return raw.slice(0, 5);
+  const d = new Date(raw);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  }
+  return raw;
+}
+
 function parseTimeToMinutes(t?: string | null): number | null {
   if (!t) return null;
   const parts = String(t).trim().split(':');
@@ -113,7 +125,8 @@ interface PersonalPayload {
     full_name: string;
     nip?: string | null;
     nuptk?: string | null;
-    employee_type?: string | null;
+    staff_type?: string | null;
+    home_distance_km?: number | null;
   } | null;
   classroom: {
     id: string;
@@ -340,7 +353,11 @@ export function PersonalWorkspace({
                 <UserCheck className="w-3.5 h-3.5 shrink-0" />
                 <span className="break-words">
                   {data.teacher.full_name}
-                  {data.teacher.nip ? ` (NIP: ${data.teacher.nip})` : ''}
+                  {data.teacher.nip
+                    ? ` (NIP: ${data.teacher.nip})`
+                    : data.teacher.nuptk
+                      ? ` (NUPTK: ${data.teacher.nuptk})`
+                      : ''}
                 </span>
               </span>
             </div>
@@ -364,6 +381,17 @@ export function PersonalWorkspace({
                   setLoading(true);
                   setError(null);
                   setPicketFilter('ALL');
+                  setTrxSearch('');
+                  setTrxTypeFilter('ALL');
+                  setTrxAccountFilter('ALL');
+                  setTrxVisibleCount(15);
+                  setAbsensiStatusFilter('ALL');
+                  setAbsensiSearch('');
+                  setAbsensiVisibleCount(20);
+                  setSppStatusFilter('ALL');
+                  setSppSearch('');
+                  setBkTypeFilter('ALL');
+                  setBkSearch('');
                   setSelectedChildId(e.target.value);
                 }}
                 className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
@@ -491,16 +519,20 @@ export function PersonalWorkspace({
                 ? 'Belum ada data putra/putri terhubung'
                 : scope === 'orang-tua' && !data.classroom
                   ? 'Rombel kelas anak belum ditetapkan'
-                  : 'Belum ada jadwal tersedia';
+                  : scope === 'gtk' && !data.teacher
+                    ? 'Akun belum tertaut ke data GTK'
+                    : 'Belum ada jadwal tersedia';
 
             const emptyDescription =
               scope === 'orang-tua' && !data.student
                 ? 'Akun Anda belum terhubung dengan data siswa. Silakan hubungi bagian Tata Usaha atau Operator Madrasah.'
                 : scope === 'orang-tua' && !data.classroom
                   ? 'Putra/putri Anda belum ditempatkan pada rombongan belajar aktif pada tahun ajaran ini.'
-                  : scope === 'gtk'
-                    ? 'Jadwal mengajar Anda belum ditetapkan oleh bagian kurikulum.'
-                    : 'Jadwal pelajaran kelas belum tersedia atau Anda belum ditempatkan di rombel aktif.';
+                  : scope === 'gtk' && !data.teacher
+                    ? 'Akun Anda belum ditautkan dengan data Guru/Tenaga Kependidikan. Silakan hubungi Operator atau Tata Usaha.'
+                    : scope === 'gtk'
+                      ? 'Jadwal mengajar Anda belum ditetapkan oleh bagian kurikulum.'
+                      : 'Jadwal pelajaran kelas belum tersedia atau Anda belum ditempatkan di rombel aktif.';
 
             return (
               <div className="space-y-4">
@@ -567,14 +599,20 @@ export function PersonalWorkspace({
                           </p>
                           {ongoingToday ? (
                             <p className="text-xs font-bold text-emerald-700 mt-0.5 truncate">
-                              {ongoingToday.subject?.name || 'Mapel'} (
-                              {formatTimeShort(ongoingToday.start_time)}–
+                              {ongoingToday.subject?.name || 'Mapel'}
+                              {scope === 'gtk' && ongoingToday.classroom?.name
+                                ? ` • ${ongoingToday.classroom.name}`
+                                : ''}{' '}
+                              ({formatTimeShort(ongoingToday.start_time)}–
                               {formatTimeShort(ongoingToday.end_time)})
                             </p>
                           ) : nextToday ? (
                             <p className="text-xs font-bold text-slate-900 mt-0.5 truncate">
-                              {nextToday.subject?.name || 'Mapel'} (
-                              {formatTimeShort(nextToday.start_time)})
+                              {nextToday.subject?.name || 'Mapel'}
+                              {scope === 'gtk' && nextToday.classroom?.name
+                                ? ` • ${nextToday.classroom.name}`
+                                : ''}{' '}
+                              ({formatTimeShort(nextToday.start_time)})
                             </p>
                           ) : (
                             <p className="text-xs font-semibold text-slate-500 mt-0.5">
@@ -888,8 +926,14 @@ export function PersonalWorkspace({
               return (
                 <EmptyState
                   icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
-                  title="Belum ada jadwal piket guru"
-                  description="Jadwal piket guru/petugas piket Anda belum ditetapkan."
+                  title={
+                    !data.teacher ? 'Akun belum tertaut ke data GTK' : 'Belum ada jadwal piket guru'
+                  }
+                  description={
+                    !data.teacher
+                      ? 'Akun Anda belum ditautkan dengan data Guru/Tenaga Kependidikan. Silakan hubungi Operator atau Tata Usaha.'
+                      : 'Jadwal piket guru/petugas piket Anda belum ditetapkan.'
+                  }
                 />
               );
             }
@@ -982,35 +1026,55 @@ export function PersonalWorkspace({
                   )}
                 </div>
 
-                {scope === 'gtk' ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {data.pickets.map((p) => {
-                      const isToday = p.day_of_week === todayDay;
-                      return (
-                        <div
-                          key={p.id}
-                          className={`rounded-3xl border p-4 sm:p-5 min-w-0 ${
-                            isToday
-                              ? 'border-amber-400 bg-amber-50/70 shadow-sm'
-                              : 'border-emerald-200 bg-white'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-sm font-black text-slate-900">
-                              {DAY_NAMES[p.day_of_week] || `Hari ${p.day_of_week}`}
-                            </span>
-                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold shrink-0">
-                              {isToday ? 'PIKET HARI INI' : 'TUGAS PIKET'}
-                            </span>
+                {scope === 'gtk' ? (() => {
+                  const sortedGtkPickets = [...data.pickets].sort(
+                    (a, b) => (a.day_of_week || 0) - (b.day_of_week || 0)
+                  );
+                  return (
+                    <div
+                      className={`grid gap-4 ${
+                        sortedGtkPickets.length === 1
+                          ? 'grid-cols-1 max-w-xl'
+                          : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                      }`}
+                    >
+                      {sortedGtkPickets.map((p) => {
+                        const isToday = p.day_of_week === todayDay;
+                        return (
+                          <div
+                            key={p.id}
+                            className={`rounded-3xl border p-4 sm:p-5 min-w-0 transition ${
+                              isToday
+                                ? 'border-amber-400 bg-amber-50/70 ring-1 ring-amber-300/60 shadow-sm'
+                                : 'border-emerald-200 bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="text-sm font-black text-slate-900">
+                                {DAY_NAMES[p.day_of_week] || `Hari ${p.day_of_week}`}
+                              </span>
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-white text-[10px] font-bold shrink-0 ${
+                                  isToday ? 'bg-amber-500' : 'bg-emerald-600'
+                                }`}
+                              >
+                                {isToday ? 'PIKET HARI INI' : 'TUGAS PIKET'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600 mt-2 break-words leading-relaxed">
+                              {p.notes || 'Piket harian madrasah / pemantauan gerbang & KBM.'}
+                            </p>
+                            {p.academic_year?.name && (
+                              <p className="text-[11px] font-medium text-slate-400 mt-2.5 pt-2 border-t border-slate-100">
+                                Tahun Ajaran: {p.academic_year.name}
+                              </p>
+                            )}
                           </div>
-                          <p className="text-xs text-slate-600 mt-2 break-words leading-relaxed">
-                            {p.notes || 'Piket harian madrasah / pemantauan gerbang & KBM.'}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
+                        );
+                      })}
+                    </div>
+                  );
+                })() : (
                   <div
                     className={`grid gap-4 ${
                       picketDaysToRender.length === 1
@@ -1126,30 +1190,55 @@ export function PersonalWorkspace({
               {data.savingsAccounts.length === 0 ? (
                 <EmptyState
                   icon={<Wallet className="w-8 h-8 text-slate-300" />}
-                  title="Belum memiliki rekening tabungan"
-                  description="Silakan hubungi Pengelola Tabungan atau Bendahara Madrasah untuk membuka buku tabungan digital."
+                  title={
+                    scope === 'orang-tua' && !data.student
+                      ? 'Belum ada data putra/putri terhubung'
+                      : scope === 'orang-tua'
+                        ? 'Putra/putri Anda belum memiliki rekening tabungan'
+                        : scope === 'gtk' && !data.teacher
+                          ? 'Akun belum tertaut ke data GTK'
+                          : 'Belum memiliki rekening tabungan'
+                  }
+                  description={
+                    scope === 'orang-tua' && !data.student
+                      ? 'Akun Anda belum terhubung dengan data siswa. Silakan hubungi bagian Tata Usaha atau Operator Madrasah.'
+                      : scope === 'gtk' && !data.teacher
+                        ? 'Akun Anda belum ditautkan dengan data Guru/Tenaga Kependidikan. Silakan hubungi Operator atau Tata Usaha.'
+                        : 'Silakan hubungi Pengelola Tabungan atau Bendahara Madrasah untuk membuka buku tabungan digital.'
+                  }
                 />
               ) : (
                 (() => {
-                  const totalSetor = data.savingsTransactions
+                  const effectiveAccountFilter =
+                    trxAccountFilter !== 'ALL' &&
+                    data.savingsAccounts.some((a) => a.id === trxAccountFilter)
+                      ? trxAccountFilter
+                      : 'ALL';
+
+                  const accountScopedTrx =
+                    effectiveAccountFilter === 'ALL'
+                      ? data.savingsTransactions
+                      : data.savingsTransactions.filter(
+                          (t) => t.account_id === effectiveAccountFilter
+                        );
+
+                  const totalSetor = accountScopedTrx
                     .filter((t) => t.transaction_type === 'SETOR')
                     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-                  const totalTarik = data.savingsTransactions
+                  const totalTarik = accountScopedTrx
                     .filter((t) => t.transaction_type === 'TARIK')
                     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
                   const q = trxSearch.trim().toLowerCase();
-                  const filteredTrx = data.savingsTransactions.filter((trx) => {
+                  const filteredTrx = accountScopedTrx.filter((trx) => {
                     if (trxTypeFilter !== 'ALL' && trx.transaction_type !== trxTypeFilter) {
-                      return false;
-                    }
-                    if (trxAccountFilter !== 'ALL' && trx.account_id !== trxAccountFilter) {
                       return false;
                     }
                     if (!q) return true;
                     return (
                       (trx.reference_number || '').toLowerCase().includes(q) ||
-                      (trx.notes || '').toLowerCase().includes(q)
+                      (trx.notes || '').toLowerCase().includes(q) ||
+                      formatDateId(trx.transaction_date).toLowerCase().includes(q)
                     );
                   });
 
@@ -1158,20 +1247,24 @@ export function PersonalWorkspace({
                   const hasTrxFilter =
                     trxSearch.trim().length > 0 ||
                     trxTypeFilter !== 'ALL' ||
-                    trxAccountFilter !== 'ALL';
+                    effectiveAccountFilter !== 'ALL';
 
                   function openSlip(trx: PersonalPayload['savingsTransactions'][number]) {
                     const acc = data?.savingsAccounts.find((a) => a.id === trx.account_id);
                     setActiveSlip({
                       referenceNumber: trx.reference_number,
                       accountNumber: acc?.account_number || '-',
-                      ownerName: acc?.owner_name || data?.profile.fullName || 'Nasabah',
+                      ownerName:
+                        acc?.owner_name ||
+                        data?.student?.full_name ||
+                        data?.profile.fullName ||
+                        'Nasabah',
                       ownerType: acc?.owner_type || 'UMUM',
                       transactionType: trx.transaction_type,
                       amount: Number(trx.amount) || 0,
                       feePercentage: Number(trx.fee_percentage) || 0,
                       feeAmount: Number(trx.fee_amount) || 0,
-                      netAmount: Number(trx.net_amount ?? trx.amount),
+                      netAmount: Number(trx.net_amount ?? trx.amount) || 0,
                       balanceAfter: Number(trx.balance_after) || 0,
                       transactionDate: trx.transaction_date,
                       notes: trx.notes,
@@ -1180,7 +1273,13 @@ export function PersonalWorkspace({
 
                   return (
                     <>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div
+                        className={`grid gap-4 ${
+                          data.savingsAccounts.length === 1
+                            ? 'grid-cols-1 max-w-xl'
+                            : 'grid-cols-1 md:grid-cols-2'
+                        }`}
+                      >
                         {data.savingsAccounts.map((acc) => (
                           <div
                             key={acc.id}
@@ -1229,7 +1328,7 @@ export function PersonalWorkspace({
                           />
                           <StatCard
                             label="Jumlah Transaksi"
-                            value={`${data.savingsTransactions.length} Kali`}
+                            value={`${accountScopedTrx.length} Kali`}
                             tone="slate"
                           />
                         </div>
@@ -1259,9 +1358,9 @@ export function PersonalWorkspace({
                                   setTrxSearch(e.target.value);
                                   setTrxVisibleCount(15);
                                 }}
-                                placeholder="Cari nomor referensi atau keterangan..."
+                                placeholder="Cari referensi, tanggal, atau keterangan..."
                                 aria-label="Cari transaksi tabungan"
-                                className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                                className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                               />
                               {trxSearch && (
                                 <button
@@ -1271,7 +1370,7 @@ export function PersonalWorkspace({
                                     setTrxVisibleCount(15);
                                   }}
                                   aria-label="Hapus pencarian transaksi"
-                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                                 >
                                   <X className="w-3.5 h-3.5" />
                                 </button>
@@ -1281,13 +1380,13 @@ export function PersonalWorkspace({
                             <div className="flex flex-wrap items-center gap-2 shrink-0">
                               {data.savingsAccounts.length > 1 && (
                                 <select
-                                  value={trxAccountFilter}
+                                  value={effectiveAccountFilter}
                                   onChange={(e) => {
                                     setTrxAccountFilter(e.target.value);
                                     setTrxVisibleCount(15);
                                   }}
                                   aria-label="Filter rekening tabungan"
-                                  className="min-h-[38px] rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                                  className="min-h-[38px] rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm sm:text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                                 >
                                   <option value="ALL">Semua Rekening</option>
                                   {data.savingsAccounts.map((acc) => (
@@ -1301,11 +1400,12 @@ export function PersonalWorkspace({
                                 <button
                                   key={tp}
                                   type="button"
+                                  aria-pressed={trxTypeFilter === tp}
                                   onClick={() => {
                                     setTrxTypeFilter(tp);
                                     setTrxVisibleCount(15);
                                   }}
-                                  className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${trxTypeFilter === tp
+                                  className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 ${trxTypeFilter === tp
                                     ? 'bg-emerald-700 text-white border-emerald-700'
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
                                     }`}
@@ -1335,7 +1435,7 @@ export function PersonalWorkspace({
                                   setTrxAccountFilter('ALL');
                                   setTrxVisibleCount(15);
                                 }}
-                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                                className="inline-flex items-center gap-1.5 min-h-[36px] px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
                               >
                                 <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
                               </button>
@@ -1393,7 +1493,7 @@ export function PersonalWorkspace({
                                     {isTarik && (
                                       <div className="flex items-center justify-between gap-2 text-emerald-700 font-semibold">
                                         <span>Diterima Bersih</span>
-                                        <span>{formatRupiah(Number(trx.net_amount ?? trx.amount))}</span>
+                                        <span>{formatRupiah(Number(trx.net_amount ?? trx.amount) || 0)}</span>
                                       </div>
                                     )}
 
@@ -1413,7 +1513,7 @@ export function PersonalWorkspace({
                                     <button
                                       type="button"
                                       onClick={() => openSlip(trx)}
-                                      className="w-full min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-xs transition"
+                                      className="w-full min-h-[40px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-xs transition"
                                     >
                                       <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip PNG
                                     </button>
@@ -1427,15 +1527,15 @@ export function PersonalWorkspace({
                               <table className="w-full text-left text-xs border-collapse">
                                 <thead>
                                   <tr className="border-b border-slate-200 text-slate-500 font-semibold">
-                                    <th className="py-2.5 px-3">Tanggal</th>
-                                    <th className="py-2.5 px-3">Referensi</th>
-                                    <th className="py-2.5 px-3">Jenis</th>
-                                    <th className="py-2.5 px-3 text-right">Nominal</th>
-                                    <th className="py-2.5 px-3 text-right">Fee Tarik</th>
-                                    <th className="py-2.5 px-3 text-right">Diterima Bersih</th>
-                                    <th className="py-2.5 px-3 text-right">Saldo Akhir</th>
+                                    <th className="py-2.5 px-3 whitespace-nowrap">Tanggal</th>
+                                    <th className="py-2.5 px-3 whitespace-nowrap">Referensi</th>
+                                    <th className="py-2.5 px-3 whitespace-nowrap">Jenis</th>
+                                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Nominal</th>
+                                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Fee Tarik</th>
+                                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Diterima Bersih</th>
+                                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Saldo Akhir</th>
                                     <th className="py-2.5 px-3">Keterangan</th>
-                                    <th className="py-2.5 px-3 text-center">Slip</th>
+                                    <th className="py-2.5 px-3 text-center whitespace-nowrap">Slip</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -1446,10 +1546,10 @@ export function PersonalWorkspace({
                                         <td className="py-2.5 px-3 whitespace-nowrap text-slate-600">
                                           {formatDateId(trx.transaction_date)}
                                         </td>
-                                        <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500">
+                                        <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">
                                           {trx.reference_number}
                                         </td>
-                                        <td className="py-2.5 px-3">
+                                        <td className="py-2.5 px-3 whitespace-nowrap">
                                           <span
                                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${isTarik
                                               ? 'bg-amber-100 text-amber-800'
@@ -1464,30 +1564,30 @@ export function PersonalWorkspace({
                                             {trx.transaction_type}
                                           </span>
                                         </td>
-                                        <td className="py-2.5 px-3 text-right font-bold text-slate-900">
+                                        <td className="py-2.5 px-3 text-right font-bold text-slate-900 whitespace-nowrap">
                                           {formatRupiah(Number(trx.amount) || 0)}
                                         </td>
-                                        <td className="py-2.5 px-3 text-right text-rose-600">
+                                        <td className="py-2.5 px-3 text-right text-rose-600 whitespace-nowrap">
                                           {isTarik && Number(trx.fee_amount) > 0
                                             ? `- ${formatRupiah(Number(trx.fee_amount))}`
                                             : '-'}
                                         </td>
-                                        <td className="py-2.5 px-3 text-right font-semibold text-emerald-700">
+                                        <td className="py-2.5 px-3 text-right font-semibold text-emerald-700 whitespace-nowrap">
                                           {isTarik
-                                            ? formatRupiah(Number(trx.net_amount ?? trx.amount))
+                                            ? formatRupiah(Number(trx.net_amount ?? trx.amount) || 0)
                                             : '-'}
                                         </td>
-                                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
+                                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
                                           {formatRupiah(Number(trx.balance_after) || 0)}
                                         </td>
-                                        <td className="py-2.5 px-3 text-slate-500">
+                                        <td className="py-2.5 px-3 text-slate-500 max-w-[220px] break-words">
                                           {trx.notes || '-'}
                                         </td>
                                         <td className="py-2.5 px-3 text-center whitespace-nowrap">
                                           <button
                                             type="button"
                                             onClick={() => openSlip(trx)}
-                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
                                             title="Lihat & Unduh Slip PNG"
                                           >
                                             <Download className="w-3 h-3" /> PNG
@@ -1525,108 +1625,306 @@ export function PersonalWorkspace({
           {/* 4. RIWAYAT ABSENSI */}
           {section === 'absensi' && (
             <div className="space-y-5">
-              {scope === 'gtk' ? (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    <StatCard
-                      label="Total Catatan Presensi"
-                      value={String(data.attendances.length)}
-                      tone="emerald"
+              {scope === 'gtk' ? (() => {
+                if (!data.teacher) {
+                  return (
+                    <EmptyState
+                      icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
+                      title="Akun belum tertaut ke data GTK"
+                      description="Akun Anda belum ditautkan dengan data Guru/Tenaga Kependidikan. Silakan hubungi Operator atau Tata Usaha."
                     />
-                    <StatCard
-                      label="Total JTM Diperoleh"
-                      value={String(
-                        data.attendances.reduce(
-                          (acc, row) => acc + (Number(row.jtm_earned) || 0),
-                          0
-                        )
-                      )}
-                      tone="slate"
-                    />
-                    <StatCard
-                      label="Dalam Radius Geofence"
-                      value={String(
-                        data.attendances.filter((row) => Boolean(row.is_within_geofence)).length
-                      )}
-                      tone="amber"
-                    />
-                  </div>
-                  <div className="glass-card rounded-3xl p-6">
-                    {data.attendances.length === 0 ? (
-                      <p className="text-xs text-slate-400 text-center py-6">
-                        Belum ada riwayat presensi GTK.
-                      </p>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead>
-                            <tr className="border-b border-slate-200 text-slate-500">
-                              <th className="py-2.5 px-3">Tanggal</th>
-                              <th className="py-2.5 px-3">Jenis Presensi</th>
-                              <th className="py-2.5 px-3">Masuk</th>
-                              <th className="py-2.5 px-3">Pulang</th>
-                              <th className="py-2.5 px-3 text-center">JTM</th>
-                              <th className="py-2.5 px-3 text-center">Geofence</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {data.attendances.map((a) => (
-                              <tr key={String(a.id)}>
-                                <td className="py-2.5 px-3 font-medium">
-                                  {formatDateId(String(a.attendance_date))}
-                                </td>
-                                <td className="py-2.5 px-3 font-semibold text-slate-800">
-                                  {String(a.attendance_type)}
-                                </td>
-                                <td className="py-2.5 px-3 text-slate-600">
-                                  {a.check_in_time
-                                    ? new Date(String(a.check_in_time)).toLocaleTimeString('id-ID', {
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    })
-                                    : '-'}
-                                </td>
-                                <td className="py-2.5 px-3 text-slate-600">
-                                  {a.check_out_time
-                                    ? new Date(String(a.check_out_time)).toLocaleTimeString('id-ID', {
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    })
-                                    : '-'}
-                                </td>
-                                <td className="py-2.5 px-3 text-center font-bold">
-                                  {Number(a.jtm_earned) || 0}
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <span
-                                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${a.is_within_geofence
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : 'bg-amber-100 text-amber-800'
-                                      }`}
-                                  >
-                                    {a.is_within_geofence ? 'Di Lokasi' : 'Luar Radius'}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                  );
+                }
+
+                const q = absensiSearch.trim().toLowerCase();
+                const filteredGtkAtt = data.attendances.filter((a) => {
+                  if (!q) return true;
+                  const sched = a.schedule as {
+                    subject?: { name?: string | null } | null;
+                    classroom?: { name?: string | null } | null;
+                  } | null;
+                  const dateVal = a.attendance_date ? String(a.attendance_date) : null;
+                  const attType = String(a.attendance_type || '');
+                  const geoLabel = a.is_within_geofence ? 'di lokasi' : 'luar radius';
+                  const haystack = `${attType} ${attType.replace(/_/g, ' ')} ${
+                    sched?.subject?.name || ''
+                  } ${sched?.classroom?.name || ''} ${a.attendance_date || ''} ${formatDateId(
+                    dateVal
+                  )} ${geoLabel}`.toLowerCase();
+                  return haystack.includes(q);
+                });
+                const displayedGtkAtt = filteredGtkAtt.slice(0, absensiVisibleCount);
+                const hasMoreGtkAtt = absensiVisibleCount < filteredGtkAtt.length;
+
+                return (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 sm:gap-4">
+                      <StatCard
+                        label="Total Catatan Presensi"
+                        value={String(data.attendances.length)}
+                        tone="emerald"
+                      />
+                      <StatCard
+                        label="Total JTM Diperoleh"
+                        value={String(
+                          data.attendances.reduce(
+                            (acc, row) => acc + (Number(row.jtm_earned) || 0),
+                            0
+                          )
+                        )}
+                        tone="slate"
+                      />
+                      <div className="col-span-2 sm:col-span-1">
+                        <StatCard
+                          label="Dalam Radius Geofence"
+                          value={String(
+                            data.attendances.filter((row) => Boolean(row.is_within_geofence)).length
+                          )}
+                          tone="amber"
+                        />
                       </div>
-                    )}
-                  </div>
-                </>
-              ) : (() => {
+                    </div>
+
+                    <div className="glass-card rounded-3xl p-4 sm:p-6 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                          <ClipboardCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <span>Riwayat Presensi &amp; Perolehan JTM</span>
+                        </h2>
+                        {data.attendances.length > 0 && (
+                          <span className="text-[11px] font-medium text-slate-500">
+                            Menampilkan {displayedGtkAtt.length} dari {filteredGtkAtt.length} catatan
+                          </span>
+                        )}
+                      </div>
+
+                      {data.attendances.length > 0 && (
+                        <div className="relative min-w-0">
+                          <label htmlFor="gtk-absensi-search" className="sr-only">
+                            Cari riwayat presensi GTK
+                          </label>
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            id="gtk-absensi-search"
+                            type="text"
+                            value={absensiSearch}
+                            onChange={(e) => {
+                              setAbsensiSearch(e.target.value);
+                              setAbsensiVisibleCount(20);
+                            }}
+                            placeholder="Cari tanggal, jenis presensi, mapel, atau kelas..."
+                            className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                          />
+                          {absensiSearch && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAbsensiSearch('');
+                                setAbsensiVisibleCount(20);
+                              }}
+                              aria-label="Hapus pencarian presensi"
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {data.attendances.length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-6">
+                          Belum ada riwayat presensi GTK.
+                        </p>
+                      ) : filteredGtkAtt.length === 0 ? (
+                        <div className="py-8 text-center space-y-2.5">
+                          <p className="text-xs font-semibold text-slate-600">
+                            Tidak ada catatan presensi yang sesuai pencarian.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAbsensiSearch('');
+                              setAbsensiVisibleCount(20);
+                            }}
+                            className="inline-flex items-center gap-1.5 min-h-[36px] px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" /> Reset Pencarian
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Mobile Card List */}
+                          <div className="space-y-2.5 md:hidden">
+                            {displayedGtkAtt.map((a) => {
+                              const sched = a.schedule as {
+                                subject?: { name?: string | null } | null;
+                                classroom?: { name?: string | null } | null;
+                              } | null;
+                              const attType = String(a.attendance_type || '-').replace(/_/g, ' ');
+                              const dateVal = a.attendance_date
+                                ? String(a.attendance_date)
+                                : null;
+                              const dist =
+                                typeof a.distance_meters === 'number'
+                                  ? `${Math.round(a.distance_meters)} m`
+                                  : null;
+                              return (
+                                <div
+                                  key={String(a.id)}
+                                  className="modular-card rounded-2xl p-3.5 space-y-2 text-xs min-w-0"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-bold text-slate-900">
+                                      {formatDateId(dateVal)}
+                                    </span>
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                                        a.is_within_geofence
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : 'bg-amber-100 text-amber-800'
+                                      }`}
+                                    >
+                                      {a.is_within_geofence ? 'Di Lokasi' : 'Luar Radius'}
+                                      {dist ? ` (${dist})` : ''}
+                                    </span>
+                                  </div>
+                                  <p className="font-semibold text-slate-800 break-words">
+                                    {attType}
+                                    {sched?.subject?.name ? ` • ${sched.subject.name}` : ''}
+                                    {sched?.classroom?.name ? ` (${sched.classroom.name})` : ''}
+                                  </p>
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-100 text-[11px] text-slate-600">
+                                    <span>
+                                      Masuk: <strong>{formatTimeValue(a.check_in_time)}</strong> •
+                                      Pulang: <strong>{formatTimeValue(a.check_out_time)}</strong>
+                                    </span>
+                                    <span className="font-bold text-emerald-700">
+                                      {Number(a.jtm_earned) || 0} JTM
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Desktop Table */}
+                          <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="border-b border-slate-200 text-slate-500 font-semibold">
+                                  <th className="py-2.5 px-3 whitespace-nowrap">Tanggal</th>
+                                  <th className="py-2.5 px-3">Jenis Presensi &amp; Sesi</th>
+                                  <th className="py-2.5 px-3 whitespace-nowrap">Masuk</th>
+                                  <th className="py-2.5 px-3 whitespace-nowrap">Pulang</th>
+                                  <th className="py-2.5 px-3 text-center whitespace-nowrap">JTM</th>
+                                  <th className="py-2.5 px-3 text-center whitespace-nowrap">Geofence</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {displayedGtkAtt.map((a) => {
+                                  const sched = a.schedule as {
+                                    subject?: { name?: string | null } | null;
+                                    classroom?: { name?: string | null } | null;
+                                  } | null;
+                                  const attType = String(a.attendance_type || '-').replace(
+                                    /_/g,
+                                    ' '
+                                  );
+                                  const dateVal = a.attendance_date
+                                    ? String(a.attendance_date)
+                                    : null;
+                                  const dist =
+                                    typeof a.distance_meters === 'number'
+                                      ? ` (${Math.round(a.distance_meters)} m)`
+                                      : '';
+                                  return (
+                                    <tr key={String(a.id)} className="hover:bg-slate-50/70">
+                                      <td className="py-2.5 px-3 font-medium whitespace-nowrap text-slate-700">
+                                        {formatDateId(dateVal)}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-slate-800 break-words">
+                                        <span className="font-semibold">{attType}</span>
+                                        {sched?.subject?.name && (
+                                          <span className="text-slate-500">
+                                            {' '}
+                                            • {sched.subject.name}
+                                            {sched.classroom?.name
+                                              ? ` (${sched.classroom.name})`
+                                              : ''}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                                        {formatTimeValue(a.check_in_time)}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                                        {formatTimeValue(a.check_out_time)}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center font-bold whitespace-nowrap">
+                                        {Number(a.jtm_earned) || 0}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                        <span
+                                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                            a.is_within_geofence
+                                              ? 'bg-emerald-100 text-emerald-800'
+                                              : 'bg-amber-100 text-amber-800'
+                                          }`}
+                                        >
+                                          {a.is_within_geofence ? 'Di Lokasi' : 'Luar Radius'}
+                                          {dist}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {hasMoreGtkAtt && (
+                            <div className="pt-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => setAbsensiVisibleCount((c) => c + 20)}
+                                className="min-h-[40px] px-5 py-2 rounded-xl bg-white border border-slate-200 hover:border-emerald-300 text-xs font-semibold text-slate-700 hover:text-emerald-800 transition"
+                              >
+                                Muat Lebih Banyak (
+                                {filteredGtkAtt.length - displayedGtkAtt.length} tersisa)
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </>
+                );
+              })() : (() => {
+                if (scope === 'orang-tua' && !data.student) {
+                  return (
+                    <EmptyState
+                      icon={<ClipboardCheck className="w-8 h-8 text-slate-300" />}
+                      title="Belum ada data putra/putri terhubung"
+                      description="Akun Anda belum terhubung dengan data siswa. Silakan hubungi bagian Tata Usaha atau Operator Madrasah."
+                    />
+                  );
+                }
+
                 const q = absensiSearch.trim().toLowerCase();
                 const filteredAttendances = data.attendances.filter((a) => {
                   const status = String(a.status || '');
                   if (absensiStatusFilter !== 'ALL' && status !== absensiStatusFilter) return false;
                   if (q) {
                     const sched = a.schedule as {
+                      start_time?: string | null;
+                      end_time?: string | null;
                       subject?: { name?: string | null } | null;
                     } | null;
+                    const cls = a.classroom as { name?: string | null } | null;
+                    const dateVal = a.attendance_date ? String(a.attendance_date) : null;
                     const haystack = `${sched?.subject?.name || 'Absensi Harian Kelas'} ${
-                      a.notes || ''
-                    } ${a.attendance_date || ''} ${status}`.toLowerCase();
+                      cls?.name || ''
+                    } ${a.notes || ''} ${a.attendance_date || ''} ${formatDateId(dateVal)} ${status}`.toLowerCase();
                     if (!haystack.includes(q)) return false;
                   }
                   return true;
@@ -1635,6 +1933,21 @@ export function PersonalWorkspace({
                 const hasMoreAttendances = absensiVisibleCount < filteredAttendances.length;
                 const hasAbsensiFilter =
                   absensiSearch.trim().length > 0 || absensiStatusFilter !== 'ALL';
+
+                const hadirCount = data.attendances.filter((a) => a.status === 'HADIR').length;
+                const attendanceRate =
+                  data.attendances.length > 0
+                    ? Math.round((hadirCount / data.attendances.length) * 100)
+                    : 0;
+
+                const getStatusBadgeClass = (status: string) =>
+                  status === 'HADIR'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : status === 'ALPA'
+                      ? 'bg-rose-100 text-rose-800'
+                      : status === 'IZIN'
+                        ? 'bg-sky-100 text-sky-800'
+                        : 'bg-amber-100 text-amber-800';
 
                 return (
                   <>
@@ -1658,6 +1971,23 @@ export function PersonalWorkspace({
                     </div>
 
                     <div className="glass-card rounded-3xl p-4 sm:p-6 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                          <ClipboardCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <span>Catatan Kehadiran</span>
+                          {data.attendances.length > 0 && (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/70">
+                              {attendanceRate}% Hadir
+                            </span>
+                          )}
+                        </h2>
+                        {data.attendances.length > 0 && (
+                          <span className="text-[11px] font-medium text-slate-500">
+                            Menampilkan {displayedAttendances.length} dari {filteredAttendances.length} catatan
+                          </span>
+                        )}
+                      </div>
+
                       {data.attendances.length > 0 && (
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                           <div className="relative flex-1 min-w-0">
@@ -1667,27 +1997,41 @@ export function PersonalWorkspace({
                             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                             <input
                               id="absensi-search-input"
-                              type="search"
+                              type="text"
                               value={absensiSearch}
                               onChange={(e) => {
                                 setAbsensiSearch(e.target.value);
                                 setAbsensiVisibleCount(20);
                               }}
                               placeholder="Cari mata pelajaran, tanggal, atau catatan..."
-                              className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                              className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                             />
+                            {absensiSearch && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAbsensiSearch('');
+                                  setAbsensiVisibleCount(20);
+                                }}
+                                aria-label="Hapus pencarian absensi"
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap sm:overflow-visible -mx-1 px-1 shrink-0">
                             {(['ALL', 'HADIR', 'SAKIT', 'IZIN', 'ALPA'] as const).map((st) => (
                               <button
                                 key={st}
                                 type="button"
+                                aria-pressed={absensiStatusFilter === st}
                                 onClick={() => {
                                   setAbsensiStatusFilter(st);
                                   setAbsensiVisibleCount(20);
                                 }}
-                                className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                                className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 whitespace-nowrap ${
                                   absensiStatusFilter === st
                                     ? 'bg-slate-900 text-white border-slate-900'
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
@@ -1717,7 +2061,7 @@ export function PersonalWorkspace({
                                 setAbsensiStatusFilter('ALL');
                                 setAbsensiVisibleCount(20);
                               }}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                              className="inline-flex items-center gap-1.5 min-h-[36px] px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
                             >
                               <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
                             </button>
@@ -1729,8 +2073,11 @@ export function PersonalWorkspace({
                           <div className="space-y-2.5 md:hidden">
                             {displayedAttendances.map((a) => {
                               const sched = a.schedule as {
+                                start_time?: string | null;
+                                end_time?: string | null;
                                 subject?: { name?: string | null } | null;
                               } | null;
+                              const cls = a.classroom as { name?: string | null } | null;
                               const status = String(a.status || '-');
                               const dateVal = a.attendance_date
                                 ? String(a.attendance_date)
@@ -1745,13 +2092,9 @@ export function PersonalWorkspace({
                                       {formatDateId(dateVal)}
                                     </span>
                                     <span
-                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
-                                        status === 'HADIR'
-                                          ? 'bg-emerald-100 text-emerald-800'
-                                          : status === 'ALPA'
-                                            ? 'bg-rose-100 text-rose-800'
-                                            : 'bg-amber-100 text-amber-800'
-                                      }`}
+                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${getStatusBadgeClass(
+                                        status
+                                      )}`}
                                     >
                                       {status}
                                     </span>
@@ -1761,8 +2104,20 @@ export function PersonalWorkspace({
                                       ? `Mapel: ${sched.subject.name}`
                                       : 'Absensi Harian Kelas'}
                                   </p>
+                                  {(sched?.start_time || cls?.name) && (
+                                    <p className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                      {sched?.start_time && (
+                                        <span className="inline-flex items-center gap-1">
+                                          <Clock className="w-3 h-3 shrink-0" />
+                                          {formatTimeShort(sched.start_time)}
+                                          {sched.end_time ? `–${formatTimeShort(sched.end_time)}` : ''}
+                                        </span>
+                                      )}
+                                      {cls?.name && <span>Kelas {cls.name}</span>}
+                                    </p>
+                                  )}
                                   {Boolean(a.notes) && (
-                                    <p className="text-[11px] text-slate-500 break-words">
+                                    <p className="text-[11px] text-slate-500 break-words bg-slate-50 rounded-xl px-2.5 py-1.5">
                                       Catatan: {String(a.notes)}
                                     </p>
                                   )}
@@ -1775,46 +2130,55 @@ export function PersonalWorkspace({
                           <div className="hidden md:block overflow-x-auto">
                             <table className="w-full text-left text-xs border-collapse">
                               <thead>
-                                <tr className="border-b border-slate-200 text-slate-500">
-                                  <th className="py-2.5 px-3">Tanggal</th>
+                                <tr className="border-b border-slate-200 text-slate-500 font-semibold">
+                                  <th className="py-2.5 px-3 whitespace-nowrap">Tanggal</th>
                                   <th className="py-2.5 px-3">Jenis / Mata Pelajaran</th>
-                                  <th className="py-2.5 px-3 text-center">Status</th>
+                                  <th className="py-2.5 px-3 whitespace-nowrap">Waktu / Kelas</th>
+                                  <th className="py-2.5 px-3 text-center whitespace-nowrap">Status</th>
                                   <th className="py-2.5 px-3">Catatan</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
                                 {displayedAttendances.map((a) => {
                                   const sched = a.schedule as {
+                                    start_time?: string | null;
+                                    end_time?: string | null;
                                     subject?: { name?: string | null } | null;
                                   } | null;
+                                  const cls = a.classroom as { name?: string | null } | null;
                                   const status = String(a.status || '-');
                                   const dateVal = a.attendance_date
                                     ? String(a.attendance_date)
                                     : null;
                                   return (
-                                    <tr key={String(a.id)}>
-                                      <td className="py-2.5 px-3 font-medium whitespace-nowrap">
+                                    <tr key={String(a.id)} className="hover:bg-slate-50/70">
+                                      <td className="py-2.5 px-3 font-medium whitespace-nowrap text-slate-700">
                                         {formatDateId(dateVal)}
                                       </td>
-                                      <td className="py-2.5 px-3 text-slate-700">
+                                      <td className="py-2.5 px-3 text-slate-800 font-medium break-words">
                                         {sched?.subject?.name
                                           ? `Mapel: ${sched.subject.name}`
                                           : 'Absensi Harian Kelas'}
                                       </td>
-                                      <td className="py-2.5 px-3 text-center">
+                                      <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
+                                        {sched?.start_time
+                                          ? `${formatTimeShort(sched.start_time)}${
+                                              sched.end_time ? `–${formatTimeShort(sched.end_time)}` : ''
+                                            }`
+                                          : cls?.name
+                                            ? `Kelas ${cls.name}`
+                                            : '-'}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
                                         <span
-                                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                                            status === 'HADIR'
-                                              ? 'bg-emerald-100 text-emerald-800'
-                                              : status === 'ALPA'
-                                                ? 'bg-rose-100 text-rose-800'
-                                                : 'bg-amber-100 text-amber-800'
-                                          }`}
+                                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${getStatusBadgeClass(
+                                            status
+                                          )}`}
                                         >
                                           {status}
                                         </span>
                                       </td>
-                                      <td className="py-2.5 px-3 text-slate-500">
+                                      <td className="py-2.5 px-3 text-slate-500 max-w-[260px] break-words">
                                         {a.notes ? String(a.notes) : '-'}
                                       </td>
                                     </tr>
@@ -1851,8 +2215,16 @@ export function PersonalWorkspace({
               {data.bills.length === 0 ? (
                 <EmptyState
                   icon={<Receipt className="w-8 h-8 text-slate-300" />}
-                  title="Belum ada tagihan SPP / Komite"
-                  description="Belum ada tagihan yang diterbitkan untuk akun siswa ini."
+                  title={
+                    scope === 'orang-tua' && !data.student
+                      ? 'Belum ada data putra/putri terhubung'
+                      : 'Belum ada tagihan SPP / Komite'
+                  }
+                  description={
+                    scope === 'orang-tua' && !data.student
+                      ? 'Akun Anda belum terhubung dengan data siswa. Silakan hubungi bagian Tata Usaha atau Operator Madrasah.'
+                      : 'Belum ada tagihan yang diterbitkan untuk akun siswa ini.'
+                  }
                 />
               ) : (() => {
                 const totalTagihan = data.bills.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
@@ -1862,6 +2234,22 @@ export function PersonalWorkspace({
                 );
                 const totalSisa = Math.max(0, totalTagihan - totalDibayar);
 
+                const MONTH_NAMES = [
+                  '',
+                  'Januari',
+                  'Februari',
+                  'Maret',
+                  'April',
+                  'Mei',
+                  'Juni',
+                  'Juli',
+                  'Agustus',
+                  'September',
+                  'Oktober',
+                  'November',
+                  'Desember',
+                ];
+
                 const q = sppSearch.trim().toLowerCase();
                 const filteredBills = data.bills.filter((b) => {
                   if (sppStatusFilter === 'LUNAS' && b.status !== 'LUNAS') return false;
@@ -1869,9 +2257,12 @@ export function PersonalWorkspace({
                   if (sppStatusFilter === 'UNPAID' && b.status === 'LUNAS') return false;
                   if (q) {
                     const feeName = b.title || b.fee_type?.name || 'Tagihan';
+                    const monthNum = Number(b.billing_month) || 0;
+                    const monthName = MONTH_NAMES[monthNum] || '';
+                    const paddedMonth = monthNum > 0 ? String(monthNum).padStart(2, '0') : '';
                     const period =
                       b.billing_month && b.billing_year
-                        ? `${b.billing_month}/${b.billing_year}`
+                        ? `${b.billing_month}/${b.billing_year} ${paddedMonth}/${b.billing_year} ${monthName} ${b.billing_year}`
                         : '';
                     const haystack = `${feeName} ${period} ${b.status}`.toLowerCase();
                     if (!haystack.includes(q)) return false;
@@ -1940,15 +2331,25 @@ export function PersonalWorkspace({
                           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                           <input
                             id="spp-search-input"
-                            type="search"
+                            type="text"
                             value={sppSearch}
                             onChange={(e) => setSppSearch(e.target.value)}
-                            placeholder="Cari jenis biaya atau periode (mis. 11/2026)..."
-                            className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                            placeholder="Cari jenis biaya atau periode (mis. 11/2026 atau November)..."
+                            className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                           />
+                          {sppSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setSppSearch('')}
+                              aria-label="Hapus pencarian tagihan"
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap sm:overflow-visible -mx-1 px-1 shrink-0">
                           {(
                             [
                               { key: 'ALL', label: 'Semua' },
@@ -1960,8 +2361,9 @@ export function PersonalWorkspace({
                             <button
                               key={tab.key}
                               type="button"
+                              aria-pressed={sppStatusFilter === tab.key}
                               onClick={() => setSppStatusFilter(tab.key)}
-                              className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                              className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 whitespace-nowrap ${
                                 sppStatusFilter === tab.key
                                   ? 'bg-slate-900 text-white border-slate-900'
                                   : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
@@ -1985,7 +2387,7 @@ export function PersonalWorkspace({
                                 setSppSearch('');
                                 setSppStatusFilter('ALL');
                               }}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                              className="inline-flex items-center gap-1.5 min-h-[36px] px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
                             >
                               <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
                             </button>
@@ -2016,6 +2418,7 @@ export function PersonalWorkspace({
                                       </p>
                                       <p className="text-[11px] text-slate-500">
                                         Periode: {periodLabel}
+                                        {b.due_date ? ` • Tempo: ${formatDateId(b.due_date)}` : ''}
                                       </p>
                                     </div>
                                     <span
@@ -2058,7 +2461,7 @@ export function PersonalWorkspace({
                                     <button
                                       type="button"
                                       onClick={() => openSppSlip(b)}
-                                      className="w-full min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-xs transition"
+                                      className="w-full min-h-[40px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-xs transition"
                                     >
                                       <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip PNG
                                     </button>
@@ -2072,36 +2475,42 @@ export function PersonalWorkspace({
                           <div className="hidden md:block overflow-x-auto">
                             <table className="w-full text-left text-xs border-collapse">
                               <thead>
-                                <tr className="border-b border-slate-200 text-slate-500">
+                                <tr className="border-b border-slate-200 text-slate-500 font-semibold">
                                   <th className="py-2.5 px-3">Jenis Biaya</th>
-                                  <th className="py-2.5 px-3">Periode</th>
-                                  <th className="py-2.5 px-3 text-right">Nominal Tagihan</th>
-                                  <th className="py-2.5 px-3 text-right">Sudah Dibayar</th>
-                                  <th className="py-2.5 px-3 text-center">Status</th>
-                                  <th className="py-2.5 px-3 text-center">Slip</th>
+                                  <th className="py-2.5 px-3 whitespace-nowrap">Periode</th>
+                                  <th className="py-2.5 px-3 text-right whitespace-nowrap">Nominal Tagihan</th>
+                                  <th className="py-2.5 px-3 text-right whitespace-nowrap">Sudah Dibayar</th>
+                                  <th className="py-2.5 px-3 text-right whitespace-nowrap">Sisa</th>
+                                  <th className="py-2.5 px-3 text-center whitespace-nowrap">Status</th>
+                                  <th className="py-2.5 px-3 text-center whitespace-nowrap">Slip</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
                                 {filteredBills.map((b) => {
-                                  const canDownloadSlip =
-                                    Number(b.paid_amount) > 0 || b.status === 'LUNAS';
+                                  const amount = Number(b.amount) || 0;
+                                  const paid = Number(b.paid_amount) || 0;
+                                  const remaining = Math.max(0, amount - paid);
+                                  const canDownloadSlip = paid > 0 || b.status === 'LUNAS';
                                   return (
-                                    <tr key={b.id}>
-                                      <td className="py-2.5 px-3 font-semibold text-slate-900">
+                                    <tr key={b.id} className="hover:bg-slate-50/70">
+                                      <td className="py-2.5 px-3 font-semibold text-slate-900 break-words">
                                         {b.title || b.fee_type?.name || 'Tagihan'}
                                       </td>
-                                      <td className="py-2.5 px-3 text-slate-600">
+                                      <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
                                         {b.billing_month && b.billing_year
                                           ? `${b.billing_month}/${b.billing_year}`
                                           : '-'}
                                       </td>
-                                      <td className="py-2.5 px-3 text-right font-bold">
-                                        {formatRupiah(Number(b.amount) || 0)}
+                                      <td className="py-2.5 px-3 text-right font-bold whitespace-nowrap">
+                                        {formatRupiah(amount)}
                                       </td>
-                                      <td className="py-2.5 px-3 text-right text-emerald-700 font-semibold">
-                                        {formatRupiah(Number(b.paid_amount) || 0)}
+                                      <td className="py-2.5 px-3 text-right text-emerald-700 font-semibold whitespace-nowrap">
+                                        {formatRupiah(paid)}
                                       </td>
-                                      <td className="py-2.5 px-3 text-center">
+                                      <td className="py-2.5 px-3 text-right font-semibold whitespace-nowrap text-rose-600">
+                                        {remaining > 0 ? formatRupiah(remaining) : '-'}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
                                         <span
                                           className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                                             b.status === 'LUNAS'
@@ -2114,12 +2523,12 @@ export function PersonalWorkspace({
                                           {b.status}
                                         </span>
                                       </td>
-                                      <td className="py-2.5 px-3 text-center">
+                                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
                                         {canDownloadSlip ? (
                                           <button
                                             type="button"
                                             onClick={() => openSppSlip(b)}
-                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
                                             title="Lihat & Unduh Slip PNG"
                                           >
                                             <Download className="w-3 h-3" /> PNG
@@ -2144,89 +2553,178 @@ export function PersonalWorkspace({
           )}
 
           {/* 6. SLIP HONORARIUM PRIBADI (GTK) */}
-          {section === 'honorarium' && (
-            <div className="space-y-4">
-              {data.honorariums.length === 0 ? (
+          {section === 'honorarium' && (() => {
+            if (!data.teacher) {
+              return (
+                <EmptyState
+                  icon={<Banknote className="w-8 h-8 text-slate-300" />}
+                  title="Akun belum tertaut ke data GTK"
+                  description="Akun Anda belum ditautkan dengan data Guru/Tenaga Kependidikan. Silakan hubungi Operator atau Tata Usaha."
+                />
+              );
+            }
+
+            if (data.honorariums.length === 0) {
+              return (
                 <EmptyState
                   icon={<Banknote className="w-8 h-8 text-slate-300" />}
                   title="Belum ada slip honorarium"
                   description="Slip honorarium bulanan akan muncul setelah Bendahara menerbitkan rekap honorarium."
                 />
-              ) : (
-                <div className="grid md:grid-cols-2 gap-4">
-                  {data.honorariums.map((h) => (
-                    <div
-                      key={String(h.id)}
-                      className="glass-card rounded-3xl p-5 space-y-3 border border-slate-200"
-                    >
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                        <span className="text-xs font-bold text-slate-900">
-                          Periode {String(h.period_month)}/{String(h.period_year)}
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                          {String(h.status || 'DRAFT')}
-                        </span>
-                      </div>
-                      <div className="space-y-1 text-xs text-slate-600">
-                        <div className="flex justify-between">
-                          <span>Total JTM:</span>
-                          <strong>{Number(h.total_jtm) || 0} JTM</strong>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Honor JTM:</span>
-                          <strong>{formatRupiah(Number(h.jtm_honorarium_amount) || 0)}</strong>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Tunjangan Tugas &amp; Transport:</span>
-                          <strong>
-                            {formatRupiah(
-                              (Number(h.additional_duty_allowance) || 0) +
-                              (Number(h.transport_allowance) || 0)
-                            )}
-                          </strong>
-                        </div>
-                        <div className="flex justify-between pt-2 border-t border-slate-100 text-sm font-black text-emerald-800">
-                          <span>Total Diterima Bersih:</span>
-                          <span>{formatRupiah(Number(h.total_amount) || 0)}</span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setActiveHonorSlip({
-                            id: String(h.id),
-                            teacherName: data.teacher?.full_name || data.profile.fullName,
-                            teacherNip: data.teacher?.nip || null,
-                            periodMonth: Number(h.period_month) || 1,
-                            periodYear: Number(h.period_year) || new Date().getFullYear(),
-                            teachingJtm: Number(h.teaching_jtm) || 0,
-                            substituteJtm: Number(h.substitute_jtm) || 0,
-                            examSupervisorJtm: Number(h.exam_supervisor_jtm) || 0,
-                            examCommitteeJtm: Number(h.exam_committee_jtm) || 0,
-                            eventJtm: Number(h.event_jtm) || 0,
-                            picketJtm: Number(h.picket_jtm) || 0,
-                            ceremonyJtm: Number(h.ceremony_jtm) || 0,
-                            paidHolidayJtm: Number(h.paid_holiday_jtm) || 0,
-                            totalJtm: Number(h.total_jtm) || 0,
-                            ratePerJtm: Number(h.rate_per_jtm) || 0,
-                            jtmHonorariumAmount: Number(h.jtm_honorarium_amount) || 0,
-                            additionalDutyAllowance: Number(h.additional_duty_allowance) || 0,
-                            transportAllowance: Number(h.transport_allowance) || 0,
-                            totalAmount: Number(h.total_amount) || 0,
-                            status: String(h.status || 'DRAFT'),
-                            dutyItems: (h.items as HonorariumDutyItem[]) || [],
-                          })
-                        }
-                        className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold py-2 px-3 text-xs transition"
-                      >
-                        <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip (PNG / PDF)
-                      </button>
-                    </div>
-                  ))}
+              );
+            }
+
+            const HONOR_MONTHS = [
+              '',
+              'Januari',
+              'Februari',
+              'Maret',
+              'April',
+              'Mei',
+              'Juni',
+              'Juli',
+              'Agustus',
+              'September',
+              'Oktober',
+              'November',
+              'Desember',
+            ];
+
+            const totalHonorReceived = data.honorariums.reduce(
+              (sum, h) => sum + (Number(h.total_amount) || 0),
+              0
+            );
+            const totalHonorJtm = data.honorariums.reduce(
+              (sum, h) => sum + (Number(h.total_jtm) || 0),
+              0
+            );
+
+            return (
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 sm:gap-4">
+                  <StatCard
+                    label="Total Slip Tersedia"
+                    value={`${data.honorariums.length} Periode`}
+                    tone="slate"
+                  />
+                  <StatCard
+                    label="Akumulasi JTM"
+                    value={`${totalHonorJtm} JTM`}
+                    tone="amber"
+                  />
+                  <div className="col-span-2 sm:col-span-1">
+                    <StatCard
+                      label="Total Honorarium"
+                      value={formatRupiah(totalHonorReceived)}
+                      tone="emerald"
+                    />
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+
+                <div
+                  className={`grid gap-4 ${
+                    data.honorariums.length === 1
+                      ? 'grid-cols-1 max-w-xl'
+                      : 'grid-cols-1 md:grid-cols-2'
+                  }`}
+                >
+                  {data.honorariums.map((h) => {
+                    const mNum = Number(h.period_month) || 0;
+                    const monthLabel = HONOR_MONTHS[mNum] || String(h.period_month || '-');
+                    const statusStr = String(h.status || 'DRAFT').toUpperCase();
+                    const statusBadge =
+                      statusStr === 'DIBAYAR' || statusStr === 'LUNAS'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : statusStr === 'DISETUJUI'
+                          ? 'bg-sky-100 text-sky-800'
+                          : 'bg-amber-100 text-amber-800';
+
+                    return (
+                      <div
+                        key={String(h.id)}
+                        className="glass-card rounded-3xl p-4 sm:p-5 space-y-3 border border-slate-200 min-w-0"
+                      >
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5 flex-wrap">
+                          <span className="text-xs sm:text-sm font-bold text-slate-900">
+                            {monthLabel} {String(h.period_year || '')}
+                          </span>
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${statusBadge}`}
+                          >
+                            {statusStr}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5 text-xs text-slate-600">
+                          <div className="flex justify-between gap-2">
+                            <span>Total JTM:</span>
+                            <strong className="text-slate-900 shrink-0">
+                              {Number(h.total_jtm) || 0} JTM
+                            </strong>
+                          </div>
+                          <div className="flex justify-between gap-2">
+                            <span>Honor JTM:</span>
+                            <strong className="text-slate-900 shrink-0">
+                              {formatRupiah(Number(h.jtm_honorarium_amount) || 0)}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between gap-2">
+                            <span>Tunjangan Tugas &amp; Transport:</span>
+                            <strong className="text-slate-900 shrink-0">
+                              {formatRupiah(
+                                (Number(h.additional_duty_allowance) || 0) +
+                                  (Number(h.transport_allowance) || 0)
+                              )}
+                            </strong>
+                          </div>
+                          <div className="flex justify-between gap-2 pt-2 border-t border-slate-100 text-sm font-black text-emerald-800">
+                            <span>Total Diterima Bersih:</span>
+                            <span className="shrink-0">
+                              {formatRupiah(Number(h.total_amount) || 0)}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveHonorSlip({
+                              id: String(h.id),
+                              teacherName: data.teacher?.full_name || data.profile.fullName,
+                              teacherNip: data.teacher?.nip || null,
+                              homeDistanceKm:
+                                h.home_distance_km != null
+                                  ? Number(h.home_distance_km)
+                                  : data.teacher?.home_distance_km ?? null,
+                              periodMonth: Number(h.period_month) || 1,
+                              periodYear: Number(h.period_year) || new Date().getFullYear(),
+                              teachingJtm: Number(h.teaching_jtm) || 0,
+                              substituteJtm: Number(h.substitute_jtm) || 0,
+                              examSupervisorJtm: Number(h.exam_supervisor_jtm) || 0,
+                              examCommitteeJtm: Number(h.exam_committee_jtm) || 0,
+                              eventJtm: Number(h.event_jtm) || 0,
+                              picketJtm: Number(h.picket_jtm) || 0,
+                              ceremonyJtm: Number(h.ceremony_jtm) || 0,
+                              paidHolidayJtm: Number(h.paid_holiday_jtm) || 0,
+                              totalJtm: Number(h.total_jtm) || 0,
+                              ratePerJtm: Number(h.rate_per_jtm) || 0,
+                              jtmHonorariumAmount: Number(h.jtm_honorarium_amount) || 0,
+                              additionalDutyAllowance: Number(h.additional_duty_allowance) || 0,
+                              transportAllowance: Number(h.transport_allowance) || 0,
+                              totalAmount: Number(h.total_amount) || 0,
+                              status: statusStr,
+                              dutyItems: (h.items as HonorariumDutyItem[]) || [],
+                            })
+                          }
+                          className="w-full min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold py-2 px-3 text-xs transition"
+                        >
+                          <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip (PNG / PDF)
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* 7. JADWAL & RUANG UJIAN */}
           {section === 'ujian' && (() => {
@@ -2350,21 +2848,44 @@ export function PersonalWorkspace({
 
           {/* 8. CATATAN BK (NON-RAHASIA) */}
           {section === 'bk' && (() => {
+            if (scope === 'orang-tua' && !data.student) {
+              return (
+                <EmptyState
+                  icon={<ShieldAlert className="w-8 h-8 text-slate-300" />}
+                  title="Belum ada data putra/putri terhubung"
+                  description="Akun Anda belum terhubung dengan data siswa. Silakan hubungi bagian Tata Usaha atau Operator Madrasah."
+                />
+              );
+            }
+
             const q = bkSearch.trim().toLowerCase();
             const sortedBk = [...data.bkRecords].sort((a, b) =>
               (b.incident_date || '').localeCompare(a.incident_date || '')
             );
             const filteredBk = sortedBk.filter((rec) => {
-              if (bkTypeFilter !== 'ALL' && rec.record_type !== bkTypeFilter) return false;
+              const recType = String(rec.record_type || '').toUpperCase();
+              if (bkTypeFilter !== 'ALL' && recType !== bkTypeFilter) return false;
               if (q) {
-                const haystack = `${rec.record_type} ${rec.category || ''} ${rec.description} ${
+                const haystack = `${recType} ${rec.category || ''} ${rec.description || ''} ${
                   rec.follow_up || ''
-                } ${rec.counselor?.full_name || ''}`.toLowerCase();
+                } ${rec.counselor?.full_name || ''} ${rec.incident_date || ''} ${formatDateId(
+                  rec.incident_date
+                )}`.toLowerCase();
                 if (!haystack.includes(q)) return false;
               }
               return true;
             });
             const hasBkFilter = bkSearch.trim().length > 0 || bkTypeFilter !== 'ALL';
+
+            const countKonsultasi = data.bkRecords.filter(
+              (r) => String(r.record_type || '').toUpperCase() === 'KONSULTASI'
+            ).length;
+            const countPrestasi = data.bkRecords.filter(
+              (r) => String(r.record_type || '').toUpperCase() === 'PRESTASI'
+            ).length;
+            const countPelanggaran = data.bkRecords.filter(
+              (r) => String(r.record_type || '').toUpperCase() === 'PELANGGARAN'
+            ).length;
 
             return (
               <div className="space-y-4">
@@ -2372,53 +2893,94 @@ export function PersonalWorkspace({
                   <EmptyState
                     icon={<ShieldAlert className="w-8 h-8 text-slate-300" />}
                     title="Tidak ada catatan BK"
-                    description="Belum ada catatan bimbingan konseling atau pembinaan yang tercatat."
+                    description={
+                      scope === 'orang-tua'
+                        ? 'Belum ada catatan bimbingan konseling atau pembinaan yang tercatat untuk putra/putri Anda.'
+                        : 'Belum ada catatan bimbingan konseling atau pembinaan yang tercatat.'
+                    }
                   />
                 ) : (
                   <>
-                    <div className="glass-card rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                      <div className="relative flex-1 min-w-0">
-                        <label htmlFor="personal-bk-search" className="sr-only">
-                          Cari catatan BK
-                        </label>
-                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <input
-                          id="personal-bk-search"
-                          type="search"
-                          value={bkSearch}
-                          onChange={(e) => setBkSearch(e.target.value)}
-                          placeholder="Cari catatan, tindak lanjut, atau konselor..."
-                          className="w-full min-h-[38px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
-                        />
+                    <div className="grid grid-cols-3 gap-3">
+                      <StatCard
+                        label="Konsultasi"
+                        value={String(countKonsultasi)}
+                        tone="slate"
+                      />
+                      <StatCard
+                        label="Prestasi"
+                        value={String(countPrestasi)}
+                        tone="emerald"
+                      />
+                      <StatCard
+                        label="Pelanggaran"
+                        value={String(countPelanggaran)}
+                        tone={countPelanggaran > 0 ? 'rose' : 'slate'}
+                      />
+                    </div>
+
+                    <div className="glass-card rounded-2xl p-3.5 sm:p-4 space-y-3">
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                        <div className="relative flex-1 min-w-0">
+                          <label htmlFor="personal-bk-search" className="sr-only">
+                            Cari catatan BK
+                          </label>
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            id="personal-bk-search"
+                            type="text"
+                            value={bkSearch}
+                            onChange={(e) => setBkSearch(e.target.value)}
+                            placeholder="Cari catatan, tindak lanjut, tanggal, atau konselor..."
+                            className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                          />
+                          {bkSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setBkSearch('')}
+                              aria-label="Hapus pencarian catatan BK"
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap sm:overflow-visible -mx-1 px-1 shrink-0">
+                          {(
+                            [
+                              { key: 'ALL', label: 'Semua' },
+                              { key: 'KONSULTASI', label: 'Konsultasi' },
+                              { key: 'PRESTASI', label: 'Prestasi' },
+                              { key: 'PELANGGARAN', label: 'Pelanggaran' },
+                            ] as const
+                          ).map((tab) => (
+                            <button
+                              key={tab.key}
+                              type="button"
+                              aria-pressed={bkTypeFilter === tab.key}
+                              onClick={() => setBkTypeFilter(tab.key)}
+                              className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 whitespace-nowrap ${
+                                bkTypeFilter === tab.key
+                                  ? 'bg-slate-900 text-white border-slate-900'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                              }`}
+                            >
+                              {tab.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                        {(
-                          [
-                            { key: 'ALL', label: 'Semua' },
-                            { key: 'KONSULTASI', label: 'Konsultasi' },
-                            { key: 'PRESTASI', label: 'Prestasi' },
-                            { key: 'PELANGGARAN', label: 'Pelanggaran' },
-                          ] as const
-                        ).map((tab) => (
-                          <button
-                            key={tab.key}
-                            type="button"
-                            onClick={() => setBkTypeFilter(tab.key)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
-                              bkTypeFilter === tab.key
-                                ? 'bg-slate-900 text-white border-slate-900'
-                                : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
-                            }`}
-                          >
-                            {tab.label}
-                          </button>
-                        ))}
+                      <div className="flex items-center justify-between text-[11px] font-medium text-slate-500">
+                        <span>
+                          Menampilkan {filteredBk.length} dari {data.bkRecords.length} catatan
+                        </span>
                       </div>
                     </div>
 
                     {filteredBk.length === 0 ? (
-                      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center space-y-2">
+                      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center space-y-2.5">
                         <p className="text-xs font-semibold text-slate-700">
                           Tidak ada catatan BK yang sesuai dengan filter pencarian.
                         </p>
@@ -2429,7 +2991,7 @@ export function PersonalWorkspace({
                               setBkSearch('');
                               setBkTypeFilter('ALL');
                             }}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                            className="inline-flex items-center gap-1.5 min-h-[36px] px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
                           >
                             <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
                           </button>
@@ -2438,37 +3000,38 @@ export function PersonalWorkspace({
                     ) : (
                       <div className="space-y-3">
                         {filteredBk.map((rec) => {
+                          const recType = String(rec.record_type || '').toUpperCase();
                           const badgeClass =
-                            rec.record_type === 'PELANGGARAN'
+                            recType === 'PELANGGARAN'
                               ? 'bg-rose-50 text-rose-700 border-rose-200'
-                              : rec.record_type === 'PRESTASI'
+                              : recType === 'PRESTASI'
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                 : 'bg-sky-50 text-sky-700 border-sky-200';
                           return (
                             <div
                               key={rec.id}
-                              className="glass-card rounded-3xl p-5 space-y-2 min-w-0"
+                              className="glass-card rounded-3xl p-4 sm:p-5 space-y-2.5 min-w-0"
                             >
                               <div className="flex items-center justify-between gap-2 flex-wrap">
                                 <span
-                                  className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold ${badgeClass}`}
+                                  className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold max-w-full break-words ${badgeClass}`}
                                 >
-                                  {rec.record_type} {rec.category ? `• ${rec.category}` : ''}
+                                  {recType || 'CATATAN'} {rec.category ? `• ${rec.category}` : ''}
                                 </span>
-                                <span className="text-[11px] font-mono text-slate-500">
+                                <span className="text-[11px] font-mono text-slate-500 shrink-0">
                                   {formatDateId(rec.incident_date)}
                                 </span>
                               </div>
-                              <p className="text-xs text-slate-800 font-medium break-words">
+                              <p className="text-xs sm:text-[13px] text-slate-800 font-medium break-words leading-relaxed">
                                 {rec.description}
                               </p>
                               {rec.follow_up && (
-                                <p className="text-[11px] text-emerald-700 break-words">
-                                  Tindak Lanjut: {rec.follow_up}
+                                <p className="text-[11px] text-emerald-800 bg-emerald-50/70 border border-emerald-100 rounded-xl px-3 py-2 break-words">
+                                  <span className="font-semibold">Tindak Lanjut:</span> {rec.follow_up}
                                 </p>
                               )}
                               {rec.counselor?.full_name && (
-                                <p className="text-[11px] text-slate-400 break-words">
+                                <p className="text-[11px] text-slate-500 break-words">
                                   Guru BK: {rec.counselor.full_name}
                                 </p>
                               )}

@@ -324,3 +324,236 @@ export async function syncStudentDocToGuardians(
     }
   }
 }
+
+export const SHARED_SELF_DOC_TYPES = ['KTP', 'KK'] as const;
+
+/**
+ * Sinkronkan biodata bersama (NIK & alamat domisili) antar entitas milik satu profile_id
+ * (teachers_staff <-> student_guardians <-> students).
+ */
+export async function syncSharedBiodataAcrossSelfEntities(
+  supabase: AdminClient,
+  profileId: string,
+  fields: {
+    nik?: string | null;
+    address?: string | null;
+    rt_rw?: string | null;
+    village?: string | null;
+    district?: string | null;
+    city?: string | null;
+    province?: string | null;
+  },
+  exclude?: { entityType: 'GTK' | 'ORANG_TUA'; entityId?: string }
+) {
+  const now = new Date().toISOString();
+  const sharedPayload: Record<string, unknown> = {
+    nik: fields.nik ?? null,
+    address: fields.address ?? null,
+    rt_rw: fields.rt_rw ?? null,
+    village: fields.village ?? null,
+    district: fields.district ?? null,
+    city: fields.city ?? null,
+    province: fields.province ?? null,
+    updated_at: now,
+  };
+
+  if (exclude?.entityType !== 'GTK') {
+    await supabase.from('teachers_staff').update(sharedPayload).eq('profile_id', profileId);
+  }
+
+  const { data: guardians } = await supabase
+    .from('student_guardians')
+    .select('id, student_id, relationship, full_name, nik, occupation, phone')
+    .eq('profile_id', profileId)
+    .eq('is_active', true);
+
+  for (const g of guardians || []) {
+    if (exclude?.entityType === 'ORANG_TUA' && exclude.entityId === g.id) {
+      continue;
+    }
+    await supabase.from('student_guardians').update(sharedPayload).eq('id', g.id);
+    await syncGuardianToStudent(supabase, {
+      student_id: g.student_id,
+      relationship: g.relationship,
+      full_name: g.full_name,
+      nik: fields.nik ?? null,
+      occupation: g.occupation,
+      phone: g.phone,
+    });
+  }
+}
+
+/**
+ * Cari dan tautkan otomatis baris `teachers_staff` untuk user yang login:
+ * 1) Cocokkan `profile_id = userId`
+ * 2) Fallback: jika `profile_id IS NULL`, cocokkan `email` (case-insensitive)
+ * 3) Fallback: jika masih belum ketemu, cocokkan unik `phone` atau `full_name` (exact) dengan `profile_id IS NULL`
+ */
+export async function resolveTeacherForProfile(
+  supabase: AdminClient,
+  params: {
+    userId: string;
+    email?: string | null;
+    fullName?: string | null;
+    phone?: string | null;
+  }
+): Promise<Record<string, unknown> | null> {
+  const { data: byProfile } = await supabase
+    .from('teachers_staff')
+    .select('*')
+    .eq('profile_id', params.userId)
+    .limit(1)
+    .maybeSingle();
+
+  if (byProfile) return byProfile as Record<string, unknown>;
+
+  let matched: Record<string, unknown> | null = null;
+
+  if (params.email) {
+    const { data: byEmail } = await supabase
+      .from('teachers_staff')
+      .select('*')
+      .ilike('email', params.email.trim())
+      .is('profile_id', null)
+      .limit(2);
+    if (byEmail && byEmail.length === 1) {
+      matched = byEmail[0] as Record<string, unknown>;
+    }
+  }
+
+  if (!matched && params.phone && params.phone.trim()) {
+    const { data: byPhone } = await supabase
+      .from('teachers_staff')
+      .select('*')
+      .eq('phone', params.phone.trim())
+      .is('profile_id', null)
+      .limit(2);
+    if (byPhone && byPhone.length === 1) {
+      matched = byPhone[0] as Record<string, unknown>;
+    }
+  }
+
+  if (!matched && params.fullName && params.fullName.trim()) {
+    const { data: byName } = await supabase
+      .from('teachers_staff')
+      .select('*')
+      .ilike('full_name', params.fullName.trim())
+      .is('profile_id', null)
+      .limit(2);
+    if (byName && byName.length === 1) {
+      matched = byName[0] as Record<string, unknown>;
+    }
+  }
+
+  if (matched?.id) {
+    await supabase
+      .from('teachers_staff')
+      .update({
+        profile_id: params.userId,
+        email: (matched.email as string | null) || params.email || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', matched.id)
+      .is('profile_id', null);
+    return {
+      ...matched,
+      profile_id: params.userId,
+      email: (matched.email as string | null) || params.email || null,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Sinkronkan dokumen pribadi bersama (KTP / KK) antar GTK dan Orang Tua/Wali
+ * milik profile_id yang sama, serta ke student_documents anak terkait.
+ */
+export async function syncPersonalSdmDocAcrossRoles(
+  supabase: AdminClient,
+  params: {
+    profileId: string;
+    sourceEntityType: 'GTK' | 'ORANG_TUA';
+    sourceEntityId: string;
+    documentType: string;
+    documentTitle: string | null;
+    documentNumber: string | null;
+    fileName: string;
+    fileUrl: string;
+    objectKey: string | null;
+    mimeType: string | null;
+    fileSize: number | null;
+    uploadedBy: string;
+  }
+) {
+  if (!SHARED_SELF_DOC_TYPES.includes(params.documentType as 'KTP' | 'KK')) return;
+
+  const [{ data: teacher }, { data: guardians }] = await Promise.all([
+    supabase.from('teachers_staff').select('id').eq('profile_id', params.profileId).maybeSingle(),
+    supabase
+      .from('student_guardians')
+      .select('id')
+      .eq('profile_id', params.profileId)
+      .eq('is_active', true),
+  ]);
+
+  const targets: Array<{ entityType: 'GTK' | 'ORANG_TUA'; entityId: string }> = [];
+  if (
+    teacher?.id &&
+    !(params.sourceEntityType === 'GTK' && params.sourceEntityId === teacher.id)
+  ) {
+    targets.push({ entityType: 'GTK', entityId: teacher.id as string });
+  }
+  for (const g of guardians || []) {
+    if (!(params.sourceEntityType === 'ORANG_TUA' && params.sourceEntityId === g.id)) {
+      targets.push({ entityType: 'ORANG_TUA', entityId: g.id as string });
+    }
+  }
+
+  const now = new Date().toISOString();
+  for (const target of targets) {
+    const { data: existing } = await supabase
+      .from('sdm_documents')
+      .select('id')
+      .eq('entity_type', target.entityType)
+      .eq('entity_id', target.entityId)
+      .eq('document_type', params.documentType)
+      .maybeSingle();
+
+    const payload = {
+      entity_type: target.entityType,
+      entity_id: target.entityId,
+      document_type: params.documentType,
+      document_title: params.documentTitle,
+      document_number: params.documentNumber,
+      file_name: params.fileName,
+      file_url: params.fileUrl,
+      object_key: params.objectKey,
+      mime_type: params.mimeType,
+      file_size: params.fileSize,
+      uploaded_by: params.uploadedBy,
+      updated_at: now,
+    };
+
+    if (existing) {
+      await supabase.from('sdm_documents').update(payload).eq('id', existing.id);
+    } else {
+      await supabase.from('sdm_documents').insert(payload);
+    }
+
+    if (target.entityType === 'ORANG_TUA') {
+      await syncGuardianDocToStudent(supabase, {
+        guardianId: target.entityId,
+        documentType: params.documentType,
+        documentTitle: params.documentTitle,
+        documentNumber: params.documentNumber,
+        fileName: params.fileName,
+        fileUrl: params.fileUrl,
+        objectKey: params.objectKey,
+        mimeType: params.mimeType,
+        fileSize: params.fileSize,
+        uploadedBy: params.uploadedBy,
+      });
+    }
+  }
+}

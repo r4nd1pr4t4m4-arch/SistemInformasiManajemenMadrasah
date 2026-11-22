@@ -4,7 +4,36 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { isR2Configured, uploadBufferToR2 } from '@/lib/storage/r2';
-import { syncGuardianDocToStudent, syncStudentDocToGuardians } from '@/lib/sdm/sync';
+import {
+  SHARED_SELF_DOC_TYPES,
+  syncGuardianDocToStudent,
+  syncPersonalSdmDocAcrossRoles,
+  syncStudentDocToGuardians,
+} from '@/lib/sdm/sync';
+
+async function resolveOwnerProfileIdOfSdmEntity(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  entityType: string,
+  entityId: string
+): Promise<string | null> {
+  if (entityType === 'GTK') {
+    const { data } = await supabase
+      .from('teachers_staff')
+      .select('profile_id')
+      .eq('id', entityId)
+      .maybeSingle();
+    return (data?.profile_id as string | null) || null;
+  }
+  if (entityType === 'ORANG_TUA') {
+    const { data } = await supabase
+      .from('student_guardians')
+      .select('profile_id')
+      .eq('id', entityId)
+      .maybeSingle();
+    return (data?.profile_id as string | null) || null;
+  }
+  return null;
+}
 
 async function isSelfOwnerOfSdmEntity(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
@@ -212,9 +241,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ document: data }, { status: 201 });
     }
 
-    const { data, error } = await supabase
-      .from('sdm_documents')
-      .insert({
+    const isSharedSelfDoc = SHARED_SELF_DOC_TYPES.includes(documentType as 'KTP' | 'KK');
+    let savedDoc: Record<string, unknown> | null = null;
+
+    if (isSharedSelfDoc && (entityType === 'GTK' || entityType === 'ORANG_TUA')) {
+      const { data: existingSdm } = await supabase
+        .from('sdm_documents')
+        .select('id')
+        .eq('entity_type', entityType)
+        .eq('entity_id', entityId)
+        .eq('document_type', documentType)
+        .maybeSingle();
+
+      const sdmPayload = {
         entity_type: entityType,
         entity_id: entityId,
         document_type: documentType,
@@ -226,11 +265,50 @@ export async function POST(request: NextRequest) {
         mime_type: file.type,
         file_size: file.size,
         uploaded_by: session.userId,
-      })
-      .select('*')
-      .single();
+        updated_at: new Date().toISOString(),
+      };
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (existingSdm) {
+        const { data, error } = await supabase
+          .from('sdm_documents')
+          .update(sdmPayload)
+          .eq('id', existingSdm.id)
+          .select('*')
+          .single();
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        savedDoc = data;
+      } else {
+        const { data, error } = await supabase
+          .from('sdm_documents')
+          .insert(sdmPayload)
+          .select('*')
+          .single();
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        savedDoc = data;
+      }
+    } else {
+      const { data, error } = await supabase
+        .from('sdm_documents')
+        .insert({
+          entity_type: entityType,
+          entity_id: entityId,
+          document_type: documentType,
+          document_title: documentTitle,
+          document_number: documentNumber,
+          file_name: file.name,
+          file_url: fileUrl,
+          object_key: objectKey,
+          mime_type: file.type,
+          file_size: file.size,
+          uploaded_by: session.userId,
+        })
+        .select('*')
+        .single();
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      savedDoc = data;
+    }
+
     if (entityType === 'ORANG_TUA') {
       await syncGuardianDocToStudent(supabase, {
         guardianId: entityId,
@@ -245,7 +323,27 @@ export async function POST(request: NextRequest) {
         uploadedBy: session.userId,
       });
     }
-    return NextResponse.json({ document: data }, { status: 201 });
+
+    if (isSharedSelfDoc && (entityType === 'GTK' || entityType === 'ORANG_TUA')) {
+      const ownerProfileId = await resolveOwnerProfileIdOfSdmEntity(supabase, entityType, entityId);
+      if (ownerProfileId) {
+        await syncPersonalSdmDocAcrossRoles(supabase, {
+          profileId: ownerProfileId,
+          sourceEntityType: entityType,
+          sourceEntityId: entityId,
+          documentType,
+          documentTitle,
+          documentNumber,
+          fileName: file.name,
+          fileUrl,
+          objectKey,
+          mimeType: file.type,
+          fileSize: file.size,
+          uploadedBy: session.userId,
+        });
+      }
+    }
+    return NextResponse.json({ document: savedDoc }, { status: 201 });
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message || 'Gagal mengunggah dokumen SDM.' },
@@ -341,12 +439,53 @@ export async function DELETE(request: NextRequest) {
 
   const { data: targetRow } = await supabase
     .from(table)
-    .select('id, file_url, object_key')
+    .select('id, file_url, object_key, entity_type, entity_id, document_type')
     .eq('id', id)
     .maybeSingle();
 
   const { error } = await supabase.from(table).delete().eq('id', id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Hapus salinan dokumen bersama (KTP / KK) milik profile_id yang sama
+  if (
+    table === 'sdm_documents' &&
+    targetRow &&
+    SHARED_SELF_DOC_TYPES.includes(String(targetRow.document_type || '') as 'KTP' | 'KK') &&
+    (targetRow.entity_type === 'GTK' || targetRow.entity_type === 'ORANG_TUA')
+  ) {
+    const ownerProfileId = await resolveOwnerProfileIdOfSdmEntity(
+      supabase,
+      String(targetRow.entity_type),
+      String(targetRow.entity_id)
+    );
+    if (ownerProfileId) {
+      const [{ data: teacher }, { data: guardians }] = await Promise.all([
+        supabase
+          .from('teachers_staff')
+          .select('id')
+          .eq('profile_id', ownerProfileId)
+          .maybeSingle(),
+        supabase
+          .from('student_guardians')
+          .select('id')
+          .eq('profile_id', ownerProfileId)
+          .eq('is_active', true),
+      ]);
+      const siblingIds = [
+        ...(teacher?.id ? [teacher.id as string] : []),
+        ...(guardians || []).map((g) => g.id as string),
+      ].filter((sid) => sid !== String(targetRow.entity_id));
+
+      if (siblingIds.length > 0 && targetRow.file_url) {
+        await supabase
+          .from('sdm_documents')
+          .delete()
+          .in('entity_id', siblingIds)
+          .eq('document_type', String(targetRow.document_type))
+          .eq('file_url', String(targetRow.file_url));
+      }
+    }
+  }
 
   if (targetRow?.object_key) {
     const [{ count: sdmRefCount }, { count: studentRefCount }] = await Promise.all([

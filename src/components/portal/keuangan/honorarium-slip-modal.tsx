@@ -168,7 +168,11 @@ export function HonorariumSlipModal({
                   key={label}
                   className="flex items-center justify-between gap-2 px-3 py-1.5 text-[11px]"
                 >
-                  <span className={val > 0 ? 'text-slate-700 font-medium' : 'text-slate-400'}>
+                  <span
+                    className={`min-w-0 break-words ${
+                      val > 0 ? 'text-slate-700 font-medium' : 'text-slate-400'
+                    }`}
+                  >
                     {label}
                   </span>
                   <div className="flex items-center gap-3 font-mono shrink-0">

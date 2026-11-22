@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getCurrentUserWithRoles } from '@/lib/auth/session';
+import { resolveTeacherForProfile } from '@/lib/sdm/sync';
 
 export async function GET(request: NextRequest) {
   const session = await getCurrentUserWithRoles();
@@ -64,24 +65,60 @@ export async function GET(request: NextRequest) {
   }
 
   if (scope === 'orang-tua' || session.roles.includes('ORANG_TUA')) {
-    const { data: guards } = await supabase
+    const { data: guards, error: guardsErr } = await supabase
       .from('student_guardians')
       .select(
-        'id, relation, is_primary, student:students(id, full_name, nis, nisn, gender, status, phone, email)'
+        'id, relationship, is_primary, student:students(id, full_name, nis, nisn, gender, status, phone, email)'
       )
       .eq('profile_id', session.userId)
       .eq('is_active', true)
       .order('is_primary', { ascending: false });
 
-    children = (guards || [])
-      .map(
-        (g): Record<string, unknown> => ({
-          relation: g.relation,
+    if (guardsErr) {
+      console.error('[api/portal/personal] student_guardians query error:', guardsErr.message);
+    }
+
+    let guardianRows = guards || [];
+
+    // Fallback: jika role ORANG_TUA aktif namun profile_id belum tertaut, cocokkan via email yang sama
+    if (guardianRows.length === 0 && session.email) {
+      const { data: byEmailGuards } = await supabase
+        .from('student_guardians')
+        .select(
+          'id, relationship, is_primary, student:students(id, full_name, nis, nisn, gender, status, phone, email)'
+        )
+        .ilike('email', session.email)
+        .is('profile_id', null)
+        .eq('is_active', true)
+        .order('is_primary', { ascending: false });
+
+      if (byEmailGuards && byEmailGuards.length > 0) {
+        await supabase
+          .from('student_guardians')
+          .update({ profile_id: session.userId, updated_at: new Date().toISOString() })
+          .in(
+            'id',
+            byEmailGuards.map((g) => g.id)
+          );
+        guardianRows = byEmailGuards;
+      }
+    }
+
+    const childMap = new Map<string, Record<string, unknown>>();
+    for (const g of guardianRows) {
+      const st = (Array.isArray(g.student) ? g.student[0] : g.student) as
+        | Record<string, unknown>
+        | null
+        | undefined;
+      if (st?.id && !childMap.has(String(st.id))) {
+        childMap.set(String(st.id), {
+          relation: g.relationship,
           is_primary: g.is_primary,
-          ...((g.student as unknown as Record<string, unknown>) || {}),
-        })
-      )
-      .filter((c) => Boolean(c.id));
+          ...st,
+        });
+      }
+    }
+    children = Array.from(childMap.values());
 
     if (scope === 'orang-tua' && children.length > 0) {
       activeStudent =
@@ -91,12 +128,17 @@ export async function GET(request: NextRequest) {
   }
 
   if (scope === 'gtk') {
-    const { data: tc } = await supabase
-      .from('teachers_staff')
-      .select('id, full_name, nip, nuptk, employee_type, phone, email, home_distance_km')
-      .eq('profile_id', session.userId)
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('full_name, phone, email')
+      .eq('id', session.userId)
       .maybeSingle();
-    if (tc) activeTeacher = tc;
+    activeTeacher = await resolveTeacherForProfile(supabase, {
+      userId: session.userId,
+      email: prof?.email || session.email,
+      fullName: prof?.full_name || session.fullName,
+      phone: prof?.phone || null,
+    });
   }
 
   // Resolve active classroom for activeStudent (prefer active academic year)

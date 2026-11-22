@@ -73,10 +73,16 @@ export async function POST(request: Request) {
 
     const factors = factorList?.factors || [];
     for (const factor of factors) {
-      await admin.auth.admin.mfa.deleteFactor({
+      const { error: delErr } = await admin.auth.admin.mfa.deleteFactor({
         id: factor.id,
         userId: session.userId,
       });
+      if (delErr) {
+        return NextResponse.json(
+          { error: `Gagal menghapus perangkat MFA: ${delErr.message}` },
+          { status: 500 }
+        );
+      }
     }
 
     const response = NextResponse.json({

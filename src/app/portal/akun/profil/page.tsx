@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Camera,
@@ -14,10 +14,12 @@ import {
   Lock,
   Mail,
   Phone,
+  RefreshCw,
   Save,
   Send,
   ShieldCheck,
   User,
+  X,
   XCircle,
 } from 'lucide-react';
 import { digitsOnly, PHONE_MAX } from '@/lib/validation/identity';
@@ -65,9 +67,11 @@ interface AccountProfile {
 
 export default function AkunProfilPage() {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [profile, setProfile] = useState<AccountProfile>({
     full_name: '',
@@ -96,10 +100,27 @@ export default function AkunProfilPage() {
   const [otpSentMessage, setOtpSentMessage] = useState<string | null>(null);
   const [changingEmail, setChangingEmail] = useState(false);
 
-  async function loadProfile() {
+  const showToast = useCallback((type: 'ok' | 'err', msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ type, msg });
+    toastTimerRef.current = setTimeout(() => setToast(null), 4500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const loadProfile = useCallback(async () => {
+    setLoadError(null);
     try {
       const res = await fetch('/api/akun/profil', { cache: 'no-store' });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLoadError(data.error || 'Gagal memuat profil akun.');
+        return;
+      }
       if (data.profile) {
         setProfile({
           full_name: data.profile.full_name || '',
@@ -122,19 +143,16 @@ export default function AkunProfilPage() {
           nameRemainingDays: data.profile.nameRemainingDays ?? 0,
         });
       }
+    } catch {
+      setLoadError('Tidak dapat terhubung ke server untuk memuat profil akun.');
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadProfile();
-  }, []);
-
-  function showToast(type: 'ok' | 'err', msg: string) {
-    setToast({ type, msg });
-    setTimeout(() => setToast(null), 4500);
-  }
+  }, [loadProfile]);
 
   async function handleSaveBasic(e: React.FormEvent) {
     e.preventDefault();
@@ -147,13 +165,15 @@ export default function AkunProfilPage() {
           phone: profile.phone,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast('ok', 'Profil akun berhasil diperbarui.');
         await loadProfile();
       } else {
         showToast('err', data.error || 'Gagal memperbarui profil.');
       }
+    } catch {
+      showToast('err', 'Tidak dapat terhubung ke server.');
     } finally {
       setSaving(false);
     }
@@ -172,7 +192,7 @@ export default function AkunProfilPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ new_full_name: newFullName.trim(), reason: nameReason.trim() }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast('ok', 'Pengajuan perubahan nama terkirim dan menunggu persetujuan Admin.');
         setNewFullName('');
@@ -181,6 +201,8 @@ export default function AkunProfilPage() {
       } else {
         showToast('err', data.error || 'Gagal mengirim pengajuan perubahan nama.');
       }
+    } catch {
+      showToast('err', 'Tidak dapat terhubung ke server.');
     } finally {
       setSubmittingName(false);
     }
@@ -190,13 +212,15 @@ export default function AkunProfilPage() {
     setSubmittingName(true);
     try {
       const res = await fetch('/api/akun/nama', { method: 'DELETE' });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast('ok', 'Pengajuan perubahan nama dibatalkan.');
         await loadProfile();
       } else {
         showToast('err', data.error || 'Gagal membatalkan pengajuan.');
       }
+    } catch {
+      showToast('err', 'Tidak dapat terhubung ke server.');
     } finally {
       setSubmittingName(false);
     }
@@ -233,6 +257,9 @@ export default function AkunProfilPage() {
     }
 
     const reader = new FileReader();
+    reader.onerror = () => {
+      showToast('err', 'Gagal membaca file foto yang dipilih.');
+    };
     reader.onload = async () => {
       const dataUrl = typeof reader.result === 'string' ? reader.result : '';
       if (!dataUrl) return;
@@ -246,13 +273,15 @@ export default function AkunProfilPage() {
             avatar_url: dataUrl,
           }),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (res.ok) {
           showToast('ok', 'Foto profil berhasil diunggah dan menunggu persetujuan Admin.');
           await loadProfile();
         } else {
           showToast('err', data.error || 'Gagal mengunggah foto profil.');
         }
+      } catch {
+        showToast('err', 'Tidak dapat terhubung ke server saat mengunggah foto.');
       } finally {
         setUploadingAvatar(false);
       }
@@ -273,13 +302,15 @@ export default function AkunProfilPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newEmail: newEmail.trim() }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setOtpSentMessage(data.message);
         showToast('ok', data.message);
       } else {
         showToast('err', data.error || 'Gagal mengirim kode OTP ke email baru.');
       }
+    } catch {
+      showToast('err', 'Tidak dapat terhubung ke server.');
     } finally {
       setSendingOtp(false);
     }
@@ -287,6 +318,14 @@ export default function AkunProfilPage() {
 
   async function handleConfirmEmailChange(e: React.FormEvent) {
     e.preventDefault();
+    if (otpCode.trim().length !== 6) {
+      showToast('err', 'Masukkan 6 digit kode OTP dari email baru.');
+      return;
+    }
+    if (profile.mfaEnabled && mfaCode.trim().length !== 6) {
+      showToast('err', 'Masukkan 6 digit kode MFA Authenticator.');
+      return;
+    }
     setChangingEmail(true);
     try {
       const res = await fetch('/api/akun/email/confirm', {
@@ -299,7 +338,7 @@ export default function AkunProfilPage() {
           mfaCode: mfaCode.trim(),
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast('ok', data.message || 'Alamat email berhasil diperbarui.');
         setNewEmail('');
@@ -311,6 +350,8 @@ export default function AkunProfilPage() {
       } else {
         showToast('err', data.error || 'Gagal mengganti alamat email.');
       }
+    } catch {
+      showToast('err', 'Tidak dapat terhubung ke server.');
     } finally {
       setChangingEmail(false);
     }
@@ -319,7 +360,31 @@ export default function AkunProfilPage() {
   if (loading) {
     return (
       <div className="max-w-5xl mx-auto glass-card rounded-3xl p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin" /> Memuat profil akun...
+        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> Memuat profil akun...
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div
+        role="alert"
+        className="max-w-5xl mx-auto rounded-3xl border border-rose-200 bg-rose-50 p-6 text-xs text-rose-800 flex flex-wrap items-center justify-between gap-3"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span className="break-words">{loadError}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setLoading(true);
+            loadProfile();
+          }}
+          className="min-h-[38px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-rose-200 font-semibold hover:bg-rose-100/60 transition"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Coba Lagi
+        </button>
       </div>
     );
   }
@@ -336,24 +401,35 @@ export default function AkunProfilPage() {
     <div className="max-w-5xl mx-auto space-y-6">
       {toast && (
         <div
-          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center gap-2 ${
+          role={toast.type === 'ok' ? 'status' : 'alert'}
+          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center justify-between gap-2 ${
             toast.type === 'ok'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : 'bg-rose-50 border-rose-200 text-rose-700'
           }`}
         >
-          {toast.type === 'ok' ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-          ) : (
-            <AlertCircle className="w-4 h-4 shrink-0" />
-          )}
-          <span>{toast.msg}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            {toast.type === 'ok' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0" />
+            )}
+            <span className="break-words">{toast.msg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            aria-label="Tutup notifikasi"
+            className="p-1 rounded-lg hover:bg-black/5 shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
-      <div className="grid md:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 sm:gap-6">
         {/* Kartu Profil & Unggah Foto */}
-        <div className="md:col-span-5 glass-card rounded-3xl p-6 space-y-5 h-fit">
+        <div className="md:col-span-5 glass-card rounded-3xl p-4 sm:p-6 space-y-5 h-fit min-w-0">
           <div className="flex items-center gap-4">
             {profile.avatar_url ? (
               <img
@@ -468,8 +544,8 @@ export default function AkunProfilPage() {
         </div>
 
         {/* Kolom Kanan: Informasi Dasar + Ganti Alamat Email */}
-        <div className="md:col-span-7 space-y-6">
-          <form onSubmit={handleSaveBasic} className="glass-card rounded-3xl p-7 space-y-5">
+        <div className="md:col-span-7 space-y-5 sm:space-y-6 min-w-0">
+          <form onSubmit={handleSaveBasic} className="glass-card rounded-3xl p-4 sm:p-6 lg:p-7 space-y-5">
             <div>
               <h2 className="text-base font-bold text-slate-900">Perbarui Informasi Profil</h2>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -479,8 +555,8 @@ export default function AkunProfilPage() {
 
             <div className="space-y-4">
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-700">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                  <label htmlFor="profil-full-name" className="block text-xs font-semibold text-slate-700">
                     Nama Lengkap
                   </label>
                   <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
@@ -488,12 +564,13 @@ export default function AkunProfilPage() {
                   </span>
                 </div>
                 <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
+                    id="profil-full-name"
                     disabled
                     type="text"
                     value={profile.full_name}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-100 text-slate-600 pl-10 pr-3.5 py-2.5 text-sm cursor-not-allowed"
+                    className="w-full min-h-[42px] rounded-xl border border-slate-200 bg-slate-100 text-slate-600 pl-10 pr-3.5 py-2.5 text-sm cursor-not-allowed"
                   />
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
@@ -502,20 +579,23 @@ export default function AkunProfilPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label htmlFor="profil-phone" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Nomor HP / WhatsApp
                 </label>
                 <div className="relative">
-                  <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
+                    id="profil-phone"
                     type="tel"
+                    inputMode="numeric"
                     value={profile.phone || ''}
                     maxLength={PHONE_MAX}
-                    onChange={(e) =>
-                      setProfile({ ...profile, phone: digitsOnly(e.target.value, PHONE_MAX) })
-                    }
+                    onChange={(e) => {
+                      const cleanPhone = digitsOnly(e.target.value, PHONE_MAX);
+                      setProfile((prev) => ({ ...prev, phone: cleanPhone }));
+                    }}
                     placeholder="08xxxxxxxxxx (Maks. 12 digit)"
-                    className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3.5 py-2.5 text-sm"
+                    className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-white pl-10 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                   />
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
@@ -527,21 +607,21 @@ export default function AkunProfilPage() {
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2.5 rounded-2xl text-sm transition"
+              className="w-full sm:w-auto min-h-[42px] inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold px-6 py-2.5 rounded-2xl text-sm transition"
             >
-              <Save className="w-4 h-4" />
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               {saving ? 'Menyimpan...' : 'Simpan Nomor Kontak'}
             </button>
           </form>
 
           {/* Pengajuan Perubahan Nama Lengkap */}
-          <div className="glass-card rounded-3xl p-7 space-y-5">
+          <div className="glass-card rounded-3xl p-4 sm:p-6 lg:p-7 space-y-5">
             <div>
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <FileSignature className="w-4 h-4 text-emerald-700" />
-                Pengajuan Perubahan Nama Lengkap
+                <FileSignature className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>Pengajuan Perubahan Nama Lengkap</span>
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                 Perubahan nama resmi akun memerlukan persetujuan Admin Madrasah dan dibatasi 1 kali setiap 30 hari.
               </p>
             </div>
@@ -549,21 +629,21 @@ export default function AkunProfilPage() {
             {/* Status: Pengajuan Sedang Menunggu Persetujuan */}
             {profile.pendingNameRequest && (
               <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5 min-w-0">
                     <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                    <div className="space-y-1">
+                    <div className="space-y-1 min-w-0">
                       <p className="text-xs font-bold text-amber-900">
                         Pengajuan Perubahan Nama Menunggu Persetujuan
                       </p>
-                      <p className="text-xs text-amber-800">
+                      <p className="text-xs text-amber-800 break-words">
                         Nama Baru:{' '}
                         <strong className="text-slate-900">
                           {profile.pendingNameRequest.new_full_name}
                         </strong>
                       </p>
                       {profile.pendingNameRequest.reason && (
-                        <p className="text-[11px] text-amber-700">
+                        <p className="text-[11px] text-amber-700 break-words">
                           Alasan: {profile.pendingNameRequest.reason}
                         </p>
                       )}
@@ -577,7 +657,7 @@ export default function AkunProfilPage() {
                     type="button"
                     disabled={submittingName}
                     onClick={handleCancelNameChange}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-xs font-semibold transition shrink-0"
+                    className="w-full sm:w-auto min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-xs font-semibold transition shrink-0"
                   >
                     {submittingName ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -595,13 +675,13 @@ export default function AkunProfilPage() {
               <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-xs text-rose-900 space-y-1.5">
                 <div className="flex items-center gap-2 font-bold">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  Pengajuan Perubahan Nama Sebelumnya Ditolak oleh Admin
+                  <span>Pengajuan Perubahan Nama Sebelumnya Ditolak oleh Admin</span>
                 </div>
-                <p>
+                <p className="break-words">
                   Nama yang diajukan: <strong>{profile.lastRejectedNameRequest.new_full_name}</strong>
                 </p>
                 {profile.lastRejectedNameRequest.review_notes && (
-                  <p className="text-[11px] text-rose-700 bg-white/60 p-2 rounded-xl border border-rose-100">
+                  <p className="text-[11px] text-rose-700 bg-white/60 p-2 rounded-xl border border-rose-100 break-words">
                     Catatan Admin: {profile.lastRejectedNameRequest.review_notes}
                   </p>
                 )}
@@ -635,16 +715,17 @@ export default function AkunProfilPage() {
             {profile.canRequestNameChange && (
               <form onSubmit={handleSubmitNameChange} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  <label htmlFor="profil-new-fullname" className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Nama Lengkap Baru Sesuai Dokumen Resmi <span className="text-rose-600">*</span>
                   </label>
                   <input
+                    id="profil-new-fullname"
                     required
                     type="text"
                     value={newFullName}
                     onChange={(e) => setNewFullName(e.target.value)}
                     placeholder="Masukkan nama lengkap baru..."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm"
+                    className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">
                     Gunakan ejaan yang sesuai dengan KTP/Kartu Keluarga/Ijazah.
@@ -652,22 +733,23 @@ export default function AkunProfilPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  <label htmlFor="profil-name-reason" className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Alasan Perubahan Nama (Opsional)
                   </label>
                   <textarea
+                    id="profil-name-reason"
                     rows={2}
                     value={nameReason}
                     onChange={(e) => setNameReason(e.target.value)}
                     placeholder="Contoh: Perbaikan ejaan sesuai Ijazah / Penambahan gelar / Pergantian nama sah..."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={submittingName || !newFullName.trim()}
-                  className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white font-semibold px-5 py-2.5 rounded-2xl text-xs transition"
+                  className="w-full sm:w-auto min-h-[42px] inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white font-semibold px-5 py-2.5 rounded-2xl text-xs transition"
                 >
                   {submittingName ? (
                     <>
@@ -686,22 +768,22 @@ export default function AkunProfilPage() {
           </div>
 
           {/* Ganti Alamat Email */}
-          <form onSubmit={handleConfirmEmailChange} className="glass-card rounded-3xl p-7 space-y-5">
+          <form onSubmit={handleConfirmEmailChange} className="glass-card rounded-3xl p-4 sm:p-6 lg:p-7 space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-base font-bold text-slate-900">Ganti Alamat Email</h2>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                   Memerlukan verifikasi kata sandi saat ini{profile.mfaEnabled ? ', kode MFA,' : ''} dan kode OTP yang dikirim ke email baru.
                 </p>
               </div>
               {profile.mfaEnabled && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 shrink-0">
                   <ShieldCheck className="w-3.5 h-3.5" /> MFA Aktif
                 </span>
               )}
             </div>
 
-            <div className="rounded-xl bg-slate-50 border border-slate-200/80 px-3.5 py-2.5 text-xs text-slate-600">
+            <div className="rounded-xl bg-slate-50 border border-slate-200/80 px-3.5 py-2.5 text-xs text-slate-600 break-all">
               Email Saat Ini: <strong className="text-slate-900">{profile.email || '-'}</strong>
             </div>
 
@@ -711,22 +793,22 @@ export default function AkunProfilPage() {
                   Alamat Email Baru <span className="text-rose-600">*</span>
                 </label>
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <div className="relative flex-1">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <div className="relative flex-1 min-w-0">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       required
                       type="email"
                       value={newEmail}
                       onChange={(e) => setNewEmail(e.target.value)}
                       placeholder="nama@emailbaru.com"
-                      className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3.5 py-2.5 text-sm"
+                      className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-white pl-10 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                     />
                   </div>
                   <button
                     type="button"
                     disabled={sendingOtp || !newEmail.trim()}
                     onClick={handleSendEmailOtp}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white px-4 py-2.5 text-xs font-semibold transition shrink-0"
+                    className="w-full sm:w-auto min-h-[42px] inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white px-4 py-2.5 text-xs font-semibold transition shrink-0"
                   >
                     {sendingOtp ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -737,15 +819,18 @@ export default function AkunProfilPage() {
                   </button>
                 </div>
                 {otpSentMessage && (
-                  <p className="mt-1.5 text-[11px] text-emerald-700 font-medium">{otpSentMessage}</p>
+                  <p className="mt-1.5 text-[11px] text-emerald-700 font-medium break-words">
+                    {otpSentMessage}
+                  </p>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label htmlFor="profil-otp-code" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Kode OTP dari Email Baru (6 Digit) <span className="text-rose-600">*</span>
                 </label>
                 <input
+                  id="profil-otp-code"
                   required
                   type="text"
                   inputMode="numeric"
@@ -753,28 +838,29 @@ export default function AkunProfilPage() {
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="Masukkan 6 digit kode OTP"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono tracking-widest"
+                  className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label htmlFor="profil-current-password" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Kata Sandi Saat Ini <span className="text-rose-600">*</span>
                 </label>
                 <div className="relative">
-                  <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
+                    id="profil-current-password"
                     required
                     type={showPassword ? 'text' : 'password'}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Masukkan kata sandi saat ini"
-                    className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-10 py-2.5 text-sm"
+                    className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-white pl-10 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600"
                     aria-label="Tampilkan atau sembunyikan kata sandi"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -784,10 +870,11 @@ export default function AkunProfilPage() {
 
               {profile.mfaEnabled && (
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  <label htmlFor="profil-mfa-code" className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Kode MFA Authenticator (6 Digit) <span className="text-rose-600">*</span>
                   </label>
                   <input
+                    id="profil-mfa-code"
                     required
                     type="text"
                     inputMode="numeric"
@@ -795,7 +882,7 @@ export default function AkunProfilPage() {
                     value={mfaCode}
                     onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="Masukkan 6 digit kode dari aplikasi authenticator"
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono tracking-widest"
+                    className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                   />
                 </div>
               )}
@@ -804,7 +891,7 @@ export default function AkunProfilPage() {
             <button
               type="submit"
               disabled={changingEmail}
-              className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-semibold px-6 py-2.5 rounded-2xl text-sm transition"
+              className="w-full sm:w-auto min-h-[42px] inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-semibold px-6 py-2.5 rounded-2xl text-sm transition"
             >
               {changingEmail && <Loader2 className="w-4 h-4 animate-spin" />}
               {changingEmail ? 'Memverifikasi & Mengubah Email...' : 'Verifikasi & Ganti Email'}

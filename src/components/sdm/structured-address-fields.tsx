@@ -80,10 +80,15 @@ export function StructuredAddressFields({
   }, [parsed.rw]);
 
   useEffect(() => {
-    fetch(`${EMSIFA_BASE}/provinces.json`)
+    const controller = new AbortController();
+    fetch(`${EMSIFA_BASE}/provinces.json`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setProvinces(Array.isArray(data) ? data : []))
-      .catch(() => setProvinces([]));
+      .catch((err) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setProvinces([]);
+      });
+    return () => controller.abort();
   }, []);
 
   // Pre-match saved province name when provinces finish loading
@@ -101,10 +106,15 @@ export function StructuredAddressFields({
       setRegencies([]);
       return;
     }
-    fetch(`${EMSIFA_BASE}/regencies/${provinceId}.json`)
+    const controller = new AbortController();
+    fetch(`${EMSIFA_BASE}/regencies/${provinceId}.json`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setRegencies(Array.isArray(data) ? data : []))
-      .catch(() => setRegencies([]));
+      .catch((err) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setRegencies([]);
+      });
+    return () => controller.abort();
   }, [provinceId]);
 
   useEffect(() => {
@@ -121,10 +131,15 @@ export function StructuredAddressFields({
       setDistricts([]);
       return;
     }
-    fetch(`${EMSIFA_BASE}/districts/${regencyId}.json`)
+    const controller = new AbortController();
+    fetch(`${EMSIFA_BASE}/districts/${regencyId}.json`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setDistricts(Array.isArray(data) ? data : []))
-      .catch(() => setDistricts([]));
+      .catch((err) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setDistricts([]);
+      });
+    return () => controller.abort();
   }, [regencyId]);
 
   useEffect(() => {
@@ -141,10 +156,15 @@ export function StructuredAddressFields({
       setVillages([]);
       return;
     }
-    fetch(`${EMSIFA_BASE}/villages/${districtId}.json`)
+    const controller = new AbortController();
+    fetch(`${EMSIFA_BASE}/villages/${districtId}.json`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setVillages(Array.isArray(data) ? data : []))
-      .catch(() => setVillages([]));
+      .catch((err) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setVillages([]);
+      });
+    return () => controller.abort();
   }, [districtId]);
 
   useEffect(() => {
@@ -157,13 +177,14 @@ export function StructuredAddressFields({
   }, [value.village, villages, villageId]);
 
   return (
-    <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+    <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3 min-w-0">
       <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-        <MapPin className="w-3.5 h-3.5 text-emerald-700" /> {title}
+        <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+        <span>{title}</span>
       </p>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="min-w-0">
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">Provinsi</label>
           <select
             required={required}
@@ -183,7 +204,7 @@ export function StructuredAddressFields({
                 village: '',
               });
             }}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+            className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
           >
             <option value="">
               {value.province && !provinceId ? value.province : '-- Pilih Provinsi --'}
@@ -196,7 +217,7 @@ export function StructuredAddressFields({
           </select>
         </div>
 
-        <div>
+        <div className="min-w-0">
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">
             Kabupaten / Kota
           </label>
@@ -217,7 +238,7 @@ export function StructuredAddressFields({
                 village: '',
               });
             }}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs disabled:bg-slate-100"
+            className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs disabled:bg-slate-100 disabled:border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
           >
             <option value="">
               {value.city && !regencyId ? value.city : '-- Pilih Kabupaten / Kota --'}
@@ -230,7 +251,7 @@ export function StructuredAddressFields({
           </select>
         </div>
 
-        <div>
+        <div className="min-w-0">
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">Kecamatan</label>
           <select
             required={required}
@@ -247,7 +268,7 @@ export function StructuredAddressFields({
                 village: '',
               });
             }}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs disabled:bg-slate-100"
+            className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs disabled:bg-slate-100 disabled:border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
           >
             <option value="">
               {value.district && !districtId ? value.district : '-- Pilih Kecamatan --'}
@@ -260,7 +281,7 @@ export function StructuredAddressFields({
           </select>
         </div>
 
-        <div>
+        <div className="min-w-0">
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">
             Kelurahan / Desa
           </label>
@@ -277,7 +298,7 @@ export function StructuredAddressFields({
                 village: name,
               });
             }}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs disabled:bg-slate-100"
+            className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs disabled:bg-slate-100 disabled:border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
           >
             <option value="">
               {value.village && !villageId ? value.village : '-- Pilih Kelurahan / Desa --'}
@@ -290,8 +311,8 @@ export function StructuredAddressFields({
           </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <div>
+        <div className="grid grid-cols-2 gap-2 min-w-0">
+          <div className="min-w-0">
             <label className="block text-[11px] font-semibold text-slate-600 mb-1">RT</label>
             <select
               required={required}
@@ -318,7 +339,7 @@ export function StructuredAddressFields({
                   });
                 }
               }}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono"
+              className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
             >
               <option value="">-- RT --</option>
               {RT_RW_OPTIONS.map((opt) => (
@@ -342,11 +363,11 @@ export function StructuredAddressFields({
                   })
                 }
                 placeholder="Nomor RT (cth: 013)"
-                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono"
+                className="mt-1.5 w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
               />
             )}
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-[11px] font-semibold text-slate-600 mb-1">RW</label>
             <select
               required={required}
@@ -373,7 +394,7 @@ export function StructuredAddressFields({
                   });
                 }
               }}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono"
+              className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
             >
               <option value="">-- RW --</option>
               {RT_RW_OPTIONS.map((opt) => (
@@ -397,14 +418,14 @@ export function StructuredAddressFields({
                   })
                 }
                 placeholder="Nomor RW (cth: 013)"
-                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono"
+                className="mt-1.5 w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
               />
             )}
           </div>
         </div>
       </div>
 
-      <div>
+      <div className="min-w-0">
         <label className="block text-[11px] font-semibold text-slate-600 mb-1">
           Alamat (Jalan / Dusun / Blok / Nomor Rumah)
         </label>
@@ -419,7 +440,7 @@ export function StructuredAddressFields({
             })
           }
           placeholder="Contoh: Jl. Merdeka No. 12, Dusun Krajan"
-          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+          className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
         />
       </div>
     </div>

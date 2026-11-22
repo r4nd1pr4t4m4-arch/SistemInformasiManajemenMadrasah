@@ -1,16 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
+  Copy,
+  KeyRound,
   Loader2,
   Plus,
   RotateCcw,
   Send,
+  ShieldAlert,
   ShieldCheck,
   Smartphone,
   Trash2,
+  X,
 } from 'lucide-react';
 import { createSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { PasswordInput } from '@/components/auth/password-strength-input';
@@ -33,9 +38,13 @@ export default function ManajemenMfaPage() {
   const [friendlyName, setFriendlyName] = useState('SIMMS Authenticator');
   const [verifyCode, setVerifyCode] = useState('');
   const [busy, setBusy] = useState(false);
+  const [copiedSecret, setCopiedSecret] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
+
+  // Konfirmasi hapus faktor MFA
+  const [confirmUnenroll, setConfirmUnenroll] = useState<TotpFactor | null>(null);
 
   // Reset MFA state (verifikasi password saat ini + OTP email)
   const [resetPassword, setResetPassword] = useState('');
@@ -44,7 +53,27 @@ export default function ManajemenMfaPage() {
   const [resetOtpSent, setResetOtpSent] = useState(false);
   const [resettingMfa, setResettingMfa] = useState(false);
 
-  async function loadFactors() {
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  // Tutup modal konfirmasi dengan tombol Escape
+  useEffect(() => {
+    if (!confirmUnenroll) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) {
+        setConfirmUnenroll(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [confirmUnenroll, busy]);
+
+  const loadFactors = useCallback(async () => {
     if (!isSupabaseConfigured()) {
       setLoading(false);
       return;
@@ -52,18 +81,28 @@ export default function ManajemenMfaPage() {
     setLoading(true);
     try {
       const supabase = createSupabaseBrowserClient();
-      const { data } = await supabase.auth.mfa.listFactors();
+      const { data, error } = await supabase.auth.mfa.listFactors();
+      if (error) {
+        setFeedback({ type: 'error', text: error.message || 'Gagal memuat daftar perangkat MFA.' });
+        return;
+      }
       setFactors(data?.totp || []);
+    } catch {
+      setFeedback({ type: 'error', text: 'Terjadi kesalahan saat memuat pengaturan MFA.' });
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadFactors();
-  }, []);
+  }, [loadFactors]);
 
   async function handleStartEnroll() {
+    if (!isSupabaseConfigured()) {
+      setFeedback({ type: 'error', text: 'Layanan autentikasi belum dikonfigurasi.' });
+      return;
+    }
     setFeedback(null);
     setBusy(true);
     try {
@@ -81,30 +120,68 @@ export default function ManajemenMfaPage() {
         qrCode: data.totp.qr_code,
         secret: data.totp.secret,
       });
+      setVerifyCode('');
+    } catch {
+      setFeedback({ type: 'error', text: 'Terjadi kesalahan saat menyiapkan QR Code MFA.' });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleCancelEnroll() {
+    const current = enrolling;
+    setEnrolling(null);
+    setVerifyCode('');
+    setCopiedSecret(false);
+    if (current && isSupabaseConfigured()) {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        await supabase.auth.mfa.unenroll({ factorId: current.factorId });
+      } catch {
+        // Abaikan jika gagal membersihkan faktor unverified
+      }
+    }
+  }
+
+  async function handleCopySecret() {
+    if (!enrolling?.secret) return;
+    try {
+      await navigator.clipboard.writeText(enrolling.secret);
+      setCopiedSecret(true);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopiedSecret(false), 2000);
+    } catch {
+      setFeedback({ type: 'error', text: 'Gagal menyalin secret ke clipboard.' });
     }
   }
 
   async function handleVerifyEnroll(e: React.FormEvent) {
     e.preventDefault();
     if (!enrolling) return;
+    const cleanCode = verifyCode.replace(/\D/g, '');
+    if (cleanCode.length !== 6) {
+      setFeedback({ type: 'error', text: 'Masukkan 6 digit kode verifikasi dari aplikasi Authenticator.' });
+      return;
+    }
     setFeedback(null);
     setBusy(true);
     try {
       const supabase = createSupabaseBrowserClient();
       const { error } = await supabase.auth.mfa.challengeAndVerify({
         factorId: enrolling.factorId,
-        code: verifyCode.trim(),
+        code: cleanCode,
       });
       if (error) {
         setFeedback({ type: 'error', text: `Kode tidak valid: ${error.message}` });
       } else {
         setEnrolling(null);
         setVerifyCode('');
+        setCopiedSecret(false);
         setFeedback({ type: 'success', text: 'MFA Authenticator berhasil diaktifkan.' });
         await loadFactors();
       }
+    } catch {
+      setFeedback({ type: 'error', text: 'Terjadi kesalahan saat memverifikasi kode MFA.' });
     } finally {
       setBusy(false);
     }
@@ -117,11 +194,18 @@ export default function ManajemenMfaPage() {
       const supabase = createSupabaseBrowserClient();
       const { error } = await supabase.auth.mfa.unenroll({ factorId });
       if (error) {
-        setFeedback({ type: 'error', text: error.message });
+        setFeedback({ type: 'error', text: error.message || 'Gagal menghapus perangkat MFA.' });
       } else {
+        if (enrolling?.factorId === factorId) {
+          setEnrolling(null);
+          setVerifyCode('');
+        }
+        setConfirmUnenroll(null);
         setFeedback({ type: 'success', text: 'Faktor MFA berhasil dihapus.' });
         await loadFactors();
       }
+    } catch {
+      setFeedback({ type: 'error', text: 'Terjadi kesalahan saat menghapus perangkat MFA.' });
     } finally {
       setBusy(false);
     }
@@ -132,13 +216,15 @@ export default function ManajemenMfaPage() {
     setSendingResetOtp(true);
     try {
       const res = await fetch('/api/akun/otp/send', { method: 'POST' });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setFeedback({ type: 'error', text: data.error || 'Gagal mengirim OTP.' });
       } else {
         setResetOtpSent(true);
         setFeedback({ type: 'success', text: data.message || 'Kode OTP dikirim ke email Anda.' });
       }
+    } catch {
+      setFeedback({ type: 'error', text: 'Koneksi gagal saat mengirim kode OTP.' });
     } finally {
       setSendingResetOtp(false);
     }
@@ -146,6 +232,15 @@ export default function ManajemenMfaPage() {
 
   async function handleResetMfa(e: React.FormEvent) {
     e.preventDefault();
+    if (!resetPassword) {
+      setFeedback({ type: 'error', text: 'Kata sandi saat ini wajib diisi.' });
+      return;
+    }
+    const cleanOtp = resetOtp.trim();
+    if (!cleanOtp) {
+      setFeedback({ type: 'error', text: 'Kode OTP email wajib diisi.' });
+      return;
+    }
     setFeedback(null);
     setResettingMfa(true);
     try {
@@ -154,129 +249,222 @@ export default function ManajemenMfaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           currentPassword: resetPassword,
-          otpCode: resetOtp.trim(),
+          otpCode: cleanOtp,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setFeedback({ type: 'error', text: data.error || 'Gagal mereset MFA.' });
       } else {
         setResetPassword('');
         setResetOtp('');
         setResetOtpSent(false);
-        setFeedback({ type: 'success', text: data.message });
+        setEnrolling(null);
+        setVerifyCode('');
+        setFeedback({ type: 'success', text: data.message || 'Berhasil mereset MFA.' });
         await loadFactors();
       }
+    } catch {
+      setFeedback({ type: 'error', text: 'Koneksi gagal saat mereset MFA.' });
     } finally {
       setResettingMfa(false);
     }
   }
 
+  const verifiedCount = factors.filter((f) => f.status === 'verified').length;
+
   if (loading) {
     return (
-      <div className="max-w-5xl mx-auto glass-card rounded-3xl p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin" /> Memuat pengaturan MFA...
+      <div className="max-w-5xl mx-auto glass-card rounded-3xl p-8 sm:p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2.5">
+        <Loader2 className="w-4 h-4 animate-spin text-emerald-700" />
+        <span>Memuat pengaturan MFA...</span>
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-5 sm:space-y-6">
+      {/* Status Ringkas Keamanan MFA */}
+      <div className="glass-card rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+          <div
+            className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+              verifiedCount > 0
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-amber-100 text-amber-700'
+            }`}
+          >
+            {verifiedCount > 0 ? (
+              <ShieldCheck className="w-5 h-5" />
+            ) : (
+              <ShieldAlert className="w-5 h-5" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-base sm:text-lg font-bold text-slate-900">
+              Autentikasi Dua Faktor (MFA)
+            </h1>
+            <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+              {verifiedCount > 0
+                ? `Akun Anda dilindungi oleh ${verifiedCount} perangkat Authenticator aktif.`
+                : 'Belum ada perangkat MFA aktif. Aktifkan Authenticator untuk keamanan ekstra.'}
+            </p>
+          </div>
+        </div>
+        <span
+          className={`self-start sm:self-center shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
+            verifiedCount > 0
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border border-amber-200 text-amber-800'
+          }`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              verifiedCount > 0 ? 'bg-emerald-500' : 'bg-amber-500'
+            }`}
+          />
+          {verifiedCount > 0 ? 'MFA Aktif' : 'MFA Nonaktif'}
+        </span>
+      </div>
+
       {feedback && (
         <div
-          className={`p-3.5 rounded-2xl text-xs font-medium flex items-center gap-2 ${
+          role="alert"
+          aria-live="polite"
+          className={`p-3.5 sm:p-4 rounded-2xl text-xs font-medium flex items-start sm:items-center justify-between gap-3 ${
             feedback.type === 'error'
               ? 'bg-rose-50 border border-rose-200 text-rose-700'
               : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
           }`}
         >
-          {feedback.type === 'error' ? (
-            <AlertCircle className="w-4 h-4 shrink-0" />
-          ) : (
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-          )}
-          <span>{feedback.text}</span>
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+            {feedback.type === 'error' ? (
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
+            )}
+            <span className="break-words">{feedback.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            aria-label="Tutup notifikasi"
+            className="p-1 rounded-lg hover:bg-black/5 transition shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
-      <div className="grid md:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 sm:gap-6">
         {/* Tambah Faktor MFA */}
-        <div className="md:col-span-6 glass-card rounded-3xl p-6 space-y-4 h-fit">
+        <div className="md:col-span-6 min-w-0 glass-card rounded-3xl p-5 sm:p-6 space-y-4 h-fit">
           <div>
-            <h1 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Smartphone className="w-4 h-4 text-emerald-700" /> Aktifkan Authenticator (TOTP)
-            </h1>
-            <p className="text-xs text-slate-600 mt-1">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>Aktifkan Authenticator (TOTP)</span>
+            </h2>
+            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
               Gunakan Google Authenticator, Microsoft Authenticator, atau Authy untuk verifikasi dua langkah.
             </p>
           </div>
 
           {!enrolling ? (
-            <div className="space-y-3">
+            <div className="space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label
+                  htmlFor="mfa-friendly-name"
+                  className="block text-xs font-semibold text-slate-700 mb-1.5"
+                >
                   Label Perangkat
                 </label>
                 <input
+                  id="mfa-friendly-name"
                   type="text"
                   value={friendlyName}
                   onChange={(e) => setFriendlyName(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                  placeholder="Contoh: HP Utama"
+                  maxLength={50}
+                  className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm sm:text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 transition"
                 />
               </div>
               <button
                 type="button"
                 disabled={busy}
                 onClick={handleStartEnroll}
-                className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+                className="w-full min-h-[42px] inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition"
               >
-                <Plus className="w-4 h-4" />
-                {busy ? 'Menyiapkan QR...' : 'Daftarkan MFA Baru'}
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                <span>{busy ? 'Menyiapkan QR...' : 'Daftarkan MFA Baru'}</span>
               </button>
             </div>
           ) : (
             <form onSubmit={handleVerifyEnroll} className="space-y-4">
               <div className="p-4 rounded-2xl bg-white border border-slate-200 flex flex-col items-center gap-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={enrolling.qrCode} alt="QR Code MFA" className="w-44 h-44 rounded-lg" />
-                <div className="text-center">
+                <img
+                  src={enrolling.qrCode}
+                  alt="QR Code MFA"
+                  className="w-44 h-44 max-w-full rounded-lg border border-slate-100"
+                />
+                <div className="w-full text-center space-y-1.5">
                   <p className="text-[11px] text-slate-500">Atau masukkan secret manual:</p>
-                  <p className="font-mono text-xs font-bold text-slate-800 break-all mt-0.5">
-                    {enrolling.secret}
-                  </p>
+                  <div className="flex items-center justify-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2">
+                    <p className="font-mono text-xs font-bold text-slate-800 break-all select-all">
+                      {enrolling.secret}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleCopySecret}
+                      title="Salin secret"
+                      aria-label="Salin secret MFA"
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition shrink-0"
+                    >
+                      {copiedSecret ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label
+                  htmlFor="mfa-verify-code"
+                  className="block text-xs font-semibold text-slate-700 mb-1.5"
+                >
                   Kode 6 Digit dari Aplikasi Authenticator
                 </label>
                 <input
+                  id="mfa-verify-code"
                   required
                   type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   maxLength={6}
                   value={verifyCode}
-                  onChange={(e) => setVerifyCode(e.target.value)}
+                  onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, ''))}
                   placeholder="000000"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono tracking-widest"
+                  className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono tracking-widest text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 transition"
                 />
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   type="submit"
                   disabled={busy}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl text-xs"
+                  className="flex-1 min-h-[42px] inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition"
                 >
-                  {busy ? 'Memverifikasi...' : 'Verifikasi & Aktifkan'}
+                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>{busy ? 'Memverifikasi...' : 'Verifikasi & Aktifkan'}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setEnrolling(null);
-                    setVerifyCode('');
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold"
+                  disabled={busy}
+                  onClick={handleCancelEnroll}
+                  className="min-h-[42px] px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-60 text-slate-700 text-xs font-semibold transition"
                 >
                   Batal
                 </button>
@@ -286,11 +474,11 @@ export default function ManajemenMfaPage() {
         </div>
 
         {/* Daftar Faktor MFA + Reset MFA */}
-        <div className="md:col-span-6 space-y-6">
-          <div className="glass-card rounded-3xl p-6 space-y-4">
+        <div className="md:col-span-6 min-w-0 space-y-5 sm:space-y-6">
+          <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-700" /> Perangkat MFA Terdaftar (
-              {factors.length})
+              <KeyRound className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>Perangkat MFA Terdaftar ({factors.length})</span>
             </h2>
 
             {factors.length === 0 ? (
@@ -304,15 +492,15 @@ export default function ManajemenMfaPage() {
                     key={f.id}
                     className="modular-card rounded-2xl p-4 flex items-center justify-between gap-3"
                   >
-                    <div>
-                      <p className="font-bold text-slate-900 text-xs">
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 text-xs truncate">
                         {f.friendly_name || 'Authenticator App'}
                       </p>
                       <span
-                        className={`inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                        className={`inline-block mt-1.5 text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${
                           f.status === 'verified'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-amber-50 text-amber-700'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/70'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200/70'
                         }`}
                       >
                         {f.status === 'verified' ? 'AKTIF' : 'MENUNGGU VERIFIKASI'}
@@ -321,9 +509,10 @@ export default function ManajemenMfaPage() {
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => handleUnenroll(f.id)}
-                      className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 transition"
+                      onClick={() => setConfirmUnenroll(f)}
+                      className="min-h-[38px] min-w-[38px] inline-flex items-center justify-center p-2 rounded-xl text-rose-600 hover:bg-rose-50 disabled:opacity-50 transition shrink-0"
                       title="Hapus MFA"
+                      aria-label={`Hapus perangkat ${f.friendly_name || 'Authenticator App'}`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -334,12 +523,13 @@ export default function ManajemenMfaPage() {
           </div>
 
           {/* Kartu Reset MFA */}
-          <form onSubmit={handleResetMfa} className="glass-card rounded-3xl p-6 space-y-4">
+          <form onSubmit={handleResetMfa} className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
             <div>
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <RotateCcw className="w-4 h-4 text-rose-600" /> Reset Semua MFA
+                <RotateCcw className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>Reset Semua MFA</span>
               </h2>
-              <p className="text-xs text-slate-600 mt-1">
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                 Kehilangan perangkat Authenticator? Verifikasi dengan{' '}
                 <strong>Kata Sandi Saat Ini</strong> dan <strong>Kode OTP Email</strong> untuk mereset seluruh faktor MFA.
               </p>
@@ -353,27 +543,39 @@ export default function ManajemenMfaPage() {
             />
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              <label
+                htmlFor="mfa-reset-otp"
+                className="block text-xs font-semibold text-slate-700 mb-1.5"
+              >
                 Kode OTP Email
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
+                  id="mfa-reset-otp"
                   required
                   type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   maxLength={6}
                   value={resetOtp}
-                  onChange={(e) => setResetOtp(e.target.value)}
+                  onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, ''))}
                   placeholder="000000"
-                  className="flex-1 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-mono tracking-widest"
+                  className="flex-1 min-w-0 min-h-[42px] rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-mono tracking-widest text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 transition"
                 />
                 <button
                   type="button"
-                  disabled={sendingResetOtp}
+                  disabled={sendingResetOtp || resettingMfa}
                   onClick={handleSendResetOtp}
-                  className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition shrink-0"
+                  className="w-full sm:w-auto min-h-[42px] inline-flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-emerald-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-xs font-semibold transition shrink-0"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  {sendingResetOtp ? 'Mengirim...' : resetOtpSent ? 'Kirim Ulang' : 'Kirim OTP'}
+                  {sendingResetOtp ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {sendingResetOtp ? 'Mengirim...' : resetOtpSent ? 'Kirim Ulang' : 'Kirim OTP'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -381,14 +583,67 @@ export default function ManajemenMfaPage() {
             <button
               type="submit"
               disabled={resettingMfa}
-              className="w-full inline-flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white font-semibold py-2.5 rounded-xl text-xs transition"
+              className="w-full min-h-[42px] inline-flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition"
             >
               {resettingMfa && <Loader2 className="w-4 h-4 animate-spin" />}
-              {resettingMfa ? 'Mereset MFA...' : 'Reset Semua MFA'}
+              <span>{resettingMfa ? 'Mereset MFA...' : 'Reset Semua MFA'}</span>
             </button>
           </form>
         </div>
       </div>
+
+      {/* Modal Konfirmasi Hapus Faktor MFA */}
+      {confirmUnenroll && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-unenroll-title"
+          onClick={() => {
+            if (!busy) setConfirmUnenroll(null);
+          }}
+        >
+          <div
+            className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 id="confirm-unenroll-title" className="text-base font-bold text-slate-900">
+                  Hapus Perangkat MFA?
+                </h3>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  Perangkat <strong>{confirmUnenroll.friendly_name || 'Authenticator App'}</strong>{' '}
+                  akan dihapus dari akun Anda dan tidak dapat lagi digunakan untuk verifikasi login.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmUnenroll(null)}
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-60 text-slate-700 text-xs font-semibold transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handleUnenroll(confirmUnenroll.id)}
+                className="min-h-[40px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-xs font-semibold transition"
+              >
+                {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{busy ? 'Menghapus...' : 'Ya, Hapus Perangkat'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -11,11 +11,13 @@ import {
   FileSignature,
   Loader2,
   MailCheck,
+  RefreshCw,
   Search,
   ShieldCheck,
   UserCheck,
   UserX,
   Users,
+  X,
   XCircle,
 } from 'lucide-react';
 import type { AppRole } from '@/types/database';
@@ -126,23 +128,43 @@ export default function ManajemenPenggunaPage() {
   const [avatarRejectNotes, setAvatarRejectNotes] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | AccountStatus>('ALL');
   const [search, setSearch] = useState('');
+  const [visibleUsersCount, setVisibleUsersCount] = useState(25);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejectModalUser, setRejectModalUser] = useState<ManagedUser | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [toast, setToast] = useState<{ type: 'success' | 'warning' | 'error'; text: string } | null>(
     null
   );
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((type: 'success' | 'warning' | 'error', text: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ type, text });
-    setTimeout(() => setToast(null), 6000);
+    toastTimerRef.current = setTimeout(() => setToast(null), 6000);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || busyId) return;
+      if (rejectModalUser) setRejectModalUser(null);
+      else if (rejectNameModalReq) setRejectNameModalReq(null);
+      else if (rejectAvatarModalReq) setRejectAvatarModalReq(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [busyId, rejectModalUser, rejectNameModalReq, rejectAvatarModalReq]);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/akun/manajemen-pengguna');
-      const data = await res.json();
+      const res = await fetch('/api/akun/manajemen-pengguna', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         showToast('error', data.error || 'Gagal memuat daftar pengguna.');
         return;
@@ -162,8 +184,8 @@ export default function ManajemenPenggunaPage() {
   const loadNameRequests = useCallback(async () => {
     setLoadingRequests(true);
     try {
-      const res = await fetch('/api/akun/nama/persetujuan');
-      const data = await res.json();
+      const res = await fetch('/api/akun/nama/persetujuan', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setNameRequests(data.requests || []);
       }
@@ -176,8 +198,8 @@ export default function ManajemenPenggunaPage() {
 
   const loadAvatarRequests = useCallback(async () => {
     try {
-      const res = await fetch('/api/akun/avatar/persetujuan');
-      const data = await res.json();
+      const res = await fetch('/api/akun/avatar/persetujuan', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setAvatarRequests(data.requests || []);
       }
@@ -204,7 +226,7 @@ export default function ManajemenPenggunaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, action, review_notes: notes || null }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast(
           'success',
@@ -237,7 +259,7 @@ export default function ManajemenPenggunaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, action, review_notes: notes || null }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast(
           'success',
@@ -277,7 +299,7 @@ export default function ManajemenPenggunaPage() {
           sendEmail: params.action !== 'UPDATE_ROLE',
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         showToast('error', data.error || 'Gagal memperbarui akun.');
         return;
@@ -387,7 +409,8 @@ export default function ManajemenPenggunaPage() {
     <div className="max-w-7xl mx-auto space-y-6">
       {toast && (
         <div
-          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center gap-2 ${
+          role={toast.type === 'error' ? 'alert' : 'status'}
+          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center justify-between gap-2 ${
             toast.type === 'success'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : toast.type === 'warning'
@@ -395,19 +418,29 @@ export default function ManajemenPenggunaPage() {
               : 'bg-rose-50 border-rose-200 text-rose-800'
           }`}
         >
-          {toast.type === 'success' ? (
-            <MailCheck className="w-4 h-4 shrink-0" />
-          ) : (
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-          )}
-          <span>{toast.text}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            {toast.type === 'success' ? (
+              <MailCheck className="w-4 h-4 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+            )}
+            <span className="break-words">{toast.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            aria-label="Tutup notifikasi"
+            className="p-1 rounded-lg hover:bg-black/5 shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
       {!smtpConfigured && (
         <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2.5">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
+          <div className="min-w-0 break-words">
             <strong>SMTP Email belum dikonfigurasi:</strong> Atur variabel{' '}
             <code>GMAIL_SMTP_USER</code> dan <code>GMAIL_SMTP_APP_PASSWORD</code> pada{' '}
             <code>.env.local</code> agar notifikasi persetujuan/penolakan akun otomatis terkirim ke
@@ -417,37 +450,52 @@ export default function ManajemenPenggunaPage() {
       )}
 
       {/* Header & Link ke Buku Induk */}
-      <div className="glass-card rounded-3xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-emerald-700" />
-            Manajemen Pengguna & Persetujuan Akun
+      <div className="glass-card rounded-3xl p-4 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1 min-w-0">
+          <h1 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0" />
+            <span>Manajemen Pengguna &amp; Persetujuan Akun</span>
           </h1>
-          <p className="text-xs text-slate-600">
+          <p className="text-xs text-slate-600 leading-relaxed">
             Kelola pendaftaran akun baru, aktifkan/nonaktifkan/tolak akun (otomatis kirim email
             notifikasi), dan atur peran pengguna sebelum ditempatkan ke Buku Induk.
           </p>
         </div>
-        <Link
-          href="/portal/akademik/buku-induk"
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition shrink-0"
-        >
-          <BookOpen className="w-4 h-4" /> Buka Buku Induk Digital
-        </Link>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => {
+              loadUsers();
+              loadNameRequests();
+              loadAvatarRequests();
+            }}
+            className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Segarkan
+          </button>
+          <Link
+            href="/portal/akademik/buku-induk"
+            className="min-h-[40px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition shrink-0"
+          >
+            <BookOpen className="w-4 h-4 shrink-0" /> Buka Buku Induk Digital
+          </Link>
+        </div>
       </div>
 
       {/* Tab Switcher: Akun Pengguna vs Perubahan Nama */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 pb-3">
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-3 sm:flex-wrap sm:overflow-visible border-b border-slate-200/80 -mx-1 px-1">
         <button
           type="button"
           onClick={() => setActiveTab('users')}
-          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition ${
+          className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 whitespace-nowrap ${
             activeTab === 'users'
               ? 'bg-slate-900 text-white shadow-xs'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
           }`}
         >
-          <Users className="w-4 h-4" />
+          <Users className="w-4 h-4 shrink-0" />
           Manajemen Akun Pengguna
           <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-200">
             {summary.total}
@@ -456,13 +504,13 @@ export default function ManajemenPenggunaPage() {
         <button
           type="button"
           onClick={() => setActiveTab('name_changes')}
-          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition ${
+          className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 whitespace-nowrap ${
             activeTab === 'name_changes'
               ? 'bg-slate-900 text-white shadow-xs'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
           }`}
         >
-          <FileSignature className="w-4 h-4" />
+          <FileSignature className="w-4 h-4 shrink-0" />
           Persetujuan Perubahan Nama
           {nameRequests.filter((r) => r.status === 'MENUNGGU').length > 0 ? (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
@@ -477,13 +525,13 @@ export default function ManajemenPenggunaPage() {
         <button
           type="button"
           onClick={() => setActiveTab('avatar_changes')}
-          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition ${
+          className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 whitespace-nowrap ${
             activeTab === 'avatar_changes'
               ? 'bg-slate-900 text-white shadow-xs'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
           }`}
         >
-          <Camera className="w-4 h-4" />
+          <Camera className="w-4 h-4 shrink-0" />
           Persetujuan Foto Profil
           {avatarRequests.filter((r) => r.status === 'MENUNGGU').length > 0 ? (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
@@ -517,16 +565,16 @@ export default function ManajemenPenggunaPage() {
               <p className="text-[11px] font-medium text-slate-500">Nonaktif</p>
               <p className="text-2xl font-bold text-slate-700 mt-1">{summary.inactive}</p>
             </div>
-            <div className="glass-card rounded-2xl p-4 border border-rose-200/70 bg-rose-50/40">
+            <div className="glass-card rounded-2xl p-4 border border-rose-200/70 bg-rose-50/40 col-span-2 md:col-span-1">
               <p className="text-[11px] font-medium text-rose-700">Ditolak</p>
               <p className="text-2xl font-bold text-rose-700 mt-1">{summary.rejected}</p>
             </div>
           </div>
 
       {/* Filter & Search */}
-      <div className="glass-card rounded-3xl p-5 space-y-4">
+      <div className="glass-card rounded-3xl p-4 sm:p-5 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap sm:overflow-visible -mx-1 px-1">
             {(
               [
                 { key: 'ALL', label: `Semua (${summary.total})` },
@@ -539,8 +587,12 @@ export default function ManajemenPenggunaPage() {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setFilterStatus(tab.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                aria-pressed={filterStatus === tab.key}
+                onClick={() => {
+                  setFilterStatus(tab.key);
+                  setVisibleUsersCount(25);
+                }}
+                className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${
                   filterStatus === tab.key
                     ? 'bg-emerald-700 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -551,21 +603,38 @@ export default function ManajemenPenggunaPage() {
             ))}
           </div>
 
-          <div className="relative w-full md:w-72">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="relative w-full md:w-72 shrink-0">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
+              aria-label="Cari pengguna"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setVisibleUsersCount(25);
+              }}
               placeholder="Cari nama, email, atau role..."
-              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
+              className="w-full min-h-[40px] pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-white text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setVisibleUsersCount(25);
+                }}
+                aria-label="Hapus pencarian"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
         {loading ? (
           <div className="py-12 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Memuat daftar pengguna...
+            <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> Memuat daftar pengguna...
           </div>
         ) : filteredUsers.length === 0 ? (
           <div className="py-12 text-center text-xs text-slate-500">
@@ -574,20 +643,22 @@ export default function ManajemenPenggunaPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredUsers.map((u) => {
+            {filteredUsers.slice(0, visibleUsersCount).map((u) => {
               const isBusy = busyId === u.id;
               return (
                 <div
                   key={u.id}
-                  className="p-4 rounded-2xl bg-white border border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                  className="p-4 rounded-2xl bg-white border border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4 min-w-0"
                 >
                   <div className="space-y-1.5 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900">{u.full_name}</span>
+                      <span className="text-sm font-bold text-slate-900 break-words">
+                        {u.full_name}
+                      </span>
                       {renderStatusBadge(u.account_status)}
                     </div>
-                    <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span>{u.email || 'Tanpa email'}</span>
+                    <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                      <span className="break-all">{u.email || 'Tanpa email'}</span>
                       <span>•</span>
                       <span>
                         Daftar:{' '}
@@ -601,7 +672,7 @@ export default function ManajemenPenggunaPage() {
                     {u.rejection_reason &&
                       (u.account_status === 'DITOLAK' ||
                         u.account_status === 'DITOLAK_PERMANEN') && (
-                        <p className="text-[11px] text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg inline-block">
+                        <p className="text-[11px] text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg inline-block break-words max-w-full">
                           Alasan ditolak: {u.rejection_reason}
                         </p>
                       )}
@@ -643,7 +714,7 @@ export default function ManajemenPenggunaPage() {
                               primaryRole: e.target.value as AppRole,
                             })
                           }
-                          className="px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700"
+                          className="w-full sm:w-auto min-h-[38px] px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm sm:text-xs font-medium text-slate-700"
                         >
                           {ASSIGNABLE_ROLES.map((r) => (
                             <option key={r.value} value={r.value}>
@@ -663,14 +734,14 @@ export default function ManajemenPenggunaPage() {
                                   action: 'APPROVE',
                                 })
                               }
-                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
+                              className="min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
                             >
                               {isBusy ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
                                 <UserCheck className="w-3.5 h-3.5" />
                               )}
-                              Setujui & Aktifkan
+                              Setujui &amp; Aktifkan
                             </button>
                             <button
                               type="button"
@@ -679,7 +750,7 @@ export default function ManajemenPenggunaPage() {
                                 setRejectModalUser(u);
                                 setRejectionReason('');
                               }}
-                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition disabled:opacity-50"
+                              className="min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition disabled:opacity-50"
                             >
                               <XCircle className="w-3.5 h-3.5" /> Tolak
                             </button>
@@ -696,7 +767,7 @@ export default function ManajemenPenggunaPage() {
                                 action: 'DEACTIVATE',
                               })
                             }
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition disabled:opacity-50"
+                            className="min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition disabled:opacity-50"
                           >
                             <UserX className="w-3.5 h-3.5" /> Nonaktifkan
                           </button>
@@ -714,7 +785,7 @@ export default function ManajemenPenggunaPage() {
                                 action: 'APPROVE',
                               })
                             }
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
+                            className="min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
                           >
                             <UserCheck className="w-3.5 h-3.5" /> Aktifkan Kembali
                           </button>
@@ -729,6 +800,18 @@ export default function ManajemenPenggunaPage() {
                 </div>
               );
             })}
+
+            {visibleUsersCount < filteredUsers.length && (
+              <div className="pt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => setVisibleUsersCount((c) => c + 25)}
+                  className="min-h-[40px] px-5 py-2 rounded-xl bg-white border border-slate-200 hover:border-emerald-300 text-xs font-semibold text-slate-700 hover:text-emerald-800 transition"
+                >
+                  Muat Lebih Banyak ({filteredUsers.length - visibleUsersCount} tersisa)
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -736,9 +819,9 @@ export default function ManajemenPenggunaPage() {
       )}
 
       {activeTab === 'name_changes' && (
-        <div className="glass-card rounded-3xl p-5 space-y-4">
+        <div className="glass-card rounded-3xl p-4 sm:p-5 space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap sm:overflow-visible -mx-1 px-1">
               {(
                 [
                   { key: 'ALL', label: `Semua (${nameRequests.length})` },
@@ -759,8 +842,9 @@ export default function ManajemenPenggunaPage() {
                 <button
                   key={f.key}
                   type="button"
+                  aria-pressed={filterNameStatus === f.key}
                   onClick={() => setFilterNameStatus(f.key)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                  className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${
                     filterNameStatus === f.key
                       ? 'bg-emerald-700 text-white'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -771,15 +855,26 @@ export default function ManajemenPenggunaPage() {
               ))}
             </div>
 
-            <div className="relative w-full md:w-72">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <div className="relative w-full md:w-72 shrink-0">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
+                aria-label="Cari pengajuan perubahan nama"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Cari nama lama/baru atau email..."
-                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
+                className="w-full min-h-[40px] pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-white text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
               />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  aria-label="Hapus pencarian"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -898,30 +993,45 @@ export default function ManajemenPenggunaPage() {
 
       {/* Modal Tolak Perubahan Nama */}
       {canManage && rejectNameModalReq && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-slate-200">
-            <h2 className="text-base font-bold text-slate-900">Tolak Pengajuan Perubahan Nama</h2>
-            <p className="text-xs text-slate-600 leading-relaxed">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-reject-name-title"
+          onClick={() => {
+            if (!busyId) setRejectNameModalReq(null);
+          }}
+          className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
+          >
+            <h2 id="modal-reject-name-title" className="text-base font-bold text-slate-900">
+              Tolak Pengajuan Perubahan Nama
+            </h2>
+            <p className="text-xs text-slate-600 leading-relaxed break-words">
               Anda akan menolak pengajuan perubahan nama dari <strong>{rejectNameModalReq.old_full_name}</strong> menjadi{' '}
               <strong>{rejectNameModalReq.new_full_name}</strong> ({rejectNameModalReq.profile?.email || '-'}).
             </p>
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">
+              <label htmlFor="name-reject-notes" className="text-xs font-semibold text-slate-700">
                 Catatan / Alasan Penolakan (opsional)
               </label>
               <textarea
+                id="name-reject-notes"
                 rows={3}
                 value={nameRejectNotes}
                 onChange={(e) => setNameRejectNotes(e.target.value)}
                 placeholder="Misal: Nama tidak sesuai dengan dokumen identitas / Silakan unggah bukti pendukung..."
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
               />
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
               <button
                 type="button"
+                disabled={busyId === rejectNameModalReq.id}
                 onClick={() => setRejectNameModalReq(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
               >
                 Batal
               </button>
@@ -931,7 +1041,7 @@ export default function ManajemenPenggunaPage() {
                 onClick={() =>
                   handleReviewNameChange(rejectNameModalReq.id, 'REJECT', nameRejectNotes)
                 }
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
               >
                 {busyId === rejectNameModalReq.id ? 'Memproses...' : 'Konfirmasi Tolak'}
               </button>
@@ -942,10 +1052,23 @@ export default function ManajemenPenggunaPage() {
 
       {/* Modal Tolak Pendaftaran */}
       {canManage && rejectModalUser && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-slate-200">
-            <h2 className="text-base font-bold text-slate-900">Tolak Pendaftaran Akun</h2>
-            <p className="text-xs text-slate-600 leading-relaxed">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-reject-user-title"
+          onClick={() => {
+            if (!busyId) setRejectModalUser(null);
+          }}
+          className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
+          >
+            <h2 id="modal-reject-user-title" className="text-base font-bold text-slate-900">
+              Tolak Pendaftaran Akun
+            </h2>
+            <p className="text-xs text-slate-600 leading-relaxed break-words">
               Anda akan menolak pendaftaran akun <strong>{rejectModalUser.full_name}</strong> (
               {rejectModalUser.email}). Email notifikasi penolakan akan dikirim secara otomatis.
             </p>
@@ -960,22 +1083,24 @@ export default function ManajemenPenggunaPage() {
               </p>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">
+              <label htmlFor="user-reject-reason" className="text-xs font-semibold text-slate-700">
                 Alasan Penolakan (opsional)
               </label>
               <textarea
+                id="user-reject-reason"
                 rows={3}
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
                 placeholder="Misal: Nama lengkap belum sesuai identitas resmi / Email bukan warga lembaga..."
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
               />
             </div>
-            <div className="flex flex-wrap justify-end gap-2 pt-2">
+            <div className="flex flex-col-reverse sm:flex-row flex-wrap justify-end gap-2 pt-2">
               <button
                 type="button"
+                disabled={busyId === rejectModalUser.id}
                 onClick={() => setRejectModalUser(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
               >
                 Batal
               </button>
@@ -989,7 +1114,7 @@ export default function ManajemenPenggunaPage() {
                     rejectionReason,
                   })
                 }
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
               >
                 {busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak & Kirim Email'}
               </button>
@@ -1003,7 +1128,7 @@ export default function ManajemenPenggunaPage() {
                     rejectionReason,
                   })
                 }
-                className="px-4 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 text-white text-xs font-semibold disabled:opacity-50"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 text-white text-xs font-semibold disabled:opacity-50"
               >
                 {busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak Permanen'}
               </button>
@@ -1120,26 +1245,41 @@ export default function ManajemenPenggunaPage() {
         </div>
       )}
 
-      {rejectAvatarModalReq && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
-            <h3 className="text-sm font-bold text-slate-900">Tolak Pengajuan Foto Profil</h3>
-            <p className="text-xs text-slate-600">
+      {canManage && rejectAvatarModalReq && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-reject-avatar-title"
+          onClick={() => {
+            if (!busyId) setRejectAvatarModalReq(null);
+          }}
+          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
+          >
+            <h3 id="modal-reject-avatar-title" className="text-sm font-bold text-slate-900">
+              Tolak Pengajuan Foto Profil
+            </h3>
+            <p className="text-xs text-slate-600 break-words">
               Tolak pengajuan foto profil dari{' '}
               <strong>{rejectAvatarModalReq.profile?.full_name || 'Pengguna'}</strong>?
             </p>
             <textarea
               rows={3}
+              aria-label="Alasan penolakan foto profil"
               value={avatarRejectNotes}
               onChange={(e) => setAvatarRejectNotes(e.target.value)}
               placeholder="Alasan penolakan (mis. foto buram, bukan pas foto, dll)..."
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2">
               <button
                 type="button"
+                disabled={busyId === rejectAvatarModalReq.id}
                 onClick={() => setRejectAvatarModalReq(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold"
               >
                 Batal
               </button>
@@ -1149,9 +1289,9 @@ export default function ManajemenPenggunaPage() {
                 onClick={() =>
                   handleReviewAvatarChange(rejectAvatarModalReq.id, 'REJECT', avatarRejectNotes)
                 }
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
               >
-                Tolak Foto
+                {busyId === rejectAvatarModalReq.id ? 'Memproses...' : 'Tolak Foto'}
               </button>
             </div>
           </div>

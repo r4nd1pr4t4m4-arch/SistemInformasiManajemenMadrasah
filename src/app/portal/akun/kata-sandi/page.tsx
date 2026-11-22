@@ -10,6 +10,7 @@ import {
   Mail,
   Send,
   ShieldCheck,
+  X,
 } from 'lucide-react';
 import { createSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { validatePasswordStrength } from '@/lib/auth/password-policy';
@@ -68,6 +69,8 @@ export default function GantiKataSandiPage() {
         if (verifiedTotp.length > 0) {
           setSelectedFactorId(verifiedTotp[0].id);
         }
+      } catch {
+        setFeedback({ type: 'error', text: 'Gagal memuat data keamanan akun. Silakan muat ulang halaman.' });
       } finally {
         setLoading(false);
       }
@@ -81,7 +84,7 @@ export default function GantiKataSandiPage() {
     setSendingOtp(true);
     try {
       const res = await fetch('/api/akun/otp/send', { method: 'POST' });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setFeedback({ type: 'error', text: data.error || 'Gagal mengirim kode OTP.' });
       } else {
@@ -109,6 +112,14 @@ export default function GantiKataSandiPage() {
       return;
     }
 
+    if (newPassword === currentPassword) {
+      setFeedback({
+        type: 'error',
+        text: 'Kata sandi baru harus berbeda dari kata sandi saat ini.',
+      });
+      return;
+    }
+
     const policy = validatePasswordStrength(newPassword, fullName);
     if (!policy.isValid) {
       setFeedback({
@@ -121,7 +132,7 @@ export default function GantiKataSandiPage() {
       setFeedback({ type: 'error', text: 'Konfirmasi kata sandi tidak cocok.' });
       return;
     }
-    if (!verificationCode.trim()) {
+    if (verificationCode.trim().length !== 6) {
       setFeedback({
         type: 'error',
         text:
@@ -163,7 +174,7 @@ export default function GantiKataSandiPage() {
           newPassword,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setFeedback({ type: 'error', text: data.error || 'Gagal memperbarui kata sandi.' });
         return;
@@ -175,6 +186,8 @@ export default function GantiKataSandiPage() {
       setVerificationCode('');
       setOtpSent(false);
       setFeedback({ type: 'success', text: 'Kata sandi akun berhasil diperbarui.' });
+    } catch {
+      setFeedback({ type: 'error', text: 'Gagal terhubung ke server. Silakan coba lagi.' });
     } finally {
       setSubmitting(false);
     }
@@ -190,51 +203,58 @@ export default function GantiKataSandiPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div className="glass-card rounded-3xl p-7 space-y-6">
+      <div className="glass-card rounded-3xl p-4 sm:p-6 lg:p-7 space-y-6 min-w-0">
         <div className="space-y-1">
-          <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <KeyRound className="w-5 h-5 text-emerald-700" /> Ganti Kata Sandi
+          <h1 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+            <KeyRound className="w-5 h-5 text-emerald-700 shrink-0" />
+            <span>Ganti Kata Sandi</span>
           </h1>
-          <p className="text-xs text-slate-600">
+          <p className="text-xs text-slate-600 leading-relaxed">
             Masukkan <strong>Kata Sandi Saat Ini</strong> dan pilih verifikasi via{' '}
             <strong>OTP Email</strong> atau <strong>MFA Authenticator</strong> sebelum menyimpan kata sandi baru.
           </p>
         </div>
 
         {/* Pilihan Metode Verifikasi */}
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             type="button"
+            aria-pressed={method === 'otp'}
             onClick={() => {
               setMethod('otp');
               setVerificationCode('');
               setFeedback(null);
             }}
-            className={`modular-card rounded-2xl p-4 text-left space-y-1 border-2 transition ${
-              method === 'otp' ? 'border-emerald-600 bg-emerald-50/40' : 'border-transparent'
+            className={`modular-card rounded-2xl p-4 text-left space-y-1 border-2 transition min-w-0 ${
+              method === 'otp'
+                ? 'border-emerald-600 bg-emerald-50/40'
+                : 'border-transparent hover:border-slate-200'
             }`}
           >
             <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <Mail className="w-4 h-4 text-emerald-700" /> Verifikasi OTP Email
+              <Mail className="w-4 h-4 text-emerald-700 shrink-0" /> Verifikasi OTP Email
             </p>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-slate-500 break-all">
               Kirim kode verifikasi ke {email || 'email terdaftar'}.
             </p>
           </button>
 
           <button
             type="button"
+            aria-pressed={method === 'mfa'}
             onClick={() => {
               setMethod('mfa');
               setVerificationCode('');
               setFeedback(null);
             }}
-            className={`modular-card rounded-2xl p-4 text-left space-y-1 border-2 transition ${
-              method === 'mfa' ? 'border-emerald-600 bg-emerald-50/40' : 'border-transparent'
+            className={`modular-card rounded-2xl p-4 text-left space-y-1 border-2 transition min-w-0 ${
+              method === 'mfa'
+                ? 'border-emerald-600 bg-emerald-50/40'
+                : 'border-transparent hover:border-slate-200'
             }`}
           >
             <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-700" /> Verifikasi MFA (Authenticator)
+              <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" /> Verifikasi MFA (Authenticator)
             </p>
             <p className="text-[11px] text-slate-500">
               {factors.length > 0
@@ -246,18 +266,29 @@ export default function GantiKataSandiPage() {
 
         {feedback && (
           <div
-            className={`p-3.5 rounded-2xl text-xs font-medium flex items-center gap-2 ${
+            role={feedback.type === 'error' ? 'alert' : 'status'}
+            className={`p-3.5 rounded-2xl text-xs font-medium flex items-center justify-between gap-2 ${
               feedback.type === 'error'
                 ? 'bg-rose-50 border border-rose-200 text-rose-700'
                 : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
             }`}
           >
-            {feedback.type === 'error' ? (
-              <AlertCircle className="w-4 h-4 shrink-0" />
-            ) : (
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-            )}
-            <span>{feedback.text}</span>
+            <div className="flex items-center gap-2 min-w-0">
+              {feedback.type === 'error' ? (
+                <AlertCircle className="w-4 h-4 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              )}
+              <span className="break-words">{feedback.text}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              aria-label="Tutup pesan"
+              className="p-1 rounded-lg hover:bg-black/5 shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 
@@ -271,32 +302,39 @@ export default function GantiKataSandiPage() {
 
           {method === 'otp' ? (
             <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="min-w-0">
                   <p className="text-xs font-semibold text-slate-800">Email Tujuan OTP</p>
-                  <p className="text-xs text-slate-500">{email || '-'}</p>
+                  <p className="text-xs text-slate-500 break-all">{email || '-'}</p>
                 </div>
                 <button
                   type="button"
                   disabled={sendingOtp || !email}
                   onClick={handleSendOtp}
-                  className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-emerald-700 disabled:opacity-60 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition"
+                  className="w-full sm:w-auto min-h-[40px] inline-flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-emerald-700 disabled:opacity-60 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition shrink-0"
                 >
-                  <Send className="w-3.5 h-3.5" />
+                  {sendingOtp ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
                   {sendingOtp ? 'Mengirim...' : otpSent ? 'Kirim Ulang OTP' : 'Kirim Kode OTP'}
                 </button>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="pwd-otp-code" className="block text-xs font-semibold text-slate-700 mb-1">
                   Kode OTP Email
                 </label>
                 <input
+                  id="pwd-otp-code"
                   required
                   type="text"
+                  inputMode="numeric"
+                  maxLength={6}
                   value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
+                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="Masukkan kode OTP 6 digit dari email"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono"
+                  className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                 />
               </div>
             </div>
@@ -313,13 +351,14 @@ export default function GantiKataSandiPage() {
           ) : (
             <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="pwd-mfa-factor" className="block text-xs font-semibold text-slate-700 mb-1">
                   Pilih Faktor MFA
                 </label>
                 <select
+                  id="pwd-mfa-factor"
                   value={selectedFactorId}
                   onChange={(e) => setSelectedFactorId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs"
+                  className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                 >
                   {factors.map((f) => (
                     <option key={f.id} value={f.id}>
@@ -329,17 +368,19 @@ export default function GantiKataSandiPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="pwd-mfa-code" className="block text-xs font-semibold text-slate-700 mb-1">
                   Kode 6 Digit Authenticator
                 </label>
                 <input
+                  id="pwd-mfa-code"
                   required
                   type="text"
+                  inputMode="numeric"
                   maxLength={6}
                   value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
+                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="000000"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono tracking-widest"
+                  className="w-full min-h-[42px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                 />
               </div>
             </div>

@@ -5,7 +5,9 @@ import { PERMISSIONS } from '@/lib/auth/rbac';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import {
   FAMILY_SHARED_STUDENT_DOC_TYPES,
+  resolveTeacherForProfile,
   syncGuardianToStudent,
+  syncSharedBiodataAcrossSelfEntities,
 } from '@/lib/sdm/sync';
 import { nikSchema } from '@/lib/validation/identity';
 
@@ -59,7 +61,12 @@ export async function GET() {
 
   const supabase = createSupabaseAdminClient();
 
-  const [teacherRes, guardiansRes] = await Promise.all([
+  const [profileRes, teacherRes, guardiansRes] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('full_name, phone, email')
+      .eq('id', session.userId)
+      .maybeSingle(),
     supabase
       .from('teachers_staff')
       .select('*')
@@ -73,9 +80,22 @@ export async function GET() {
       .order('is_primary', { ascending: false }),
   ]);
 
+  const canonicalFullName = profileRes.data?.full_name || session.fullName;
+  const canonicalPhone = profileRes.data?.phone ?? null;
+  const canonicalEmail = profileRes.data?.email ?? session.email ?? null;
+
+  const resolvedTeacher =
+    teacherRes.data ||
+    (await resolveTeacherForProfile(supabase, {
+      userId: session.userId,
+      email: canonicalEmail,
+      fullName: canonicalFullName,
+      phone: canonicalPhone,
+    }));
+
   let gtkPayload: Record<string, unknown> | null = null;
-  if (teacherRes.data) {
-    const teacherId = teacherRes.data.id as string;
+  if (resolvedTeacher) {
+    const teacherId = resolvedTeacher.id as string;
     const [historyRes, dutiesRes, docsRes] = await Promise.all([
       supabase
         .from('employment_histories')
@@ -96,14 +116,36 @@ export async function GET() {
     ]);
 
     gtkPayload = {
-      teacher: teacherRes.data,
+      teacher: resolvedTeacher,
       employmentHistories: historyRes.data || [],
       additionalDuties: dutiesRes.data || [],
       documents: docsRes.data || [],
     };
   }
 
-  const guardianRows = guardiansRes.data || [];
+  let guardianRows = guardiansRes.data || [];
+
+  // Fallback: jika profile_id belum tertaut pada baris student_guardians tetapi email cocok
+  if (guardianRows.length === 0 && session.email) {
+    const { data: byEmailGuards } = await supabase
+      .from('student_guardians')
+      .select('*, student:students(id, full_name, nis, nisn, status)')
+      .ilike('email', session.email)
+      .is('profile_id', null)
+      .eq('is_active', true)
+      .order('is_primary', { ascending: false });
+
+    if (byEmailGuards && byEmailGuards.length > 0) {
+      await supabase
+        .from('student_guardians')
+        .update({ profile_id: session.userId, updated_at: new Date().toISOString() })
+        .in(
+          'id',
+          byEmailGuards.map((g) => g.id as string)
+        );
+      guardianRows = byEmailGuards;
+    }
+  }
   let guardiansPayload: Record<string, unknown>[] = [];
   if (guardianRows.length > 0) {
     const guardianIds = guardianRows.map((g) => g.id as string);
@@ -128,18 +170,75 @@ export async function GET() {
         : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     ]);
 
+    const sharedSource = [resolvedTeacher, ...guardianRows].filter(Boolean) as Record<
+      string,
+      unknown
+    >[];
+    const pickShared = (key: string) => {
+      for (const row of sharedSource) {
+        const v = row[key];
+        if (typeof v === 'string' && v.trim()) return v;
+      }
+      return null;
+    };
+    const sharedBiodata = {
+      nik: pickShared('nik'),
+      address: pickShared('address'),
+      rt_rw: pickShared('rt_rw'),
+      village: pickShared('village'),
+      district: pickShared('district'),
+      city: pickShared('city'),
+      province: pickShared('province'),
+    };
+
+    if (gtkPayload && resolvedTeacher) {
+      const tRow = resolvedTeacher as Record<string, unknown>;
+      gtkPayload.teacher = {
+        ...tRow,
+        full_name: canonicalFullName,
+        phone: canonicalPhone ?? tRow.phone ?? null,
+        email: canonicalEmail ?? tRow.email ?? null,
+        nik: tRow.nik || sharedBiodata.nik,
+        address: tRow.address || sharedBiodata.address,
+        rt_rw: tRow.rt_rw || sharedBiodata.rt_rw,
+        village: tRow.village || sharedBiodata.village,
+        district: tRow.district || sharedBiodata.district,
+        city: tRow.city || sharedBiodata.city,
+        province: tRow.province || sharedBiodata.province,
+      };
+    }
+
     guardiansPayload = guardianRows.map((g) => ({
       ...g,
+      full_name: canonicalFullName,
+      phone: canonicalPhone ?? g.phone ?? null,
+      email: canonicalEmail ?? g.email ?? null,
+      nik: g.nik || sharedBiodata.nik,
+      address: g.address || sharedBiodata.address,
+      rt_rw: g.rt_rw || sharedBiodata.rt_rw,
+      village: g.village || sharedBiodata.village,
+      district: g.district || sharedBiodata.district,
+      city: g.city || sharedBiodata.city,
+      province: g.province || sharedBiodata.province,
       documents: (allGuardianDocs || []).filter((d) => d.entity_id === g.id),
       sharedStudentDocuments: (sharedStudentDocs || []).filter(
         (d) => d.student_id === g.student_id
       ),
     }));
+  } else if (gtkPayload && resolvedTeacher) {
+    const tRow = resolvedTeacher as Record<string, unknown>;
+    gtkPayload.teacher = {
+      ...tRow,
+      full_name: canonicalFullName,
+      phone: canonicalPhone ?? tRow.phone ?? null,
+      email: canonicalEmail ?? tRow.email ?? null,
+    };
   }
 
   return NextResponse.json({
     gtk: gtkPayload,
     guardians: guardiansPayload,
+    hasDualRole: Boolean(gtkPayload && guardiansPayload.length > 0),
     canManageSdm: hasAnyRole(session, PERMISSIONS.SDM_MANAGE),
   });
 }
@@ -204,6 +303,21 @@ export async function PATCH(request: Request) {
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+      await syncSharedBiodataAcrossSelfEntities(
+        supabase,
+        session.userId,
+        {
+          nik: data.nik,
+          address: data.address,
+          rt_rw: data.rt_rw,
+          village: data.village,
+          district: data.district,
+          city: data.city,
+          province: data.province,
+        },
+        { entityType: 'GTK', entityId: data.id }
+      );
+
       return NextResponse.json({ teacher: data });
     }
 
@@ -257,6 +371,21 @@ export async function PATCH(request: Request) {
         occupation: data.occupation,
         phone: data.phone,
       });
+
+      await syncSharedBiodataAcrossSelfEntities(
+        supabase,
+        session.userId,
+        {
+          nik: data.nik,
+          address: data.address,
+          rt_rw: data.rt_rw,
+          village: data.village,
+          district: data.district,
+          city: data.city,
+          province: data.province,
+        },
+        { entityType: 'ORANG_TUA', entityId: data.id }
+      );
 
       return NextResponse.json({ guardian: data });
     }
