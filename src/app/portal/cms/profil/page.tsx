@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { InstitutionSettings, InstitutionType } from '@/types/database';
 import { notifyInstitutionSettingsUpdated } from '@/lib/hooks/use-institution-settings';
+import { InstitutionLogo } from '@/components/ui/institution-logo';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 
@@ -370,15 +371,12 @@ export default function CmsProfilPage() {
             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-4 min-w-0">
                 <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                  {settings.logo_url ? (
-                    <img
-                      src={settings.logo_url}
-                      alt={settings.name || 'Logo Lembaga'}
-                      className="w-full h-full object-contain p-1.5"
-                    />
-                  ) : (
-                    <Building2 className="w-7 h-7 text-slate-400" />
-                  )}
+                  <InstitutionLogo
+                    logoUrl={settings.logo_url}
+                    alt={settings.name || 'Logo Lembaga'}
+                    className="w-full h-full object-contain p-1.5"
+                    fallback={<Building2 className="w-7 h-7 text-slate-400" />}
+                  />
                 </div>
                 <div className="min-w-0 space-y-1">
                   <p className="text-xs sm:text-sm font-bold text-slate-900">

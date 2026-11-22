@@ -16,6 +16,8 @@ import {
   Search,
   Settings2,
   ShieldAlert,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { formatRupiah } from '@/lib/domain/honorarium';
 import type { AdditionalDutyType } from '@/types/database';
@@ -72,10 +74,18 @@ interface RateSnapshot {
   schoolEndTime: string;
 }
 
+interface AcademicYearOption {
+  id: string;
+  name: string;
+  semester: 'GANJIL' | 'GENAP' | string;
+  is_active: boolean;
+}
+
 interface TeacherDutyAssignment {
   id: string;
   teacher_id: string;
   duty_type_id: string;
+  academic_year_id?: string | null;
   decree_number?: string | null;
   is_active?: boolean;
   teacher?: { full_name: string } | null;
@@ -85,6 +95,7 @@ interface TeacherDutyAssignment {
     receives_allowance: boolean;
     monthly_allowance: number;
   } | null;
+  academic_year?: AcademicYearOption | null;
 }
 
 const DAY_LABELS = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
@@ -156,14 +167,19 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
   const [distanceFilter, setDistanceFilter] = useState<'all' | 'configured' | 'zero'>('all');
   const [dutyTypes, setDutyTypes] = useState<AdditionalDutyType[]>([]);
   const [teacherDuties, setTeacherDuties] = useState<TeacherDutyAssignment[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYearOption[]>([]);
   const [dutyAllowanceDrafts, setDutyAllowanceDrafts] = useState<Record<string, string>>({});
   const [dutyTypeSearch, setDutyTypeSearch] = useState('');
   const [teacherDutySearch, setTeacherDutySearch] = useState('');
+  const [dutyToDelete, setDutyToDelete] = useState<TeacherDutyAssignment | null>(null);
+  const [selectedDutyIds, setSelectedDutyIds] = useState<string[]>([]);
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [honorariums, setHonorariums] = useState<HonorariumRow[]>([]);
 
   const [assignDutyForm, setAssignDutyForm] = useState({
     teacher_id: '',
     duty_type_id: '',
+    academic_year_id: '',
     decree_number: '',
   });
   const [genForm, setGenForm] = useState(() => {
@@ -232,6 +248,7 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
       nextDailyHours,
       dutyTypes: (hon.dutyTypes || []) as AdditionalDutyType[],
       teacherDuties: (hon.teacherDuties || []) as TeacherDutyAssignment[],
+      academicYears: (hon.academicYears || []) as AcademicYearOption[],
       honorariums: (hon.honorariums || []) as HonorariumRow[],
     };
   }, [section]);
@@ -251,6 +268,16 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
       setSavedDailyHours(payload.nextDailyHours.map((d) => ({ ...d })));
       setDutyTypes(payload.dutyTypes);
       setTeacherDuties(payload.teacherDuties);
+      setAcademicYears(payload.academicYears);
+      const defaultAcademicYearId =
+        payload.academicYears.find((ay) => ay.is_active)?.id ||
+        payload.academicYears[0]?.id ||
+        '';
+      if (defaultAcademicYearId) {
+        setAssignDutyForm((prev) =>
+          prev.academic_year_id ? prev : { ...prev, academic_year_id: defaultAcademicYearId }
+        );
+      }
       const nextDrafts: Record<string, string> = {};
       for (const dt of payload.dutyTypes) {
         nextDrafts[dt.id] = String(Number(dt.monthly_allowance ?? 0));
@@ -310,7 +337,7 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
   }, [applyFetchedData, fetchHonorariumData]);
 
   async function callHonorApi(
-    method: 'POST' | 'PATCH',
+    method: 'POST' | 'PATCH' | 'DELETE',
     body: { action?: string; [key: string]: unknown },
     msg: string
   ) {
@@ -442,28 +469,49 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
       (td) =>
         (td.teacher?.full_name || '').toLowerCase().includes(q) ||
         (td.duty_type?.name || '').toLowerCase().includes(q) ||
-        (td.decree_number || '').toLowerCase().includes(q)
+        (td.decree_number || '').toLowerCase().includes(q) ||
+        (td.academic_year?.name || '').toLowerCase().includes(q) ||
+        (td.academic_year?.semester || '').toLowerCase().includes(q)
     );
   }, [teacherDuties, teacherDutySearch]);
 
   const isDuplicateDutyAssignment = useMemo(() => {
-    if (!assignDutyForm.teacher_id || !assignDutyForm.duty_type_id) return false;
+    if (
+      !assignDutyForm.teacher_id ||
+      !assignDutyForm.duty_type_id ||
+      !assignDutyForm.academic_year_id
+    ) {
+      return false;
+    }
     return teacherDuties.some(
       (td) =>
         td.teacher_id === assignDutyForm.teacher_id &&
-        td.duty_type_id === assignDutyForm.duty_type_id
+        td.duty_type_id === assignDutyForm.duty_type_id &&
+        td.academic_year_id === assignDutyForm.academic_year_id
     );
-  }, [assignDutyForm.duty_type_id, assignDutyForm.teacher_id, teacherDuties]);
+  }, [
+    assignDutyForm.academic_year_id,
+    assignDutyForm.duty_type_id,
+    assignDutyForm.teacher_id,
+    teacherDuties,
+  ]);
 
   async function handleAssignDuty(e: React.FormEvent) {
     e.preventDefault();
     if (!canManage || submittingAction) return;
-    if (!assignDutyForm.teacher_id || !assignDutyForm.duty_type_id) {
-      showToast('Pilih guru dan jenis tugas tambahan terlebih dahulu.', 'error');
+    if (
+      !assignDutyForm.teacher_id ||
+      !assignDutyForm.duty_type_id ||
+      !assignDutyForm.academic_year_id
+    ) {
+      showToast('Pilih guru, jenis tugas tambahan, serta semester & tahun ajaran.', 'error');
       return;
     }
     if (isDuplicateDutyAssignment) {
-      showToast('Guru tersebut sudah memiliki tugas tambahan yang sama.', 'error');
+      showToast(
+        'Guru tersebut sudah memiliki tugas tambahan yang sama pada semester dan tahun ajaran ini.',
+        'error'
+      );
       return;
     }
     const ok = await callHonorApi(
@@ -472,12 +520,84 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
         action: 'ASSIGN_DUTY',
         teacher_id: assignDutyForm.teacher_id,
         duty_type_id: assignDutyForm.duty_type_id,
+        academic_year_id: assignDutyForm.academic_year_id,
         decree_number: assignDutyForm.decree_number.trim() || null,
       },
       'Tugas tambahan guru berhasil disimpan.'
     );
     if (ok) {
-      setAssignDutyForm({ teacher_id: '', duty_type_id: '', decree_number: '' });
+      setAssignDutyForm((prev) => ({
+        ...prev,
+        teacher_id: '',
+        duty_type_id: '',
+        decree_number: '',
+      }));
+    }
+  }
+
+  async function handleConfirmDeleteDuty() {
+    if (!canManage || !dutyToDelete || submittingAction) return;
+    const ok = await callHonorApi(
+      'DELETE',
+      {
+        action: 'DELETE_DUTY_ASSIGNMENT',
+        id: dutyToDelete.id,
+      },
+      'Penugasan tugas tambahan guru berhasil dihapus.'
+    );
+    if (ok) {
+      setSelectedDutyIds((prev) => prev.filter((id) => id !== dutyToDelete.id));
+      setDutyToDelete(null);
+    }
+  }
+
+  const selectedDutiesList = useMemo(() => {
+    if (selectedDutyIds.length === 0) return [];
+    const selectedSet = new Set(selectedDutyIds);
+    return teacherDuties.filter((td) => selectedSet.has(td.id));
+  }, [selectedDutyIds, teacherDuties]);
+
+  const allFilteredSelected = useMemo(() => {
+    if (filteredTeacherDuties.length === 0) return false;
+    const selectedSet = new Set(selectedDutyIds);
+    return filteredTeacherDuties.every((td) => selectedSet.has(td.id));
+  }, [filteredTeacherDuties, selectedDutyIds]);
+
+  function toggleDutySelection(id: string) {
+    setSelectedDutyIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }
+
+  function handleToggleSelectAllFiltered() {
+    if (allFilteredSelected) {
+      const filteredSet = new Set(filteredTeacherDuties.map((td) => td.id));
+      setSelectedDutyIds((prev) => prev.filter((id) => !filteredSet.has(id)));
+      return;
+    }
+    setSelectedDutyIds((prev) => {
+      const merged = new Set(prev);
+      for (const td of filteredTeacherDuties) {
+        merged.add(td.id);
+      }
+      return Array.from(merged);
+    });
+  }
+
+  async function handleConfirmBatchDeleteDuty() {
+    if (!canManage || selectedDutiesList.length === 0 || submittingAction) return;
+    const ids = selectedDutiesList.map((td) => td.id);
+    const ok = await callHonorApi(
+      'DELETE',
+      {
+        action: 'DELETE_DUTY_ASSIGNMENT_BATCH',
+        ids,
+      },
+      `${ids.length} penugasan tugas tambahan guru berhasil dihapus.`
+    );
+    if (ok) {
+      setSelectedDutyIds([]);
+      setBatchDeleteOpen(false);
     }
   }
 
@@ -1485,6 +1605,33 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
 
                   <div className="space-y-1">
                     <label
+                      htmlFor="honor-duty-academic-year"
+                      className="block text-[11px] font-semibold text-slate-700"
+                    >
+                      Semester &amp; Tahun Ajaran
+                    </label>
+                    <select
+                      id="honor-duty-academic-year"
+                      required
+                      disabled={submittingAction === 'ASSIGN_DUTY'}
+                      value={assignDutyForm.academic_year_id}
+                      onChange={(e) =>
+                        setAssignDutyForm({ ...assignDutyForm, academic_year_id: e.target.value })
+                      }
+                      className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                    >
+                      <option value="">-- Pilih Semester &amp; Tahun Ajaran --</option>
+                      {academicYears.map((ay) => (
+                        <option key={ay.id} value={ay.id}>
+                          {ay.name} - Semester {ay.semester}
+                          {ay.is_active ? ' (Aktif)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label
                       htmlFor="honor-duty-decree"
                       className="block text-[11px] font-semibold text-slate-700"
                     >
@@ -1506,7 +1653,9 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
                   {isDuplicateDutyAssignment && (
                     <p className="text-[11px] font-medium text-amber-700 flex items-center gap-1.5">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>Guru ini sudah aktif pada tugas tambahan tersebut.</span>
+                      <span>
+                        Guru ini sudah aktif pada tugas tambahan tersebut di semester dan tahun ajaran yang dipilih.
+                      </span>
                     </p>
                   )}
 
@@ -1516,6 +1665,7 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
                       Boolean(submittingAction) ||
                       !assignDutyForm.teacher_id ||
                       !assignDutyForm.duty_type_id ||
+                      !assignDutyForm.academic_year_id ||
                       isDuplicateDutyAssignment
                     }
                     className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition disabled:opacity-60"
@@ -1648,19 +1798,54 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
                   Menampilkan guru yang sedang memegang tugas tambahan aktif.
                 </p>
               </div>
-              <div className="relative w-full sm:w-72">
-                <label htmlFor="honor-assigned-duty-search" className="sr-only">
-                  Cari penugasan guru
-                </label>
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  id="honor-assigned-duty-search"
-                  type="search"
-                  value={teacherDutySearch}
-                  onChange={(e) => setTeacherDutySearch(e.target.value)}
-                  placeholder="Cari guru, tugas, atau SK..."
-                  className="w-full rounded-xl border border-slate-300 bg-white pl-8 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
-                />
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+                {canManage && filteredTeacherDuties.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleToggleSelectAllFiltered}
+                      disabled={Boolean(submittingAction)}
+                      className="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition disabled:opacity-50"
+                    >
+                      {allFilteredSelected ? 'Batal Pilih Semua' : 'Pilih Semua'}
+                    </button>
+                    {selectedDutiesList.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDutyIds([])}
+                          disabled={Boolean(submittingAction)}
+                          className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-medium text-slate-600 transition disabled:opacity-50"
+                        >
+                          Reset ({selectedDutiesList.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBatchDeleteOpen(true)}
+                          disabled={Boolean(submittingAction)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition disabled:opacity-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Hapus Terpilih ({selectedDutiesList.length})</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className="relative w-full sm:w-72">
+                  <label htmlFor="honor-assigned-duty-search" className="sr-only">
+                    Cari penugasan guru
+                  </label>
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="honor-assigned-duty-search"
+                    type="search"
+                    value={teacherDutySearch}
+                    onChange={(e) => setTeacherDutySearch(e.target.value)}
+                    placeholder="Cari guru, tugas, atau SK..."
+                    className="w-full rounded-xl border border-slate-300 bg-white pl-8 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1672,31 +1857,67 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-96 overflow-y-auto pr-0.5">
-                {filteredTeacherDuties.map((td) => (
-                  <div
-                    key={td.id}
-                    className="modular-card rounded-xl p-3.5 flex items-start justify-between gap-2.5 text-xs"
-                  >
-                    <div className="min-w-0 space-y-0.5">
-                      <p className="font-bold text-slate-900 break-words">
-                        {td.teacher?.full_name || 'Guru'}
-                      </p>
-                      <p className="text-[11px] font-medium text-emerald-700 break-words">
-                        {td.duty_type?.name || 'Tugas Tambahan'}
-                      </p>
-                      {td.decree_number && (
-                        <p className="text-[10px] text-slate-500 font-mono break-words">
-                          SK: {td.decree_number}
-                        </p>
-                      )}
+                {filteredTeacherDuties.map((td) => {
+                  const isSelected = selectedDutyIds.includes(td.id);
+                  return (
+                    <div
+                      key={td.id}
+                      className={`modular-card rounded-xl p-3.5 flex items-start justify-between gap-2.5 text-xs transition ${
+                        isSelected ? 'ring-2 ring-rose-500/60 bg-rose-50/40' : ''
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        {canManage && (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleDutySelection(td.id)}
+                            disabled={Boolean(submittingAction)}
+                            aria-label={`Pilih penugasan ${td.duty_type?.name || 'tugas tambahan'} untuk ${td.teacher?.full_name || 'guru'}`}
+                            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 shrink-0 cursor-pointer"
+                          />
+                        )}
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="font-bold text-slate-900 break-words">
+                            {td.teacher?.full_name || 'Guru'}
+                          </p>
+                          <p className="text-[11px] font-medium text-emerald-700 break-words">
+                            {td.duty_type?.name || 'Tugas Tambahan'}
+                          </p>
+                          {td.academic_year && (
+                            <p className="text-[10px] text-slate-600 font-medium">
+                              TA {td.academic_year.name} · Smt {td.academic_year.semester}
+                            </p>
+                          )}
+                          {td.decree_number && (
+                            <p className="text-[10px] text-slate-500 font-mono break-words">
+                              SK: {td.decree_number}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        <span className="font-mono font-semibold text-[11px] text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg">
+                          {td.duty_type?.receives_allowance
+                            ? formatRupiah(Number(td.duty_type.monthly_allowance ?? 0))
+                            : 'Non-tunj.'}
+                        </span>
+                        {canManage && (
+                          <button
+                            type="button"
+                            onClick={() => setDutyToDelete(td)}
+                            disabled={Boolean(submittingAction)}
+                            title="Hapus penugasan tugas tambahan"
+                            aria-label={`Hapus penugasan ${td.duty_type?.name || 'tugas tambahan'} untuk ${td.teacher?.full_name || 'guru'}`}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <span className="shrink-0 font-mono font-semibold text-[11px] text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg">
-                      {td.duty_type?.receives_allowance
-                        ? formatRupiah(Number(td.duty_type.monthly_allowance ?? 0))
-                        : 'Non-tunj.'}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -2038,6 +2259,167 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
 
       {activeHonorSlip && (
         <HonorariumSlipModal slip={activeHonorSlip} onClose={() => setActiveHonorSlip(null)} />
+      )}
+
+      {dutyToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-duty-modal-title"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white border border-slate-200 shadow-xl p-5 sm:p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3
+                    id="delete-duty-modal-title"
+                    className="text-sm font-bold text-slate-900"
+                  >
+                    Hapus Penugasan Tugas Tambahan
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Tindakan ini akan mencabut penugasan aktif guru.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDutyToDelete(null)}
+                disabled={submittingAction === 'DELETE_DUTY_ASSIGNMENT'}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                aria-label="Tutup modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-3.5 text-xs space-y-1">
+              <p className="font-bold text-slate-900">
+                {dutyToDelete.teacher?.full_name || 'Guru'}
+              </p>
+              <p className="font-medium text-emerald-700">
+                {dutyToDelete.duty_type?.name || 'Tugas Tambahan'}
+              </p>
+              {dutyToDelete.decree_number && (
+                <p className="text-[11px] text-slate-500 font-mono">
+                  SK: {dutyToDelete.decree_number}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setDutyToDelete(null)}
+                disabled={submittingAction === 'DELETE_DUTY_ASSIGNMENT'}
+                className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteDuty}
+                disabled={submittingAction === 'DELETE_DUTY_ASSIGNMENT'}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-xs font-semibold text-white transition"
+              >
+                {submittingAction === 'DELETE_DUTY_ASSIGNMENT' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>Hapus Penugasan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {batchDeleteOpen && selectedDutiesList.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="batch-delete-duty-modal-title"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white border border-slate-200 shadow-xl p-5 sm:p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3
+                    id="batch-delete-duty-modal-title"
+                    className="text-sm font-bold text-slate-900"
+                  >
+                    Hapus {selectedDutiesList.length} Penugasan Tugas Tambahan
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Seluruh penugasan aktif terpilih akan dicabut secara permanen.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBatchDeleteOpen(false)}
+                disabled={submittingAction === 'DELETE_DUTY_ASSIGNMENT_BATCH'}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                aria-label="Tutup modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-3 max-h-56 overflow-y-auto space-y-2 text-xs">
+              {selectedDutiesList.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-200/70 last:border-b-0 last:pb-0"
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900 truncate">
+                      {item.teacher?.full_name || 'Guru'}
+                    </p>
+                    <p className="text-[11px] text-emerald-700 truncate">
+                      {item.duty_type?.name || 'Tugas Tambahan'}
+                      {item.academic_year
+                        ? ` · TA ${item.academic_year.name} (${item.academic_year.semester})`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setBatchDeleteOpen(false)}
+                disabled={submittingAction === 'DELETE_DUTY_ASSIGNMENT_BATCH'}
+                className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBatchDeleteDuty}
+                disabled={submittingAction === 'DELETE_DUTY_ASSIGNMENT_BATCH'}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-xs font-semibold text-white transition"
+              >
+                {submittingAction === 'DELETE_DUTY_ASSIGNMENT_BATCH' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>Hapus {selectedDutiesList.length} Penugasan</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -8,13 +8,21 @@ import type { CaptchaPayload } from '@/lib/security/captcha-types';
 
 const LOGIN_ATTEMPTS_COOKIE = 'simms_login_attempts';
 const LOGIN_CAPTCHA_THRESHOLD = 3;
+const LOGIN_WARNING_THRESHOLD = 3;
+const LOGIN_LOCKOUT_THRESHOLD = 5;
 const ATTEMPTS_TTL_SECONDS = 15 * 60; // 15 menit
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 menit
 
 const LoginSchema = z.object({
   email: z.string().email('Masukkan alamat email yang valid.'),
   password: z.string().min(1, 'Kata sandi wajib diisi.'),
   captcha: z.custom<CaptchaPayload>().optional(),
 });
+
+interface AttemptState {
+  count: number;
+  lockedUntil: number | null;
+}
 
 function getAttemptSecret(): string {
   return (
@@ -24,10 +32,10 @@ function getAttemptSecret(): string {
   );
 }
 
-function readFailedAttempts(rawCookie: string | undefined): number {
-  if (!rawCookie) return 0;
+function readAttemptState(rawCookie: string | undefined): AttemptState {
+  if (!rawCookie) return { count: 0, lockedUntil: null };
   const parts = rawCookie.split('.');
-  if (parts.length !== 2) return 0;
+  if (parts.length !== 2) return { count: 0, lockedUntil: null };
   const [encoded, sig] = parts;
   const expectedSig = crypto
     .createHmac('sha256', getAttemptSecret())
@@ -36,24 +44,31 @@ function readFailedAttempts(rawCookie: string | undefined): number {
   const sigBuf = Buffer.from(sig);
   const expectedBuf = Buffer.from(expectedSig);
   if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
-    return 0;
+    return { count: 0, lockedUntil: null };
   }
   try {
     const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as {
       count?: number;
+      lockedUntil?: number | null;
       exp?: number;
     };
-    if (!parsed.exp || Date.now() > parsed.exp) return 0;
-    return Number(parsed.count) || 0;
+    if (!parsed.exp || Date.now() > parsed.exp) return { count: 0, lockedUntil: null };
+    return {
+      count: Number(parsed.count) || 0,
+      lockedUntil: typeof parsed.lockedUntil === 'number' ? parsed.lockedUntil : null,
+    };
   } catch {
-    return 0;
+    return { count: 0, lockedUntil: null };
   }
 }
 
-function signFailedAttempts(count: number): string {
+function signAttemptState(count: number, lockedUntil: number | null): string {
+  const now = Date.now();
+  const exp = lockedUntil && lockedUntil > now ? lockedUntil : now + ATTEMPTS_TTL_SECONDS * 1000;
   const payload = {
     count,
-    exp: Date.now() + ATTEMPTS_TTL_SECONDS * 1000,
+    lockedUntil,
+    exp,
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto
@@ -82,11 +97,21 @@ function mapSupabaseAuthError(rawMessage: string): string {
 
 export async function GET() {
   const cookieStore = await cookies();
-  const count = readFailedAttempts(cookieStore.get(LOGIN_ATTEMPTS_COOKIE)?.value);
+  const state = readAttemptState(cookieStore.get(LOGIN_ATTEMPTS_COOKIE)?.value);
+  const now = Date.now();
+  const isLocked = Boolean(state.lockedUntil && state.lockedUntil > now);
+  const remainingLockSeconds = isLocked
+    ? Math.max(1, Math.ceil((state.lockedUntil! - now) / 1000))
+    : 0;
+
   return NextResponse.json(
     {
-      failedAttempts: count,
-      requireCaptcha: count >= LOGIN_CAPTCHA_THRESHOLD,
+      failedAttempts: state.count,
+      maxAttempts: LOGIN_LOCKOUT_THRESHOLD,
+      remainingAttempts: Math.max(0, LOGIN_LOCKOUT_THRESHOLD - state.count),
+      requireCaptcha: state.count >= LOGIN_CAPTCHA_THRESHOLD,
+      isLocked,
+      remainingLockSeconds,
     },
     { headers: { 'Cache-Control': 'no-store' } }
   );
@@ -111,7 +136,30 @@ export async function POST(request: Request) {
     }
 
     const cookieStore = await cookies();
-    const failedAttempts = readFailedAttempts(cookieStore.get(LOGIN_ATTEMPTS_COOKIE)?.value);
+    const attemptState = readAttemptState(cookieStore.get(LOGIN_ATTEMPTS_COOKIE)?.value);
+    const now = Date.now();
+
+    if (attemptState.lockedUntil && attemptState.lockedUntil > now) {
+      const remainingLockSeconds = Math.max(
+        1,
+        Math.ceil((attemptState.lockedUntil - now) / 1000)
+      );
+      return NextResponse.json(
+        {
+          error:
+            'Akses masuk dibekukan sementara selama 15 menit karena 5 kali percobaan gagal. Silakan tunggu atau reset kata sandi Anda.',
+          isLocked: true,
+          remainingLockSeconds,
+          failedAttempts: attemptState.count,
+          maxAttempts: LOGIN_LOCKOUT_THRESHOLD,
+          remainingAttempts: 0,
+          requireCaptcha: true,
+        },
+        { status: 429 }
+      );
+    }
+
+    const failedAttempts = attemptState.count;
     const captchaRequired = failedAttempts >= LOGIN_CAPTCHA_THRESHOLD;
 
     if (captchaRequired) {
@@ -136,16 +184,51 @@ export async function POST(request: Request) {
     });
 
     if (error || !authData.user) {
+      const rawMessage = error?.message || 'Gagal masuk.';
+      const isCredentialError = rawMessage.toLowerCase().includes('invalid login credentials');
+
+      if (!isCredentialError) {
+        return NextResponse.json(
+          {
+            error: mapSupabaseAuthError(rawMessage),
+            requireCaptcha: failedAttempts >= LOGIN_CAPTCHA_THRESHOLD,
+            failedAttempts,
+            isCredentialError: false,
+          },
+          { status: 401 }
+        );
+      }
+
       const nextCount = failedAttempts + 1;
+      const isLocked = nextCount >= LOGIN_LOCKOUT_THRESHOLD;
+      const lockedUntil = isLocked ? Date.now() + LOCKOUT_DURATION_MS : null;
+      const remainingAttempts = Math.max(0, LOGIN_LOCKOUT_THRESHOLD - nextCount);
+      const showLockWarningModal = nextCount === LOGIN_WARNING_THRESHOLD;
+
+      let errorMessage = mapSupabaseAuthError(rawMessage);
+      if (isLocked) {
+        errorMessage =
+          'Akses masuk dibekukan selama 15 menit karena 5 kali gagal login. Silakan tunggu atau reset kata sandi Anda.';
+      } else if (remainingAttempts === 1) {
+        errorMessage =
+          'Email atau kata sandi salah. Tersisa 1 percobaan lagi sebelum akun dibekukan selama 15 menit.';
+      }
+
       const res = NextResponse.json(
         {
-          error: mapSupabaseAuthError(error?.message || 'Gagal masuk.'),
+          error: errorMessage,
+          isCredentialError: true,
           requireCaptcha: nextCount >= LOGIN_CAPTCHA_THRESHOLD,
           failedAttempts: nextCount,
+          maxAttempts: LOGIN_LOCKOUT_THRESHOLD,
+          remainingAttempts,
+          showLockWarningModal,
+          isLocked,
+          remainingLockSeconds: isLocked ? Math.ceil(LOCKOUT_DURATION_MS / 1000) : 0,
         },
-        { status: 401 }
+        { status: isLocked ? 429 : 401 }
       );
-      res.cookies.set(LOGIN_ATTEMPTS_COOKIE, signFailedAttempts(nextCount), {
+      res.cookies.set(LOGIN_ATTEMPTS_COOKIE, signAttemptState(nextCount, lockedUntil), {
         httpOnly: true,
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production',

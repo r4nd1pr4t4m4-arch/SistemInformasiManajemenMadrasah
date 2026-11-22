@@ -136,13 +136,28 @@ function wrapText(
 
 async function loadImageSafe(url?: string | null): Promise<HTMLImageElement | null> {
   if (!url) return null;
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  const tryLoad = (src: string, useAnonymousCors: boolean) =>
+    new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      if (useAnonymousCors) {
+        img.crossOrigin = 'anonymous';
+      }
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+
+  const isSameOriginOrData = trimmed.startsWith('data:') || trimmed.startsWith('/');
+  const first = await tryLoad(trimmed, !isSameOriginOrData);
+  if (first) return first;
+
+  if (!isSameOriginOrData) {
+    return await tryLoad('/api/cms/logo', false);
+  }
+  return null;
 }
 
 async function generateQrImage(payload: string): Promise<HTMLImageElement | null> {

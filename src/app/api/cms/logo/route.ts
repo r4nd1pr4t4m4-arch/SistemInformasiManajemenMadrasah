@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { isR2Configured, uploadBufferToR2 } from '@/lib/storage/r2';
+import { getR2ObjectBuffer, isR2Configured, uploadBufferToR2 } from '@/lib/storage/r2';
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
@@ -22,6 +22,89 @@ const ALLOWED_MIMES = new Set([
   'image/x-icon',
   'image/vnd.microsoft.icon',
 ]);
+
+function inferMimeFromKey(key: string): string {
+  const ext = key.split('.').pop()?.toLowerCase() || '';
+  return EXT_TO_MIME[ext] || 'image/png';
+}
+
+function extractLogoR2Key(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim();
+  if (trimmed.startsWith('institution-logos/')) return trimmed;
+  const r2PublicBase = process.env.R2_PUBLIC_URL?.replace(/\/$/, '') || '';
+  if (r2PublicBase && trimmed.startsWith(`${r2PublicBase}/`)) {
+    return trimmed.slice(r2PublicBase.length + 1);
+  }
+  return null;
+}
+
+export async function GET(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const requestedKey = url.searchParams.get('key')?.trim() || '';
+
+    let rawLogoUrl = '';
+    if (requestedKey && requestedKey.startsWith('institution-logos/')) {
+      rawLogoUrl = requestedKey;
+    } else if (isSupabaseAdminConfigured()) {
+      const supabase = createSupabaseAdminClient();
+      const { data } = await supabase
+        .from('institution_settings')
+        .select('logo_url')
+        .limit(1)
+        .maybeSingle();
+      rawLogoUrl = data?.logo_url?.trim() || '';
+    }
+
+    if (!rawLogoUrl) {
+      return new NextResponse(null, { status: 404 });
+    }
+
+    if (rawLogoUrl.startsWith('data:')) {
+      const match = /^data:([^;]+);base64,(.+)$/.exec(rawLogoUrl);
+      if (!match) return new NextResponse(null, { status: 404 });
+      const mime = match[1];
+      const buf = Buffer.from(match[2], 'base64');
+      return new NextResponse(buf, {
+        headers: {
+          'Content-Type': mime,
+          'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400',
+        },
+      });
+    }
+
+    const r2Key = extractLogoR2Key(rawLogoUrl);
+    if (r2Key && isR2Configured()) {
+      const bytes = await getR2ObjectBuffer(r2Key);
+      return new NextResponse(Buffer.from(bytes), {
+        headers: {
+          'Content-Type': inferMimeFromKey(r2Key),
+          'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400',
+        },
+      });
+    }
+
+    if (/^https?:\/\//i.test(rawLogoUrl)) {
+      const upstream = await fetch(rawLogoUrl, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!upstream.ok) {
+        return new NextResponse(null, { status: 404 });
+      }
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      return new NextResponse(buf, {
+        headers: {
+          'Content-Type': upstream.headers.get('content-type') || 'image/png',
+          'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400',
+        },
+      });
+    }
+
+    return new NextResponse(null, { status: 404 });
+  } catch {
+    return new NextResponse(null, { status: 404 });
+  }
+}
 
 export async function POST(request: Request) {
   const guard = await requireApiRoles(PERMISSIONS.CMS_MANAGE);
@@ -74,8 +157,8 @@ export async function POST(request: Request) {
           contentType: mime,
           body: buffer,
         });
-        if (uploaded.publicUrl && /^https?:\/\//i.test(uploaded.publicUrl)) {
-          logoUrl = uploaded.publicUrl;
+        if (uploaded.objectKey) {
+          logoUrl = `/api/cms/logo?key=${encodeURIComponent(uploaded.objectKey)}`;
         }
       } catch {
         // Fallback ke Data URL jika R2 gagal

@@ -69,6 +69,7 @@ const AssignDutySchema = z.object({
   action: z.literal('ASSIGN_DUTY'),
   teacher_id: z.string().uuid(),
   duty_type_id: z.string().uuid(),
+  academic_year_id: z.string().uuid().optional().nullable(),
   decree_number: z.string().optional().nullable(),
 });
 
@@ -92,6 +93,7 @@ export async function GET() {
       dailyHours: getDefaultDailyHours(),
       dutyTypes: [],
       teacherDuties: [],
+      academicYears: [],
       honorariums: [],
     });
   }
@@ -102,6 +104,7 @@ export async function GET() {
     { data: dailyHoursRows },
     { data: dutyTypes },
     { data: teacherDuties },
+    { data: academicYears },
     { data: honorariums },
   ] = await Promise.all([
     supabase
@@ -116,9 +119,15 @@ export async function GET() {
     supabase
       .from('teacher_additional_duties')
       .select(
-        '*, teacher:teachers_staff(full_name), duty_type:additional_duty_types(code, name, receives_allowance, monthly_allowance)'
+        '*, teacher:teachers_staff(full_name), duty_type:additional_duty_types(code, name, receives_allowance, monthly_allowance), academic_year:academic_years(id, name, semester, is_active)'
       )
       .eq('is_active', true),
+    supabase
+      .from('academic_years')
+      .select('id, name, semester, is_active')
+      .order('is_active', { ascending: false })
+      .order('name', { ascending: false })
+      .order('semester', { ascending: true }),
     supabase
       .from('teacher_honorariums')
       .select(
@@ -149,6 +158,7 @@ export async function GET() {
     dailyHours,
     dutyTypes: dutyTypes || [],
     teacherDuties: teacherDuties || [],
+    academicYears: academicYears || [],
     honorariums: honorariums || [],
   });
 }
@@ -319,17 +329,68 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data penugasan guru tidak valid.' }, { status: 400 });
       }
+
+      let targetAcademicYearId = parsed.data.academic_year_id || null;
+      if (!targetAcademicYearId) {
+        const { data: activeYear } = await supabase
+          .from('academic_years')
+          .select('id')
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle();
+        targetAcademicYearId = activeYear?.id ?? null;
+      }
+
+      if (!targetAcademicYearId) {
+        return NextResponse.json(
+          { error: 'Semester dan tahun ajaran belum dipilih atau belum ada yang aktif.' },
+          { status: 400 }
+        );
+      }
+
+      const { data: duplicateDuty } = await supabase
+        .from('teacher_additional_duties')
+        .select('id')
+        .eq('teacher_id', parsed.data.teacher_id)
+        .eq('duty_type_id', parsed.data.duty_type_id)
+        .eq('academic_year_id', targetAcademicYearId)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      if (duplicateDuty) {
+        return NextResponse.json(
+          {
+            error:
+              'Guru tersebut sudah memiliki tugas tambahan yang sama pada semester dan tahun ajaran ini.',
+          },
+          { status: 409 }
+        );
+      }
+
       const { data, error } = await supabase
         .from('teacher_additional_duties')
         .insert({
           teacher_id: parsed.data.teacher_id,
           duty_type_id: parsed.data.duty_type_id,
+          academic_year_id: targetAcademicYearId,
           decree_number: parsed.data.decree_number || null,
           is_active: true,
         })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) {
+        if (error.code === '23505') {
+          return NextResponse.json(
+            {
+              error:
+                'Guru tersebut sudah memiliki tugas tambahan yang sama pada semester dan tahun ajaran ini.',
+            },
+            { status: 409 }
+          );
+        }
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
 
       // Sinkronkan peran otomatis ke user_roles jika guru sudah tertaut ke akun (profile_id)
       const [{ data: teacherRow }, { data: dutyTypeRow }] = await Promise.all([
@@ -673,5 +734,144 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Aksi POST honorarium tidak dikenal.' }, { status: 400 });
   } catch {
     return NextResponse.json({ error: 'Gagal memproses honorarium.' }, { status: 500 });
+  }
+}
+
+const DeleteDutyAssignmentSchema = z.union([
+  z.object({
+    id: z.string().uuid('ID penugasan tidak valid.'),
+  }),
+  z.object({
+    ids: z
+      .array(z.string().uuid('ID penugasan tidak valid.'))
+      .min(1, 'Pilih minimal 1 penugasan untuk dihapus.')
+      .max(200, 'Maksimal 200 penugasan dapat dihapus sekaligus.'),
+  }),
+]);
+
+export async function DELETE(request: Request) {
+  const guard = await requireApiRoles(PERMISSIONS.HONORARIUM_MANAGE);
+  if (guard.errorResponse) return guard.errorResponse;
+
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
+  }
+
+  try {
+    const url = new URL(request.url);
+    const queryId = url.searchParams.get('id');
+    const body = queryId ? { id: queryId } : await request.json().catch(() => ({}));
+    const parsed = DeleteDutyAssignmentSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message || 'ID penugasan tidak valid.' },
+        { status: 400 }
+      );
+    }
+
+    const targetIds = Array.from(
+      new Set('ids' in parsed.data ? parsed.data.ids : [parsed.data.id])
+    );
+
+    const supabase = createSupabaseAdminClient();
+    const { data: existingRows, error: fetchErr } = await supabase
+      .from('teacher_additional_duties')
+      .select('id, teacher_id, duty_type_id')
+      .in('id', targetIds);
+
+    if (fetchErr) {
+      return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+    }
+    if (!existingRows || existingRows.length === 0) {
+      return NextResponse.json(
+        { error: 'Data penugasan tugas tambahan tidak ditemukan.' },
+        { status: 404 }
+      );
+    }
+
+    const foundIds = existingRows.map((r) => r.id);
+    const { error: deleteErr } = await supabase
+      .from('teacher_additional_duties')
+      .delete()
+      .in('id', foundIds);
+
+    if (deleteErr) {
+      return NextResponse.json({ error: deleteErr.message }, { status: 500 });
+    }
+
+    // Sinkronkan penghapusan peran di user_roles untuk semua guru yang terdampak
+    const affectedTeacherIds = Array.from(new Set(existingRows.map((r) => r.teacher_id)));
+    const deletedDutyTypeIds = Array.from(new Set(existingRows.map((r) => r.duty_type_id)));
+
+    const [{ data: teacherRows }, { data: deletedDutyTypes }, { data: remainingDuties }] =
+      await Promise.all([
+        supabase
+          .from('teachers_staff')
+          .select('id, profile_id')
+          .in('id', affectedTeacherIds),
+        supabase
+          .from('additional_duty_types')
+          .select('id, code, name')
+          .in('id', deletedDutyTypeIds),
+        supabase
+          .from('teacher_additional_duties')
+          .select('teacher_id, duty_type:additional_duty_types(code, name)')
+          .in('teacher_id', affectedTeacherIds)
+          .eq('is_active', true),
+      ]);
+
+    const teacherProfileMap = new Map(
+      (teacherRows || [])
+        .filter((t) => Boolean(t.profile_id))
+        .map((t) => [t.id, t.profile_id as string])
+    );
+    const dutyTypeMap = new Map((deletedDutyTypes || []).map((dt) => [dt.id, dt]));
+
+    const remainingRolesByTeacher = new Map<string, Set<string>>();
+    for (const row of remainingDuties || []) {
+      const dt = Array.isArray(row.duty_type) ? row.duty_type[0] : row.duty_type;
+      if (!dt) continue;
+      const role = mapDutyCodeToRole(dt.code) || mapDutyCodeToRole(dt.name);
+      if (!role) continue;
+      if (!remainingRolesByTeacher.has(row.teacher_id)) {
+        remainingRolesByTeacher.set(row.teacher_id, new Set());
+      }
+      remainingRolesByTeacher.get(row.teacher_id)!.add(role);
+    }
+
+    const roleCleanups: Array<{ userId: string; role: string }> = [];
+    const seenCleanup = new Set<string>();
+    for (const row of existingRows) {
+      const profileId = teacherProfileMap.get(row.teacher_id);
+      const dt = dutyTypeMap.get(row.duty_type_id);
+      if (!profileId || !dt) continue;
+      const removedRole = mapDutyCodeToRole(dt.code) || mapDutyCodeToRole(dt.name);
+      if (!removedRole) continue;
+      const stillHasRole = remainingRolesByTeacher.get(row.teacher_id)?.has(removedRole);
+      if (!stillHasRole) {
+        const key = `${profileId}:${removedRole}`;
+        if (!seenCleanup.has(key)) {
+          seenCleanup.add(key);
+          roleCleanups.push({ userId: profileId, role: removedRole });
+        }
+      }
+    }
+
+    if (roleCleanups.length > 0) {
+      await Promise.all(
+        roleCleanups.map(({ userId, role }) =>
+          supabase.from('user_roles').delete().eq('user_id', userId).eq('role', role)
+        )
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      deletedId: foundIds[0],
+      deletedIds: foundIds,
+      deletedCount: foundIds.length,
+    });
+  } catch {
+    return NextResponse.json({ error: 'Gagal menghapus penugasan tugas tambahan.' }, { status: 500 });
   }
 }

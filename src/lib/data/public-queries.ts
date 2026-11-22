@@ -2,6 +2,23 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { DEFAULT_INSTITUTION_SETTINGS, DEFAULT_POSTS } from '@/lib/data/demo-seed';
 import type { InstitutionSettings, PostItem } from '@/types/database';
 
+function normalizeInstitutionLogoUrl(rawUrl?: string | null): string | null {
+  const trimmed = rawUrl?.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('data:') || trimmed.startsWith('/')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('institution-logos/')) {
+    return `/api/cms/logo?key=${encodeURIComponent(trimmed)}`;
+  }
+  const r2PublicBase = process.env.R2_PUBLIC_URL?.replace(/\/$/, '') || '';
+  if (r2PublicBase && trimmed.startsWith(`${r2PublicBase}/`)) {
+    const objectKey = trimmed.slice(r2PublicBase.length + 1);
+    return `/api/cms/logo?key=${encodeURIComponent(objectKey)}`;
+  }
+  return trimmed;
+}
+
 export async function getInstitutionSettings(): Promise<InstitutionSettings> {
   if (!isSupabaseAdminConfigured()) return DEFAULT_INSTITUTION_SETTINGS;
 
@@ -18,6 +35,7 @@ export async function getInstitutionSettings(): Promise<InstitutionSettings> {
     return {
       ...DEFAULT_INSTITUTION_SETTINGS,
       ...data,
+      logo_url: normalizeInstitutionLogoUrl(data.logo_url),
       mission: Array.isArray(data.mission) ? data.mission : [],
       social_links: data.social_links || {},
     };

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { buildVerificationUrl } from '@/lib/verification/document-verify';
+import { InstitutionLogo } from '@/components/ui/institution-logo';
 import {
   BookOpen,
   Download,
@@ -247,15 +248,12 @@ export function DigitalStudentCard({
               <div className="bg-gradient-to-r from-emerald-900 via-emerald-700 to-teal-700 text-white px-4 py-3 flex items-center justify-between gap-2 border-b-[3px] border-amber-400">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-9 h-9 rounded-xl bg-white/95 text-emerald-800 font-bold text-xs flex items-center justify-center shrink-0 overflow-hidden">
-                    {institution.logo_url ? (
-                      <img
-                        src={institution.logo_url}
-                        alt="Logo"
-                        className="w-7 h-7 object-contain"
-                      />
-                    ) : (
-                      <GraduationCap className="w-5 h-5" />
-                    )}
+                    <InstitutionLogo
+                      logoUrl={institution.logo_url}
+                      alt="Logo"
+                      className="w-7 h-7 object-contain"
+                      fallback={<GraduationCap className="w-5 h-5" />}
+                    />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-extrabold tracking-tight truncate uppercase">
@@ -571,15 +569,12 @@ export function DigitalLibraryCard({
               <div className="bg-gradient-to-r from-slate-900 via-blue-900 to-sky-700 text-white px-4 py-3 flex items-center justify-between gap-2 border-b-[3px] border-sky-400">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-9 h-9 rounded-xl bg-white/95 text-sky-800 font-bold text-xs flex items-center justify-center shrink-0 overflow-hidden">
-                    {institution.logo_url ? (
-                      <img
-                        src={institution.logo_url}
-                        alt="Logo"
-                        className="w-7 h-7 object-contain"
-                      />
-                    ) : (
-                      <BookOpen className="w-5 h-5" />
-                    )}
+                    <InstitutionLogo
+                      logoUrl={institution.logo_url}
+                      alt="Logo"
+                      className="w-7 h-7 object-contain"
+                      fallback={<BookOpen className="w-5 h-5" />}
+                    />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-extrabold tracking-tight truncate uppercase">

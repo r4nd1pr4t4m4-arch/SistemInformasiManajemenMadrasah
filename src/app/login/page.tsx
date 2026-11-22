@@ -7,14 +7,18 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  Clock,
   KeyRound,
   Loader2,
+  Lock,
   LogIn,
   Mail,
   RefreshCw,
+  ShieldAlert,
   ShieldCheck,
   User,
   UserPlus,
+  X,
 } from 'lucide-react';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { validatePasswordStrength } from '@/lib/auth/password-policy';
@@ -92,6 +96,14 @@ function LoginCardContent() {
   const [message, setMessage] = useState<StatusMessage | null>(null);
   const [urlStatusDismissed, setUrlStatusDismissed] = useState(false);
   const [loginCaptchaRequired, setLoginCaptchaRequired] = useState(false);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+  const [loginWarningModal, setLoginWarningModal] = useState<{
+    email: string;
+    failedAttempts: number;
+    maxAttempts: number;
+    remainingAttempts: number;
+    detectedAtWib: string;
+  } | null>(null);
 
   const captcha = useSmartCaptcha(mode === 'register' || loginCaptchaRequired);
 
@@ -99,16 +111,47 @@ function LoginCardContent() {
     let active = true;
     fetch('/api/auth/login', { cache: 'no-store' })
       .then((res) => res.json().catch(() => null))
-      .then((data: { requireCaptcha?: boolean } | null) => {
-        if (active && data?.requireCaptcha) {
-          setLoginCaptchaRequired(true);
+      .then(
+        (
+          data: {
+            requireCaptcha?: boolean;
+            isLocked?: boolean;
+            remainingLockSeconds?: number;
+          } | null
+        ) => {
+          if (!active || !data) return;
+          if (data.requireCaptcha) {
+            setLoginCaptchaRequired(true);
+          }
+          if (data.isLocked && data.remainingLockSeconds) {
+            setLockoutSeconds(data.remainingLockSeconds);
+          }
         }
-      })
+      )
       .catch(() => {});
     return () => {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      setLockoutSeconds((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [lockoutSeconds]);
+
+  useEffect(() => {
+    if (!loginWarningModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLoginWarningModal(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [loginWarningModal]);
 
   const statusParam = searchParams.get('account_status') || '';
   const urlStatusText = ACCOUNT_STATUS_MESSAGES[statusParam] || null;
@@ -313,6 +356,22 @@ function LoginCardContent() {
           if (data.turnstileUnavailable) {
             captcha.forceLocalFallback();
           }
+          if (data.isLocked && data.remainingLockSeconds) {
+            setLockoutSeconds(Number(data.remainingLockSeconds) || 900);
+            setLoginWarningModal(null);
+          } else if (data.showLockWarningModal) {
+            setLoginWarningModal({
+              email: trimmedEmail,
+              failedAttempts: Number(data.failedAttempts) || 3,
+              maxAttempts: Number(data.maxAttempts) || 5,
+              remainingAttempts: Number(data.remainingAttempts) || 2,
+              detectedAtWib: new Date().toLocaleTimeString('id-ID', {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'Asia/Jakarta',
+              }),
+            });
+          }
           setMessage({ type: 'error', text: data.error || 'Gagal masuk. Silakan coba lagi.' });
         } else {
           const safeNext = getSafeRedirectPath(searchParams.get('next'));
@@ -407,6 +466,34 @@ function LoginCardContent() {
             Daftar Akun
           </button>
         </div>
+
+        {mode === 'login' && lockoutSeconds > 0 && (
+          <div
+            role="status"
+            className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-2"
+          >
+            <div className="flex items-start gap-2.5">
+              <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold">
+                  Akses masuk dibekukan sementara ({Math.floor(lockoutSeconds / 60)}:
+                  {String(lockoutSeconds % 60).padStart(2, '0')})
+                </p>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Demi keamanan akun, tunggu hingga waktu pembekuan berakhir atau segera perbarui
+                  kata sandi Anda.
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/reset-kata-sandi"
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Reset Kata Sandi Sekarang</span>
+            </Link>
+          </div>
+        )}
 
         {activeMessage && (
           <div
@@ -603,11 +690,17 @@ function LoginCardContent() {
 
           <button
             type="submit"
-            disabled={loading || (mode === 'register' && !otpVerified)}
+            disabled={
+              loading ||
+              (mode === 'register' && !otpVerified) ||
+              (mode === 'login' && lockoutSeconds > 0)
+            }
             className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-2xl transition shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
           >
             {loading ? (
               <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+            ) : mode === 'login' && lockoutSeconds > 0 ? (
+              <Lock className="w-4 h-4 shrink-0" />
             ) : mode === 'login' ? (
               <LogIn className="w-4 h-4 shrink-0" />
             ) : (
@@ -617,6 +710,10 @@ function LoginCardContent() {
               {mode === 'login'
                 ? loading
                   ? 'Memproses...'
+                  : lockoutSeconds > 0
+                  ? `Akses Dibekukan (${Math.floor(lockoutSeconds / 60)}:${String(
+                      lockoutSeconds % 60
+                    ).padStart(2, '0')})`
                   : 'Masuk ke Portal'
                 : loading
                 ? 'Mendaftarkan...'
@@ -723,6 +820,146 @@ function LoginCardContent() {
           </div>
         </div>
       )}
+      {loginWarningModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-xs p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="login-warning-modal-title"
+          onClick={() => setLoginWarningModal(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl bg-white border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-amber-50 via-orange-50/70 to-rose-50/60 border-b border-amber-200/70 px-5 sm:px-6 py-4 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div className="space-y-0.5">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold tracking-wide uppercase">
+                    Peringatan Keamanan Akun
+                  </span>
+                  <h2
+                    id="login-warning-modal-title"
+                    className="text-base font-bold text-slate-900 leading-snug"
+                  >
+                    2 Kesempatan Lagi Sebelum Dibekukan
+                  </h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLoginWarningModal(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-white/80 transition"
+                aria-label="Tutup peringatan"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-6 space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-semibold">
+                  <span className="text-slate-700">
+                    Percobaan Gagal: {loginWarningModal.failedAttempts} dari{' '}
+                    {loginWarningModal.maxAttempts}
+                  </span>
+                  <span className="text-rose-600">
+                    Sisa {loginWarningModal.remainingAttempts} kesempatan
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5" aria-hidden="true">
+                  {Array.from({ length: loginWarningModal.maxAttempts }).map((_, idx) => {
+                    const isFailed = idx < loginWarningModal.failedAttempts;
+                    return (
+                      <div
+                        key={idx}
+                        className={`h-2 rounded-full transition-colors ${
+                          isFailed
+                            ? idx === loginWarningModal.failedAttempts - 1
+                              ? 'bg-rose-500'
+                              : 'bg-amber-500'
+                            : 'bg-slate-200'
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-amber-50/70 border border-amber-200/80 p-3.5 text-xs text-slate-700 leading-relaxed space-y-2">
+                <p>
+                  Anda telah <strong>3 kali gagal masuk</strong> karena alamat email atau kata sandi
+                  tidak sesuai. Jika terjadi <strong>2 kali kegagalan lagi</strong>, akses masuk ke
+                  akun ini akan <strong>diblokir / dibekukan sementara selama 15 menit</strong>{' '}
+                  untuk mencegah penyalahgunaan.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 text-[11px]">
+                <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-2.5 space-y-0.5 min-w-0">
+                  <span className="text-slate-500 block">Email Dicoba</span>
+                  <span className="font-semibold text-slate-900 truncate block">
+                    {loginWarningModal.email}
+                  </span>
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-2.5 space-y-0.5">
+                  <span className="text-slate-500 flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> Waktu Deteksi
+                  </span>
+                  <span className="font-semibold text-slate-900 block">
+                    {loginWarningModal.detectedAtWib} WIB
+                  </span>
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-2.5 space-y-0.5">
+                  <span className="text-slate-500 block">Batas Maksimal</span>
+                  <span className="font-semibold text-rose-700 block">
+                    {loginWarningModal.maxAttempts}x gagal berturut-turut
+                  </span>
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-2.5 space-y-0.5">
+                  <span className="text-slate-500 block">Durasi Pembekuan</span>
+                  <span className="font-semibold text-slate-900 block">15 Menit</span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-emerald-50/70 border border-emerald-200/80 p-3.5 space-y-2">
+                <p className="text-xs font-semibold text-emerald-900 flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                  <span>Lupa atau Ragu dengan Kata Sandi Anda?</span>
+                </p>
+                <p className="text-[11px] text-emerald-800/90 leading-relaxed">
+                  Daripada akun Anda terblokir selama 15 menit, Anda dapat langsung membuat kata
+                  sandi baru secara aman melalui verifikasi <strong>OTP Email</strong> atau{' '}
+                  <strong>Authenticator (MFA)</strong>. Pastikan juga tombol <code>Caps Lock</code>{' '}
+                  tidak aktif sebelum mencoba kembali.
+                </p>
+              </div>
+
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setLoginWarningModal(null)}
+                  className="min-h-[42px] px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition"
+                >
+                  Coba Masuk Lagi
+                </button>
+                <Link
+                  href="/reset-kata-sandi"
+                  onClick={() => setLoginWarningModal(null)}
+                  className="min-h-[42px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition"
+                >
+                  <KeyRound className="w-3.5 h-3.5 shrink-0" />
+                  <span>Reset Kata Sandi</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <SmartCaptchaMount containerRef={captcha.containerRef} />
     </>
   );
