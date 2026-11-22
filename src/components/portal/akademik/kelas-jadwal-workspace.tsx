@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   AlertTriangle,
   BookOpen,
@@ -96,6 +97,9 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
   const { toast, showToast, dismissToast } = useAkademikToast();
 
   const [teachers, setTeachers] = useState<TeacherOpt[]>([]);
+  const [homeroomTeacherCandidates, setHomeroomTeacherCandidates] = useState<TeacherOpt[]>([]);
+  const [canManageScheduleApi, setCanManageScheduleApi] = useState(false);
+  const [homeroomClassroomIds, setHomeroomClassroomIds] = useState<string[]>([]);
   const [students, setStudents] = useState<StudentOpt[]>([]);
   const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([]);
   const [classrooms, setClassrooms] = useState<ClassroomRow[]>([]);
@@ -129,6 +133,8 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
   const [subjectGroupFilter, setSubjectGroupFilter] = useState('ALL');
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [deleteScheduleTarget, setDeleteScheduleTarget] = useState<ScheduleRow | null>(null);
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
+  const [batchDeleteScheduleOpen, setBatchDeleteScheduleOpen] = useState(false);
   const [scheduleSearch, setScheduleSearch] = useState('');
   const [scheduleDayFilter, setScheduleDayFilter] = useState<string>('ALL');
   const [scheduleClassroomFilter, setScheduleClassroomFilter] = useState<string>('ALL');
@@ -156,6 +162,11 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
 
       setLoadError(null);
       setTeachers(bi.teachers || []);
+      setHomeroomTeacherCandidates(kj.homeroomTeacherCandidates || []);
+      setCanManageScheduleApi(Boolean(kj.canManageSchedule));
+      setHomeroomClassroomIds(
+        Array.isArray(kj.homeroomClassroomIds) ? kj.homeroomClassroomIds : []
+      );
       setStudents((bi.students || []).filter((s: StudentOpt) => !s.status || s.status === 'AKTIF'));
       const loadedClassrooms: ClassroomRow[] = kj.classrooms || [];
       setClassrooms(loadedClassrooms);
@@ -211,6 +222,47 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
       setSubmitting(false);
     }
   }
+
+  const homeroomDropdownOptions = useMemo(() => {
+    const list = homeroomTeacherCandidates.map((t) => ({
+      id: t.id,
+      label: t.full_name,
+    }));
+    const currentId = classForm.homeroom_teacher_id;
+    if (currentId && !list.some((item) => item.id === currentId)) {
+      const existing = teachers.find((t) => t.id === currentId);
+      if (existing) {
+        list.unshift({
+          id: existing.id,
+          label: `${existing.full_name} (Saat ini)`,
+        });
+      }
+    }
+    return list;
+  }, [classForm.homeroom_teacher_id, homeroomTeacherCandidates, teachers]);
+
+  const canManageSchedule = canManage || canManageScheduleApi;
+  const homeroomClassroomSet = useMemo(
+    () => new Set(homeroomClassroomIds),
+    [homeroomClassroomIds]
+  );
+  const manageableScheduleClassrooms = useMemo(
+    () =>
+      canManage ? classrooms : classrooms.filter((c) => homeroomClassroomSet.has(c.id)),
+    [canManage, classrooms, homeroomClassroomSet]
+  );
+  const canManageScheduleRow = useCallback(
+    (classroomId?: string | null) =>
+      canManage ||
+      (Boolean(classroomId) && canManageSchedule && homeroomClassroomSet.has(classroomId!)),
+    [canManage, canManageSchedule, homeroomClassroomSet]
+  );
+
+  const selectedSchedulesList = useMemo(() => {
+    if (selectedScheduleIds.length === 0) return [];
+    const selectedSet = new Set(selectedScheduleIds);
+    return schedules.filter((sch) => selectedSet.has(sch.id));
+  }, [schedules, selectedScheduleIds]);
 
   const enrollmentByStudentId = useMemo(() => {
     const map = new Map<string, EnrollmentRow>();
@@ -544,12 +596,25 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
                     className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                   >
                     <option value="">-- Tanpa Wali Kelas --</option>
-                    {teachers.map((t) => (
+                    {homeroomDropdownOptions.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.full_name}
+                        {t.label}
                       </option>
                     ))}
                   </select>
+                  {homeroomTeacherCandidates.length === 0 && (
+                    <p className="mt-1 text-[10px] text-amber-700 leading-relaxed">
+                      Belum ada guru dengan tugas tambahan Wali Kelas aktif. Atur terlebih dahulu di
+                      menu{' '}
+                      <Link
+                        href="/portal/keuangan/honorarium/tugas-tambahan"
+                        className="font-semibold underline hover:text-amber-800"
+                      >
+                        Tugas Tambahan
+                      </Link>
+                      .
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label
@@ -1532,7 +1597,7 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
-                {editingScheduleId && canManage && (
+                {editingScheduleId && canManageSchedule && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold">
                     <Pencil className="w-3 h-3" /> Mode Edit Jadwal
                   </span>
@@ -1549,7 +1614,7 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
               </div>
             </div>
 
-            {canManage && (
+            {canManageSchedule && (
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
@@ -1650,7 +1715,7 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
                     className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                   >
                     <option value="">-- Pilih Rombel --</option>
-                    {classrooms.map((c) => (
+                    {manageableScheduleClassrooms.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
@@ -1908,42 +1973,127 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
               />
             ) : (
               <div className="space-y-3">
+                {canManageSchedule &&
+                  filteredSchedules.some((s) => canManageScheduleRow(s.classroom_id)) && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-50/90 border border-slate-200/80 px-3.5 py-2.5 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => {
+                          const manageableIds = filteredSchedules
+                            .filter((s) => canManageScheduleRow(s.classroom_id))
+                            .map((s) => s.id);
+                          const selectedSet = new Set(selectedScheduleIds);
+                          const allSelected =
+                            manageableIds.length > 0 &&
+                            manageableIds.every((id) => selectedSet.has(id));
+                          if (allSelected) {
+                            const manageableSet = new Set(manageableIds);
+                            setSelectedScheduleIds((prev) =>
+                              prev.filter((id) => !manageableSet.has(id))
+                            );
+                          } else {
+                            setSelectedScheduleIds((prev) =>
+                              Array.from(new Set([...prev, ...manageableIds]))
+                            );
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-50 font-semibold text-slate-700 transition"
+                      >
+                        {(() => {
+                          const manageableIds = filteredSchedules
+                            .filter((s) => canManageScheduleRow(s.classroom_id))
+                            .map((s) => s.id);
+                          return manageableIds.length > 0 &&
+                            manageableIds.every((id) => selectedScheduleIds.includes(id))
+                            ? 'Batal Pilih Semua'
+                            : `Pilih Semua (${manageableIds.length})`;
+                        })()}
+                      </button>
+                      {selectedSchedulesList.length > 0 && (
+                        <button
+                          type="button"
+                          disabled={submitting}
+                          onClick={() => setSelectedScheduleIds([])}
+                          className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-50 font-medium text-slate-600 transition"
+                        >
+                          Reset ({selectedSchedulesList.length})
+                        </button>
+                      )}
+                    </div>
+                    {selectedSchedulesList.length > 0 && (
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => setBatchDeleteScheduleOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-semibold transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus Terpilih ({selectedSchedulesList.length})</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   {paginatedSchedules.map((sch) => {
                     const isEditingThis = editingScheduleId === sch.id;
+                    const isSelected = selectedScheduleIds.includes(sch.id);
+                    const canEditThisRow = canManageScheduleRow(sch.classroom_id);
                     return (
                       <div
                         key={sch.id}
                         className={`modular-card rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs border transition ${
                           isEditingThis
                             ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/30'
+                            : isSelected
+                            ? 'border-rose-300 ring-2 ring-rose-500/20 bg-rose-50/30'
                             : 'border-slate-200/80'
                         }`}
                       >
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
-                              {DAY_NAMES[sch.day_of_week] || '-'}
-                            </span>
-                            <p className="font-bold text-slate-900 break-words">
-                              {sch.classroom?.name || '-'} — {sch.subject?.name || '-'}
+                        <div className="min-w-0 flex-1 flex items-start gap-2.5">
+                          {canEditThisRow && (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={submitting}
+                              onChange={() =>
+                                setSelectedScheduleIds((prev) =>
+                                  prev.includes(sch.id)
+                                    ? prev.filter((id) => id !== sch.id)
+                                    : [...prev, sch.id]
+                                )
+                              }
+                              aria-label={`Pilih jadwal ${sch.classroom?.name || ''} ${sch.subject?.name || ''}`}
+                              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 shrink-0 cursor-pointer"
+                            />
+                          )}
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
+                                {DAY_NAMES[sch.day_of_week] || '-'}
+                              </span>
+                              <p className="font-bold text-slate-900 break-words">
+                                {sch.classroom?.name || '-'} — {sch.subject?.name || '-'}
+                              </p>
+                            </div>
+                            <p className="text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span className="break-words">{sch.teacher?.full_name || '-'}</span>
+                              <span className="inline-flex items-center gap-1 font-mono text-slate-600">
+                                <Clock className="w-3 h-3 text-slate-400" />
+                                {(sch.start_time || '').slice(0, 5)}–
+                                {(sch.end_time || '').slice(0, 5)}
+                              </span>
                             </p>
                           </div>
-                          <p className="text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            <span className="break-words">{sch.teacher?.full_name || '-'}</span>
-                            <span className="inline-flex items-center gap-1 font-mono text-slate-600">
-                              <Clock className="w-3 h-3 text-slate-400" />
-                              {(sch.start_time || '').slice(0, 5)}–
-                              {(sch.end_time || '').slice(0, 5)}
-                            </span>
-                          </p>
                         </div>
 
                         <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 shrink-0">
                           <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">
                             {sch.jtm_count} JTM
                           </span>
-                          {canManage && (
+                          {canEditThisRow && (
                             <>
                               <button
                                 type="button"
@@ -2099,6 +2249,9 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
                             jtm_count: 2,
                           });
                         }
+                        setSelectedScheduleIds((prev) =>
+                          prev.filter((id) => id !== deleteScheduleTarget.id)
+                        );
                         setDeleteScheduleTarget(null);
                       }
                     }}
@@ -2114,6 +2267,106 @@ export function KelasJadwalWorkspace({ section }: { section: KelasJadwalSection 
                 </div>
               </div>
             )}
+          </AkademikModal>
+
+          {/* Modal Konfirmasi Hapus Batch Jadwal Pelajaran */}
+          <AkademikModal
+            open={batchDeleteScheduleOpen && selectedSchedulesList.length > 0}
+            onClose={() => {
+              if (!submitting) setBatchDeleteScheduleOpen(false);
+            }}
+            title={`Konfirmasi Hapus ${selectedSchedulesList.length} Jadwal Pelajaran`}
+          >
+            <div className="space-y-4 text-xs">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-rose-600" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-semibold text-slate-900">
+                    Hapus {selectedSchedulesList.length} sesi jadwal pelajaran terpilih?
+                  </p>
+                  <p className="text-slate-600 leading-relaxed">
+                    Seluruh jadwal yang dipilih akan dihapus permanen. Jika ada jadwal yang sudah
+                    terhubung dengan data presensi atau jurnal, penghapusan batch akan dibatalkan.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3 max-h-52 overflow-y-auto space-y-2">
+                {selectedSchedulesList.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-200/70 last:border-b-0 last:pb-0"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">
+                        {DAY_NAMES[item.day_of_week] || '-'} · {item.classroom?.name || '-'} —{' '}
+                        {item.subject?.name || '-'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {item.teacher?.full_name || '-'} · {(item.start_time || '').slice(0, 5)}–
+                        {(item.end_time || '').slice(0, 5)}
+                      </p>
+                    </div>
+                    <span className="shrink-0 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px]">
+                      {item.jtm_count} JTM
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => setBatchDeleteScheduleOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-semibold transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={async () => {
+                    if (submitting || selectedSchedulesList.length === 0) return;
+                    const ids = selectedSchedulesList.map((s) => s.id);
+                    const ok = await postAction(
+                      { action: 'DELETE_SCHEDULES_BATCH', ids },
+                      `${ids.length} jadwal pelajaran berhasil dihapus.`
+                    );
+                    if (ok) {
+                      if (editingScheduleId && ids.includes(editingScheduleId)) {
+                        setEditingScheduleId(null);
+                        setScheduleForm({
+                          classroom_id: '',
+                          subject_id: '',
+                          teacher_id: '',
+                          day_of_week: 1,
+                          start_time: '07:30',
+                          end_time: '09:00',
+                          jtm_count: 2,
+                        });
+                      }
+                      setSelectedScheduleIds([]);
+                      setBatchDeleteScheduleOpen(false);
+                    }
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-semibold transition"
+                >
+                  {submitting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {submitting
+                      ? 'Menghapus...'
+                      : `Ya, Hapus ${selectedSchedulesList.length} Jadwal`}
+                  </span>
+                </button>
+              </div>
+            </div>
           </AkademikModal>
         </div>
       )}

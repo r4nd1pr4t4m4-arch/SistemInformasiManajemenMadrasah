@@ -33,7 +33,21 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const canManage = hasAnyRole(session, PERMISSIONS.PIKET_KELAS_MANAGE);
+  const isGlobalManager = hasAnyRole(session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+  ]);
+  const homeroomIds = session.teacherAssignments?.homeroomClassroomIds || [];
+  const isWaliKelasManager =
+    (session.roles.includes('WALI_KELAS') ||
+      Boolean(session.teacherAssignments?.isHomeroomTeacher)) &&
+    homeroomIds.length > 0;
+  const canManage = isGlobalManager || isWaliKelasManager;
   const requestedClassroomId = request.nextUrl.searchParams.get('classroom_id');
 
   // Resolve academic year
@@ -102,14 +116,22 @@ export async function GET(request: NextRequest) {
   let enrolledStudents: Array<Record<string, unknown>> = [];
 
   if (canManage) {
-    const { data: clsData } = await supabase
+    let clsQuery = supabase
       .from('classrooms')
       .select('id, name, grade_level, homeroom_teacher_id')
       .order('name', { ascending: true });
+    if (!isGlobalManager) {
+      clsQuery = clsQuery.in('id', homeroomIds);
+    }
+    const { data: clsData } = await clsQuery;
     classrooms = clsData || [];
-    if (!targetClassroomId && classrooms.length > 0) {
-      // Prioritize homeroom if teacher is wali kelas
-      const homeroomIds = session.teacherAssignments?.homeroomClassroomIds || [];
+
+    if (!isGlobalManager) {
+      const allowedSet = new Set(homeroomIds);
+      if (!targetClassroomId || !allowedSet.has(targetClassroomId)) {
+        targetClassroomId = (classrooms[0]?.id as string) || null;
+      }
+    } else if (!targetClassroomId && classrooms.length > 0) {
       const preferred = classrooms.find((c) => homeroomIds.includes(c.id as string));
       targetClassroomId = ((preferred?.id || classrooms[0].id) as string) || null;
     }
@@ -153,7 +175,23 @@ export async function POST(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: 'Silakan login terlebih dahulu.' }, { status: 401 });
   }
-  if (!hasAnyRole(session, PERMISSIONS.PIKET_KELAS_MANAGE)) {
+  const isGlobalManager = hasAnyRole(session, [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+  ]);
+  const homeroomIds = session.teacherAssignments?.homeroomClassroomIds || [];
+  const homeroomSet = new Set(homeroomIds);
+  const isWaliKelasManager =
+    (session.roles.includes('WALI_KELAS') ||
+      Boolean(session.teacherAssignments?.isHomeroomTeacher)) &&
+    homeroomIds.length > 0;
+
+  if (!isGlobalManager && !isWaliKelasManager) {
     return NextResponse.json(
       { error: 'Anda tidak memiliki izin mengelola jadwal piket kelas.' },
       { status: 403 }
@@ -171,6 +209,12 @@ export async function POST(request: NextRequest) {
       const parsed = AddPicketSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data jadwal piket tidak valid.' }, { status: 400 });
+      }
+      if (!isGlobalManager && !homeroomSet.has(parsed.data.classroom_id)) {
+        return NextResponse.json(
+          { error: 'Anda hanya dapat mengelola jadwal piket untuk kelas perwalian Anda sendiri.' },
+          { status: 403 }
+        );
       }
 
       const { data: activeYear } = await supabase
@@ -205,6 +249,19 @@ export async function POST(request: NextRequest) {
       const parsed = DeletePicketSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'ID jadwal piket tidak valid.' }, { status: 400 });
+      }
+      if (!isGlobalManager) {
+        const { data: existingPicket } = await supabase
+          .from('student_picket_schedules')
+          .select('classroom_id')
+          .eq('id', parsed.data.id)
+          .maybeSingle();
+        if (!existingPicket || !homeroomSet.has(existingPicket.classroom_id)) {
+          return NextResponse.json(
+            { error: 'Anda hanya dapat menghapus jadwal piket untuk kelas perwalian Anda sendiri.' },
+            { status: 403 }
+          );
+        }
       }
 
       const { error } = await supabase

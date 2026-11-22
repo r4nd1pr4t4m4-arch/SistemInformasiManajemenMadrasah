@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
+import { mapDutyCodeToRole } from '@/lib/auth/rbac';
 
 async function getOrCreateActiveAcademicYear(
   supabase: ReturnType<typeof createSupabaseAdminClient>
@@ -97,6 +98,14 @@ const DeleteScheduleSchema = z.object({
   id: z.string().uuid(),
 });
 
+const DeleteSchedulesBatchSchema = z.object({
+  action: z.literal('DELETE_SCHEDULES_BATCH'),
+  ids: z
+    .array(z.string().uuid())
+    .min(1, 'Pilih minimal 1 jadwal untuk dihapus.')
+    .max(200, 'Maksimal 200 jadwal dapat dihapus sekaligus.'),
+});
+
 const PicketSchema = z.object({
   action: z.literal('CREATE_PICKET'),
   teacher_id: z.string().uuid(),
@@ -133,6 +142,7 @@ export async function GET() {
       schedules: [],
       pickets: [],
       enrollments: [],
+      homeroomTeacherCandidates: [],
     });
   }
 
@@ -143,6 +153,8 @@ export async function GET() {
     { data: schedules },
     { data: pickets },
     { data: enrollments },
+    { data: activeAcademicYear },
+    { data: activeDutyRows },
   ] = await Promise.all([
     supabase
       .from('classrooms')
@@ -163,7 +175,53 @@ export async function GET() {
     supabase
       .from('student_enrollments')
       .select('*, student:students(full_name, nis, nisn), classroom:classrooms(name)'),
+    supabase
+      .from('academic_years')
+      .select('id')
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('teacher_additional_duties')
+      .select(
+        'teacher_id, academic_year_id, teacher:teachers_staff(id, full_name), duty_type:additional_duty_types(code, name)'
+      )
+      .eq('is_active', true),
   ]);
+
+  const homeroomCandidateMap = new Map<string, { id: string; full_name: string }>();
+  for (const row of activeDutyRows || []) {
+    if (
+      activeAcademicYear?.id &&
+      row.academic_year_id &&
+      row.academic_year_id !== activeAcademicYear.id
+    ) {
+      continue;
+    }
+    const dt = Array.isArray(row.duty_type) ? row.duty_type[0] : row.duty_type;
+    if (!dt) continue;
+    const mappedRole = mapDutyCodeToRole(dt.code) || mapDutyCodeToRole(dt.name);
+    if (mappedRole !== 'WALI_KELAS') continue;
+
+    const teacher = Array.isArray(row.teacher) ? row.teacher[0] : row.teacher;
+    if (teacher?.id && teacher.full_name && !homeroomCandidateMap.has(teacher.id)) {
+      homeroomCandidateMap.set(teacher.id, {
+        id: teacher.id,
+        full_name: teacher.full_name,
+      });
+    }
+  }
+  const homeroomTeacherCandidates = Array.from(homeroomCandidateMap.values()).sort((a, b) =>
+    a.full_name.localeCompare(b.full_name, 'id')
+  );
+
+  const isGlobalManager = hasAnyRole(guard.session, PERMISSIONS.KELAS_JADWAL_MANAGE);
+  const homeroomClassroomIds = guard.session.teacherAssignments?.homeroomClassroomIds || [];
+  const hasWaliKelasAccess =
+    (guard.session.roles.includes('WALI_KELAS') ||
+      Boolean(guard.session.teacherAssignments?.isHomeroomTeacher)) &&
+    homeroomClassroomIds.length > 0;
+  const canManageSchedule = isGlobalManager || hasWaliKelasAccess;
 
   const isGlobalViewer = hasAnyRole(guard.session, [
     'SUPERADMIN',
@@ -191,7 +249,10 @@ export async function GET() {
       ...scopedSchedules.map((s) => s.subject_id as string).filter(Boolean),
     ]);
     const scopedClassrooms = (classrooms || []).filter((c) => allowedClassIds.has(c.id));
-    const scopedSubjects = (subjects || []).filter((sub) => allowedSubjectIds.has(sub.id));
+    // Wali Kelas yang dapat mengelola jadwal membutuhkan daftar semua mapel agar bisa menyusun jadwal kelasnya
+    const scopedSubjects = hasWaliKelasAccess
+      ? subjects || []
+      : (subjects || []).filter((sub) => allowedSubjectIds.has(sub.id));
     const scopedPickets = (pickets || []).filter((p) => p.teacher_id === ta.teacherId);
     const scopedEnrollments = (enrollments || []).filter((e) =>
       allowedClassIds.has(e.classroom_id)
@@ -203,6 +264,9 @@ export async function GET() {
       schedules: scopedSchedules,
       pickets: scopedPickets,
       enrollments: scopedEnrollments,
+      homeroomTeacherCandidates,
+      canManageSchedule,
+      homeroomClassroomIds,
     });
   }
 
@@ -212,12 +276,37 @@ export async function GET() {
     schedules: schedules || [],
     pickets: pickets || [],
     enrollments: enrollments || [],
+    homeroomTeacherCandidates,
+    canManageSchedule,
+    homeroomClassroomIds,
   });
 }
 
+const SCHEDULE_ACTIONS = new Set([
+  'CREATE_SCHEDULE',
+  'UPDATE_SCHEDULE',
+  'DELETE_SCHEDULE',
+  'DELETE_SCHEDULES_BATCH',
+]);
+
 export async function POST(request: Request) {
-  const guard = await requireApiRoles(PERMISSIONS.KELAS_JADWAL_MANAGE);
+  const guard = await requireApiRoles(PERMISSIONS.KELAS_JADWAL_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
+
+  const isGlobalManager = hasAnyRole(guard.session, PERMISSIONS.KELAS_JADWAL_MANAGE);
+  const homeroomClassroomIds = guard.session.teacherAssignments?.homeroomClassroomIds || [];
+  const homeroomSet = new Set(homeroomClassroomIds);
+  const hasWaliKelasAccess =
+    (guard.session.roles.includes('WALI_KELAS') ||
+      Boolean(guard.session.teacherAssignments?.isHomeroomTeacher)) &&
+    homeroomClassroomIds.length > 0;
+
+  if (!isGlobalManager && !hasWaliKelasAccess) {
+    return NextResponse.json(
+      { error: 'Anda tidak memiliki izin untuk mengelola kelas atau jadwal.' },
+      { status: 403 }
+    );
+  }
 
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
@@ -225,6 +314,12 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+    if (!isGlobalManager && !SCHEDULE_ACTIONS.has(String(body?.action || ''))) {
+      return NextResponse.json(
+        { error: 'Wali Kelas hanya dapat mengelola jadwal pelajaran untuk kelas perwaliannya.' },
+        { status: 403 }
+      );
+    }
     const supabase = createSupabaseAdminClient();
     const academicYearId = await getOrCreateActiveAcademicYear(supabase);
 
@@ -333,6 +428,12 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data jadwal tidak valid.' }, { status: 400 });
       }
+      if (!isGlobalManager && !homeroomSet.has(parsed.data.classroom_id)) {
+        return NextResponse.json(
+          { error: 'Anda hanya dapat menambahkan jadwal untuk kelas perwalian Anda sendiri.' },
+          { status: 403 }
+        );
+      }
       const { action: _, ...payload } = parsed.data;
       const { data, error } = await supabase
         .from('schedules')
@@ -347,6 +448,23 @@ export async function POST(request: Request) {
       const parsed = UpdateScheduleSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data pembaruan jadwal tidak valid.' }, { status: 400 });
+      }
+      if (!isGlobalManager) {
+        const { data: existingSch } = await supabase
+          .from('schedules')
+          .select('classroom_id')
+          .eq('id', parsed.data.id)
+          .maybeSingle();
+        if (
+          !existingSch ||
+          !homeroomSet.has(existingSch.classroom_id) ||
+          !homeroomSet.has(parsed.data.classroom_id)
+        ) {
+          return NextResponse.json(
+            { error: 'Anda hanya dapat mengubah jadwal untuk kelas perwalian Anda sendiri.' },
+            { status: 403 }
+          );
+        }
       }
       const { action: _, id, ...payload } = parsed.data;
       void _;
@@ -365,6 +483,19 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'ID jadwal tidak valid.' }, { status: 400 });
       }
+      if (!isGlobalManager) {
+        const { data: existingSch } = await supabase
+          .from('schedules')
+          .select('classroom_id')
+          .eq('id', parsed.data.id)
+          .maybeSingle();
+        if (!existingSch || !homeroomSet.has(existingSch.classroom_id)) {
+          return NextResponse.json(
+            { error: 'Anda hanya dapat menghapus jadwal untuk kelas perwalian Anda sendiri.' },
+            { status: 403 }
+          );
+        }
+      }
       const { error } = await supabase.from('schedules').delete().eq('id', parsed.data.id);
       if (error) {
         return NextResponse.json(
@@ -376,6 +507,47 @@ export async function POST(request: Request) {
         );
       }
       return NextResponse.json({ ok: true });
+    }
+
+    if (body.action === 'DELETE_SCHEDULES_BATCH') {
+      const parsed = DeleteSchedulesBatchSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Daftar ID jadwal tidak valid.' },
+          { status: 400 }
+        );
+      }
+      const uniqueIds = Array.from(new Set(parsed.data.ids));
+      if (!isGlobalManager) {
+        const { data: targetSchedules } = await supabase
+          .from('schedules')
+          .select('id, classroom_id')
+          .in('id', uniqueIds);
+        const allOwned =
+          Boolean(targetSchedules) &&
+          targetSchedules!.length === uniqueIds.length &&
+          targetSchedules!.every((s) => homeroomSet.has(s.classroom_id));
+        if (!allOwned) {
+          return NextResponse.json(
+            {
+              error:
+                'Sebagian atau seluruh jadwal terpilih bukan milik kelas perwalian Anda.',
+            },
+            { status: 403 }
+          );
+        }
+      }
+      const { error } = await supabase.from('schedules').delete().in('id', uniqueIds);
+      if (error) {
+        return NextResponse.json(
+          {
+            error:
+              'Sebagian atau seluruh jadwal terpilih tidak dapat dihapus karena sudah terhubung dengan data presensi atau jurnal pembelajaran.',
+          },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json({ ok: true, deletedCount: uniqueIds.length });
     }
 
     if (body.action === 'CREATE_PICKET') {
