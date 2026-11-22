@@ -435,6 +435,25 @@ export async function POST(request: Request) {
         endDateObj.getDate()
       ).padStart(2, '0')}`;
 
+      const { data: activeYearRow } = await supabase
+        .from('academic_years')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      let dutiesQuery = supabase
+        .from('teacher_additional_duties')
+        .select(
+          'duty_type:additional_duty_types(id, code, name, receives_allowance, monthly_allowance)'
+        )
+        .eq('teacher_id', teacher_id)
+        .eq('is_active', true);
+
+      if (activeYearRow?.id) {
+        dutiesQuery = dutiesQuery.eq('academic_year_id', activeYearRow.id);
+      }
+
       const [
         { data: rateRow },
         { data: dailyHoursRows },
@@ -527,13 +546,7 @@ export async function POST(request: Request) {
           .eq('teacher_id', teacher_id)
           .gte('holiday_date', startDate)
           .lte('holiday_date', endDate),
-        supabase
-          .from('teacher_additional_duties')
-          .select(
-            'duty_type:additional_duty_types(id, code, name, receives_allowance, monthly_allowance)'
-          )
-          .eq('teacher_id', teacher_id)
-          .eq('is_active', true),
+        dutiesQuery,
       ]);
 
       const teachingJtm = Number(
@@ -675,6 +688,23 @@ export async function POST(request: Request) {
         dutyInputs,
         transportAllowance
       );
+
+      const { data: existingHonor } = await supabase
+        .from('teacher_honorariums')
+        .select('id, status')
+        .eq('teacher_id', teacher_id)
+        .eq('period_month', period_month)
+        .eq('period_year', period_year)
+        .maybeSingle();
+
+      if (existingHonor && (existingHonor.status === 'PAID' || existingHonor.status === 'APPROVED')) {
+        return NextResponse.json(
+          {
+            error: `Honorarium periode ${period_month}/${period_year} sudah berstatus ${existingHonor.status} sehingga tidak dapat ditimpa ulang.`,
+          },
+          { status: 409 }
+        );
+      }
 
       const { data: saved, error: saveErr } = await supabase
         .from('teacher_honorariums')

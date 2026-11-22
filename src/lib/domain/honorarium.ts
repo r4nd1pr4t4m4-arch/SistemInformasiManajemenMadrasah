@@ -38,12 +38,16 @@ export interface DailyTransportResult {
 }
 
 function parseTimeToMinutes(timeStr: string): number {
-  const [hStr = '0', mStr = '0'] = timeStr.split(':');
-  return Number(hStr) * 60 + Number(mStr);
+  const [hStr = '0', mStr = '0'] = (timeStr || '').split(':');
+  const h = Number(hStr);
+  const m = Number(mStr);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
 }
 
 function getWibMinutesOfDay(isoTimestamp: string): number {
   const date = new Date(isoTimestamp);
+  if (Number.isNaN(date.getTime())) return 0;
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Jakarta',
     hour: '2-digit',
@@ -80,13 +84,33 @@ export function calculateDailyTransportAllowance(params: {
   const effectiveEnd = Math.min(outMin, endMin);
   const grossAttendedMinutes = Math.max(0, effectiveEnd - effectiveStart);
 
-  let shortLeaveMinutes = 0;
+  // Gabungkan interval izin keluar yang tumpang tindih agar tidak terpotong ganda
+  const intervals: Array<[number, number]> = [];
   for (const lv of params.shortLeaves || []) {
     const lvStart = Math.max(effectiveStart, parseTimeToMinutes(lv.startTime));
     const lvEnd = Math.min(effectiveEnd, parseTimeToMinutes(lv.endTime));
     if (lvEnd > lvStart) {
-      shortLeaveMinutes += lvEnd - lvStart;
+      intervals.push([lvStart, lvEnd]);
     }
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+  let shortLeaveMinutes = 0;
+  let mergedStart = -1;
+  let mergedEnd = -1;
+  for (const [s, e] of intervals) {
+    if (mergedStart === -1) {
+      mergedStart = s;
+      mergedEnd = e;
+    } else if (s <= mergedEnd) {
+      mergedEnd = Math.max(mergedEnd, e);
+    } else {
+      shortLeaveMinutes += mergedEnd - mergedStart;
+      mergedStart = s;
+      mergedEnd = e;
+    }
+  }
+  if (mergedStart !== -1) {
+    shortLeaveMinutes += mergedEnd - mergedStart;
   }
 
   const attendedMinutes = Math.max(0, grossAttendedMinutes - shortLeaveMinutes);

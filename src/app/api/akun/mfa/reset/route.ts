@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const otpCheck = verifySignedOtpToken(token, session.userId, parsed.data.otpCode);
+    const otpCheck = await verifySignedOtpToken(token, session.userId, parsed.data.otpCode);
     if (!otpCheck.valid) {
       return NextResponse.json(
         { error: otpCheck.reason || 'Kode OTP tidak valid.' },

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { getWibTodayDateString } from '@/lib/domain/jtm-late-penalty';
 import { hasAnyRole } from '@/lib/auth/session';
 
 const CreateStudentSchema = z.object({
@@ -113,7 +114,14 @@ export async function GET() {
   ]);
   const ta = guard.session.teacherAssignments;
 
-  if (!isGlobalReader && ta) {
+  if (!isGlobalReader) {
+    if (!ta) {
+      return NextResponse.json({
+        students: [],
+        teachers: [],
+        activeAccounts: [],
+      });
+    }
     const canSeeAllTeachers = ta.isPicketTeacher || ta.isExamCommittee;
     const scopedTeachers = canSeeAllTeachers
       ? teachers || []
@@ -205,14 +213,15 @@ export async function POST(request: Request) {
         linkedProfile = check.profile;
       }
 
-      const { type: _, ...studentPayload } = parsed.data;
+      const studentPayload = { ...parsed.data } as Record<string, unknown>;
+      delete studentPayload.type;
       const { data: student, error } = await supabase
         .from('students')
         .insert({
           ...studentPayload,
-          profile_id: studentPayload.profile_id || null,
-          nis: studentPayload.nis || null,
-          nisn: studentPayload.nisn || null,
+          profile_id: parsed.data.profile_id || null,
+          nis: parsed.data.nis || null,
+          nisn: parsed.data.nisn || null,
           email: linkedProfile?.email || null,
           status: 'AKTIF',
         })
@@ -264,13 +273,16 @@ export async function POST(request: Request) {
         linkedProfile = check.profile;
       }
 
-      const { type: _, initial_position, ...teacherPayload } = parsed.data;
+      const initial_position = parsed.data.initial_position;
+      const teacherPayload = { ...parsed.data } as Record<string, unknown>;
+      delete teacherPayload.type;
+      delete teacherPayload.initial_position;
       const { data: teacher, error } = await supabase
         .from('teachers_staff')
         .insert({
           ...teacherPayload,
-          profile_id: teacherPayload.profile_id || null,
-          email: teacherPayload.email || linkedProfile?.email || null,
+          profile_id: parsed.data.profile_id || null,
+          email: parsed.data.email || linkedProfile?.email || null,
         })
         .select('*')
         .single();
@@ -291,7 +303,7 @@ export async function POST(request: Request) {
         await supabase.from('employment_histories').insert({
           teacher_id: teacher.id,
           position_title: initial_position,
-          start_date: new Date().toISOString().slice(0, 10),
+          start_date: getWibTodayDateString(),
         });
       }
 

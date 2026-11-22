@@ -68,6 +68,8 @@ export async function GET(request: Request) {
       return new NextResponse(buf, {
         headers: {
           'Content-Type': mime,
+          'Content-Security-Policy': "sandbox; default-src 'none'",
+          'X-Content-Type-Options': 'nosniff',
           'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400',
         },
       });
@@ -79,12 +81,26 @@ export async function GET(request: Request) {
       return new NextResponse(Buffer.from(bytes), {
         headers: {
           'Content-Type': inferMimeFromKey(r2Key),
+          'Content-Security-Policy': "sandbox; default-src 'none'",
+          'X-Content-Type-Options': 'nosniff',
           'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400',
         },
       });
     }
 
     if (/^https?:\/\//i.test(rawLogoUrl)) {
+      const parsedLogoUrl = new URL(rawLogoUrl);
+      const host = parsedLogoUrl.hostname.toLowerCase();
+      if (
+        parsedLogoUrl.protocol !== 'https:' ||
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === '::1' ||
+        host.endsWith('.local') ||
+        /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)/.test(host)
+      ) {
+        return new NextResponse(null, { status: 404 });
+      }
       const upstream = await fetch(rawLogoUrl, {
         signal: AbortSignal.timeout(5000),
       });
@@ -95,6 +111,8 @@ export async function GET(request: Request) {
       return new NextResponse(buf, {
         headers: {
           'Content-Type': upstream.headers.get('content-type') || 'image/png',
+          'Content-Security-Policy': "sandbox; default-src 'none'",
+          'X-Content-Type-Options': 'nosniff',
           'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400',
         },
       });

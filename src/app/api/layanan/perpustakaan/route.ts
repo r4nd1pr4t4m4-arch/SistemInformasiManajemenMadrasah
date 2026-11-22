@@ -155,7 +155,8 @@ export async function GET(request: NextRequest) {
       supabase
         .from('profiles')
         .select('id, full_name, email')
-        .eq('approval_status', 'APPROVED')
+        .eq('account_status', 'AKTIF')
+        .eq('is_active', true)
         .order('full_name')
         .limit(300),
     ]);
@@ -229,12 +230,13 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data buku tidak valid.' }, { status: 400 });
       }
-      const { action: _, ...payload } = parsed.data;
+      const payload = { ...parsed.data } as Record<string, unknown>;
+      delete payload.action;
       const { data, error } = await supabase
         .from('library_books')
         .insert({
           ...payload,
-          available_copies: payload.total_copies,
+          available_copies: parsed.data.total_copies,
         })
         .select('*')
         .single();
@@ -247,7 +249,8 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data anggota umum tidak valid.' }, { status: 400 });
       }
-      const memberCode = `LIB-U-${Date.now().toString().slice(-6)}`;
+      const randSuffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+      const memberCode = `LIB-U-${Date.now().toString().slice(-6)}-${randSuffix}`;
       const { data, error } = await supabase
         .from('library_members')
         .insert({
@@ -283,6 +286,22 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Stok buku tidak tersedia.' }, { status: 400 });
       }
 
+      // Optimistic lock on available_copies to prevent concurrent over-borrowing
+      const { data: decBook, error: decErr } = await supabase
+        .from('library_books')
+        .update({ available_copies: book.available_copies - 1 })
+        .eq('id', book.id)
+        .eq('available_copies', book.available_copies)
+        .select('id')
+        .maybeSingle();
+
+      if (decErr || !decBook) {
+        return NextResponse.json(
+          { error: 'Stok buku berubah secara bersamaan. Silakan muat ulang dan coba lagi.' },
+          { status: 409 }
+        );
+      }
+
       const { data: loan, error } = await supabase
         .from('library_loans')
         .insert({
@@ -293,12 +312,13 @@ export async function POST(request: Request) {
         })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-      await supabase
-        .from('library_books')
-        .update({ available_copies: book.available_copies - 1 })
-        .eq('id', book.id);
+      if (error) {
+        await supabase
+          .from('library_books')
+          .update({ available_copies: book.available_copies })
+          .eq('id', book.id);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
 
       return NextResponse.json({ loan });
     }
@@ -320,25 +340,37 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Peminjaman tidak ditemukan atau sudah dikembalikan.' }, { status: 400 });
       }
 
-      await supabase
+      const wibToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+      const { data: updatedLoan, error: retErr } = await supabase
         .from('library_loans')
         .update({
-          return_date: new Date().toISOString().slice(0, 10),
+          return_date: wibToday,
           fine_amount: parsed.data.fine_amount,
           status: 'DIKEMBALIKAN',
         })
-        .eq('id', loan.id);
+        .eq('id', loan.id)
+        .eq('status', 'DIPINJAM')
+        .select('id')
+        .maybeSingle();
+
+      if (retErr || !updatedLoan) {
+        return NextResponse.json(
+          { error: retErr?.message || 'Peminjaman sudah dikembalikan sebelumnya.' },
+          { status: 409 }
+        );
+      }
 
       const { data: book } = await supabase
         .from('library_books')
-        .select('available_copies')
+        .select('available_copies, total_copies')
         .eq('id', loan.book_id)
         .single();
 
       if (book) {
+        const nextCopies = Math.min(Number(book.total_copies ?? book.available_copies + 1), book.available_copies + 1);
         await supabase
           .from('library_books')
-          .update({ available_copies: book.available_copies + 1 })
+          .update({ available_copies: nextCopies })
           .eq('id', loan.book_id);
       }
 

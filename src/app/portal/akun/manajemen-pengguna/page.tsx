@@ -209,9 +209,12 @@ export default function ManajemenPenggunaPage() {
   }, []);
 
   useEffect(() => {
-    loadUsers();
-    loadNameRequests();
-    loadAvatarRequests();
+    const id = setTimeout(() => {
+      void loadUsers();
+      void loadNameRequests();
+      void loadAvatarRequests();
+    }, 0);
+    return () => clearTimeout(id);
   }, [loadUsers, loadNameRequests, loadAvatarRequests]);
 
   async function handleReviewAvatarChange(

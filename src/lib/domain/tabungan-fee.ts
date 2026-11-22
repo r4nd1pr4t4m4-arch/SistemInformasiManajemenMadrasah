@@ -170,9 +170,14 @@ export function calculateWithdrawalFee(
     }
   }
 
-  // Jika belum cocok (misal amount tepat di batas atas atau melebih batas terakhir)
-  if (!matched) {
-    matched = activeTiers[activeTiers.length - 1] || null;
+  // Jika belum cocok: hanya gunakan tier tertinggi jika nominal melebihi batas atas tier terakhir;
+  // jika di bawah batas minimum tier terendah (misal tier pertama dinonaktifkan), biaya 0%.
+  if (!matched && activeTiers.length > 0) {
+    const lastTier = activeTiers[activeTiers.length - 1];
+    const lastBound = lastTier.max_amount != null ? Number(lastTier.max_amount) : Number(lastTier.min_amount) || 0;
+    if (amount >= lastBound) {
+      matched = lastTier;
+    }
   }
 
   const feePercentage = matched ? Number(matched.fee_percentage) || 0 : 0;

@@ -109,6 +109,12 @@ export function SelfSdmWorkspace({
     province: '',
     education_level: '',
     major: '',
+    last_campus: '',
+    graduation_year: '',
+    thesis_title: '',
+    thesis_abstract: '',
+    thesis_keywords: '',
+    thesis_article_url: '',
   });
 
   const [guardianForms, setGuardianForms] = useState<
@@ -178,6 +184,14 @@ export function SelfSdmWorkspace({
           province: String(t.province || ''),
           education_level: String(t.education_level || ''),
           major: String(t.major || ''),
+          last_campus: String(t.last_campus || ''),
+          graduation_year: t.graduation_year != null ? String(t.graduation_year) : '',
+          thesis_title: String(t.thesis_title || ''),
+          thesis_abstract: String(t.thesis_abstract || ''),
+          thesis_keywords: Array.isArray(t.thesis_keywords)
+            ? (t.thesis_keywords as string[]).join(', ')
+            : String(t.thesis_keywords || ''),
+          thesis_article_url: String(t.thesis_article_url || ''),
         });
       }
 
@@ -211,13 +225,29 @@ export function SelfSdmWorkspace({
   }, []);
 
   useEffect(() => {
-    loadSelfData();
+    const id = setTimeout(() => {
+      void loadSelfData();
+    }, 0);
+    return () => clearTimeout(id);
   }, [loadSelfData]);
 
   async function handleSaveGtk(e: React.FormEvent) {
     e.preventDefault();
     if (gtkForm.nik && gtkForm.nik.length !== NIK_MAX) {
       showToast('err', `NIK harus terdiri dari tepat ${NIK_MAX} digit angka (atau kosongkan).`);
+      return;
+    }
+    const gradYearTrimmed = gtkForm.graduation_year.trim();
+    if (gradYearTrimmed) {
+      const yr = Number(gradYearTrimmed);
+      if (!Number.isInteger(yr) || yr < 1950 || yr > 2100) {
+        showToast('err', 'Tahun lulus harus berupa angka antara 1950 hingga 2100.');
+        return;
+      }
+    }
+    const articleUrlTrimmed = gtkForm.thesis_article_url.trim();
+    if (articleUrlTrimmed && !/^https?:\/\//i.test(articleUrlTrimmed)) {
+      showToast('err', 'URL artikel ilmiah harus diawali http:// atau https://');
       return;
     }
     setSavingGtk(true);
@@ -613,6 +643,45 @@ export function SelfSdmWorkspace({
               </div>
               <div className="min-w-0">
                 <label
+                  htmlFor="gtk-last-campus"
+                  className="block text-[11px] font-semibold text-slate-600 mb-1"
+                >
+                  Nama Kampus Terakhir
+                </label>
+                <input
+                  id="gtk-last-campus"
+                  value={gtkForm.last_campus}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setGtkForm((prev) => ({ ...prev, last_campus: val }));
+                  }}
+                  placeholder="cth: Universitas Negeri Malang"
+                  className="w-full min-h-[40px] rounded-xl border border-slate-300 px-3 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                />
+              </div>
+              <div className="min-w-0">
+                <label
+                  htmlFor="gtk-graduation-year"
+                  className="block text-[11px] font-semibold text-slate-600 mb-1"
+                >
+                  Tahun Lulus
+                </label>
+                <input
+                  id="gtk-graduation-year"
+                  type="number"
+                  min={1950}
+                  max={2100}
+                  value={gtkForm.graduation_year}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setGtkForm((prev) => ({ ...prev, graduation_year: val }));
+                  }}
+                  placeholder="cth: 2018"
+                  className="w-full min-h-[40px] rounded-xl border border-slate-300 px-3 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                />
+              </div>
+              <div className="min-w-0">
+                <label
                   htmlFor="gtk-phone"
                   className="block text-[11px] font-semibold text-slate-600 mb-1"
                 >
@@ -654,6 +723,111 @@ export function SelfSdmWorkspace({
                   className="w-full min-h-[40px] rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed px-3 py-2 text-sm sm:text-xs"
                 />
               </div>
+              <div className="sm:col-span-2 lg:col-span-3 min-w-0 p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">
+                      Karya Ilmiah / Skripsi (Sinkron ke Direktori Publik GTK)
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Data ini akan ditampilkan pada halaman{' '}
+                      <Link
+                        href="/direktori"
+                        target="_blank"
+                        className="text-emerald-700 font-semibold hover:underline"
+                      >
+                        /direktori
+                      </Link>{' '}
+                      bagian Direktori Guru &amp; Tenaga Kependidikan (GTK).
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="lg:col-span-2 min-w-0">
+                    <label
+                      htmlFor="gtk-thesis-title"
+                      className="block text-[11px] font-semibold text-slate-600 mb-1"
+                    >
+                      Judul Skripsi / Karya Ilmiah
+                    </label>
+                    <input
+                      id="gtk-thesis-title"
+                      type="text"
+                      value={gtkForm.thesis_title}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setGtkForm((prev) => ({ ...prev, thesis_title: val }));
+                      }}
+                      placeholder="cth: Pengembangan Media Simulasi Interaktif Berbasis Inkuiri Terbimbing..."
+                      className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                    />
+                  </div>
+                  <div className="lg:col-span-2 min-w-0">
+                    <label
+                      htmlFor="gtk-thesis-abstract"
+                      className="block text-[11px] font-semibold text-slate-600 mb-1"
+                    >
+                      Abstrak Skripsi
+                    </label>
+                    <textarea
+                      id="gtk-thesis-abstract"
+                      rows={4}
+                      value={gtkForm.thesis_abstract}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setGtkForm((prev) => ({ ...prev, thesis_abstract: val }));
+                      }}
+                      placeholder="Ringkasan abstrak penelitian atau skripsi..."
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <label
+                      htmlFor="gtk-thesis-keywords"
+                      className="block text-[11px] font-semibold text-slate-600 mb-1"
+                    >
+                      Kata Kunci Abstrak
+                    </label>
+                    <input
+                      id="gtk-thesis-keywords"
+                      type="text"
+                      value={gtkForm.thesis_keywords}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setGtkForm((prev) => ({ ...prev, thesis_keywords: val }));
+                      }}
+                      placeholder="Pisahkan dengan koma, cth: Inkuiri, Literasi, Fisika"
+                      className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Ditampilkan sebagai tag #KataKunci pada modal abstrak di /direktori.
+                    </p>
+                  </div>
+                  <div className="min-w-0">
+                    <label
+                      htmlFor="gtk-thesis-article-url"
+                      className="block text-[11px] font-semibold text-slate-600 mb-1"
+                    >
+                      URL Artikel Ilmiah / Skripsi
+                    </label>
+                    <input
+                      id="gtk-thesis-article-url"
+                      type="url"
+                      value={gtkForm.thesis_article_url}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setGtkForm((prev) => ({ ...prev, thesis_article_url: val }));
+                      }}
+                      placeholder="https://repository.kampus.ac.id/..."
+                      className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Opsional. Mengaktifkan tombol &ldquo;Buka Artikel Ilmiah&rdquo; di /direktori.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="sm:col-span-2 lg:col-span-3 min-w-0">
                 <StructuredAddressFields
                   title="Alamat Domisili GTK"

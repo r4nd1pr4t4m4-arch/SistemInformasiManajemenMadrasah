@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const check = verifySignedOtpToken(
+    const check = await verifySignedOtpToken(
       otpCookie,
       `register:${normalizedEmail}`,
       parsed.data.otpCode

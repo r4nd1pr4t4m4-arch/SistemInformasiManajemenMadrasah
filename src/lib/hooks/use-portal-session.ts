@@ -33,13 +33,16 @@ export interface PortalSessionUser {
 
 let cachedUser: PortalSessionUser | null = null;
 let inflightPromise: Promise<PortalSessionUser | null> | null = null;
+let sessionVersion = 0;
 
 async function fetchPortalUser(): Promise<PortalSessionUser | null> {
   if (cachedUser) return cachedUser;
   if (!inflightPromise) {
+    const versionAtStart = sessionVersion;
     inflightPromise = fetch('/api/auth/me')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
+        if (versionAtStart !== sessionVersion) return null;
         const u = data?.user ?? null;
         if (u) {
           cachedUser = {
@@ -51,14 +54,18 @@ async function fetchPortalUser(): Promise<PortalSessionUser | null> {
       })
       .catch(() => null)
       .finally(() => {
-        inflightPromise = null;
+        if (versionAtStart === sessionVersion) {
+          inflightPromise = null;
+        }
       });
   }
   return inflightPromise;
 }
 
 export function clearPortalSessionCache() {
+  sessionVersion += 1;
   cachedUser = null;
+  inflightPromise = null;
 }
 
 export function usePortalSession() {

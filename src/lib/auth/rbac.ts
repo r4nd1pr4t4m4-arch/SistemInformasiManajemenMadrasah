@@ -1,6 +1,6 @@
 import type { AppRole } from '@/types/database';
 
-export const DUTY_CODE_TO_APP_ROLE: Record<string, AppRole> = {
+const DUTY_CODE_TO_APP_ROLE: Record<string, AppRole> = {
   KEPALA_MADRASAH: 'KEPALA_LEMBAGA',
   KEPALA_SEKOLAH: 'KEPALA_LEMBAGA',
   KEPALA_LEMBAGA: 'KEPALA_LEMBAGA',

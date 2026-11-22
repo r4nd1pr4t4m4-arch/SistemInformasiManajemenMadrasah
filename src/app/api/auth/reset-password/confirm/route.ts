@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { verifySignedOtpToken } from '@/lib/auth/otp-token';
+import { RESET_OTP_COOKIE_NAME, verifySignedOtpToken } from '@/lib/auth/otp-token';
 import { validatePasswordStrength } from '@/lib/auth/password-policy';
 import { getInstitutionSettings } from '@/lib/data/public-queries';
 import {
@@ -11,8 +11,6 @@ import {
   sendInstitutionalEmail,
 } from '@/lib/email/mailer';
 import { buildPasswordChangedEmail } from '@/lib/email/templates';
-
-const RESET_OTP_COOKIE_NAME = 'simms_reset_otp';
 
 const ConfirmResetSchema = z.object({
   email: z.string().email(),
@@ -41,11 +39,19 @@ export async function POST(request: Request) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('id, full_name, email')
-      .ilike('email', email)
+      .ilike('email', email.replace(/[\\%_]/g, '\\$&'))
       .maybeSingle();
 
     if (!profile) {
       return NextResponse.json({ error: 'Akun tidak ditemukan.' }, { status: 404 });
+    }
+
+    const pwdCheck = validatePasswordStrength(parsed.data.newPassword, profile.full_name);
+    if (!pwdCheck.isValid) {
+      return NextResponse.json(
+        { error: `Kata sandi belum memenuhi syarat: ${pwdCheck.errors[0]}` },
+        { status: 400 }
+      );
     }
 
     const cookieStore = await cookies();
@@ -57,18 +63,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const check = verifySignedOtpToken(token, profile.id, parsed.data.otpCode);
+    const check = await verifySignedOtpToken(token, profile.id, parsed.data.otpCode);
     if (!check.valid) {
       return NextResponse.json(
         { error: check.reason || 'Kode OTP tidak valid.' },
-        { status: 400 }
-      );
-    }
-
-    const pwdCheck = validatePasswordStrength(parsed.data.newPassword, profile.full_name);
-    if (!pwdCheck.isValid) {
-      return NextResponse.json(
-        { error: `Kata sandi belum memenuhi syarat: ${pwdCheck.errors[0]}` },
         { status: 400 }
       );
     }

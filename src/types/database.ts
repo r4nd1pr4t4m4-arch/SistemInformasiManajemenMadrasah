@@ -103,16 +103,3 @@ export interface Student {
   status: 'AKTIF' | 'MUTASI' | 'LULUS' | 'NONAKTIF';
   qr_token: string | null;
 }
-
-export interface TeacherStaff {
-  id: string;
-  staff_type: 'GURU' | 'TATA_USAHA' | 'LAINNYA';
-  full_name: string;
-  nip: string | null;
-  nuptk: string | null;
-  employment_status: string | null;
-  phone: string | null;
-  email: string | null;
-  is_active: boolean;
-  show_in_public_directory: boolean;
-}

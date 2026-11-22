@@ -95,7 +95,10 @@ export default function ManajemenMfaPage() {
   }, []);
 
   useEffect(() => {
-    loadFactors();
+    const id = setTimeout(() => {
+      void loadFactors();
+    }, 0);
+    return () => clearTimeout(id);
   }, [loadFactors]);
 
   async function handleStartEnroll() {

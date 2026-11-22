@@ -227,29 +227,52 @@ export async function GET(request: Request) {
     const sasEffective = computeExamEffectiveScore(sasScore, sasRem, sasEnr);
 
     const wRow = (raportWeightRows || []).find((w) => w.subject_id === sub.id);
-    const weights: RaportWeights = wRow
-      ? {
-          weight_formatif: Number(wRow.weight_formatif),
-          weight_sumatif: Number(wRow.weight_sumatif),
-          weight_sts: Number(wRow.weight_sts),
-          weight_sas: Number(wRow.weight_sas),
-          weight_praktik: hasPraktik ? Number(wRow.weight_praktik) : 0,
-        }
-      : hasPraktik
-      ? {
-          weight_formatif: 20,
-          weight_sumatif: 20,
-          weight_sts: 20,
-          weight_sas: 20,
-          weight_praktik: 20,
-        }
-      : {
-          weight_formatif: 25,
-          weight_sumatif: 25,
-          weight_sts: 25,
-          weight_sas: 25,
-          weight_praktik: 0,
+    const weights: RaportWeights = (() => {
+      const defaultW: RaportWeights = hasPraktik
+        ? {
+            weight_formatif: 20,
+            weight_sumatif: 20,
+            weight_sts: 20,
+            weight_sas: 20,
+            weight_praktik: 20,
+          }
+        : {
+            weight_formatif: 25,
+            weight_sumatif: 25,
+            weight_sts: 25,
+            weight_sas: 25,
+            weight_praktik: 0,
+          };
+      if (!wRow) return defaultW;
+      const wF = Number(wRow.weight_formatif);
+      const wS = Number(wRow.weight_sumatif);
+      const wSts = Number(wRow.weight_sts);
+      const wSas = Number(wRow.weight_sas);
+      const wP = Number(wRow.weight_praktik);
+      if (hasPraktik || wP === 0) {
+        return {
+          weight_formatif: wF,
+          weight_sumatif: wS,
+          weight_sts: wSts,
+          weight_sas: wSas,
+          weight_praktik: hasPraktik ? wP : 0,
         };
+      }
+      const baseSum = wF + wS + wSts + wSas;
+      if (baseSum <= 0) return defaultW;
+      const scale = 100 / baseSum;
+      const nf = Math.round(wF * scale * 100) / 100;
+      const ns = Math.round(wS * scale * 100) / 100;
+      const nsts = Math.round(wSts * scale * 100) / 100;
+      const nsas = Math.round((100 - nf - ns - nsts) * 100) / 100;
+      return {
+        weight_formatif: nf,
+        weight_sumatif: ns,
+        weight_sts: nsts,
+        weight_sas: nsas,
+        weight_praktik: 0,
+      };
+    })();
 
     const raportScore = computeRaportScore(
       {

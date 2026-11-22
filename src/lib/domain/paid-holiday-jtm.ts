@@ -7,6 +7,8 @@ import {
 } from '@/lib/email/mailer';
 import { buildPaidHolidayJtmEmail } from '@/lib/email/templates';
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function getIsoDayOfWeek(dateStr: string): number {
   const d = new Date(`${dateStr}T00:00:00Z`);
   const day = d.getUTCDay();
@@ -29,6 +31,16 @@ export interface PaidHolidayRunResult {
 export async function processPaidHolidayJtm(
   targetDate = getWibTodayDateString()
 ): Promise<PaidHolidayRunResult> {
+  if (!ISO_DATE_RE.test(targetDate)) {
+    return {
+      date: targetDate,
+      isPaidHoliday: false,
+      teachersCredited: 0,
+      emailsSent: 0,
+      message: 'Format tanggal harus YYYY-MM-DD.',
+    };
+  }
+
   if (!isSupabaseAdminConfigured()) {
     return {
       date: targetDate,
@@ -41,12 +53,22 @@ export async function processPaidHolidayJtm(
 
   const supabase = createSupabaseAdminClient();
 
-  const { data: calEvent } = await supabase
+  const { data: calEvent, error: calErr } = await supabase
     .from('academic_calendar_events')
     .select('*')
     .eq('event_date', targetDate)
     .eq('category', 'LIBUR_BERBAYAR')
     .maybeSingle();
+
+  if (calErr) {
+    return {
+      date: targetDate,
+      isPaidHoliday: false,
+      teachersCredited: 0,
+      emailsSent: 0,
+      message: `Gagal membaca kalender akademik: ${calErr.message}`,
+    };
+  }
 
   if (!calEvent) {
     return {
@@ -60,20 +82,35 @@ export async function processPaidHolidayJtm(
 
   const dayOfWeek = getIsoDayOfWeek(targetDate);
 
+  const { data: activeYear } = await supabase
+    .from('academic_years')
+    .select('id')
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle();
+
+  let schedulesQuery = supabase
+    .from('schedules')
+    .select('teacher_id, jtm_count, classroom:classrooms(name), subject:subjects(name)')
+    .eq('day_of_week', dayOfWeek);
+  let picketQuery = supabase
+    .from('picket_schedules')
+    .select('teacher_id, jtm_allocated')
+    .eq('day_of_week', dayOfWeek);
+
+  if (activeYear?.id) {
+    schedulesQuery = schedulesQuery.eq('academic_year_id', activeYear.id);
+    picketQuery = picketQuery.eq('academic_year_id', activeYear.id);
+  }
+
   const [
-    { data: schedules },
-    { data: picketSchedules },
-    { data: teachers },
+    { data: schedules, error: schedErr },
+    { data: picketSchedules, error: picketErr },
+    { data: teachers, error: teacherErr },
     { data: inst },
   ] = await Promise.all([
-    supabase
-      .from('schedules')
-      .select('teacher_id, jtm_count, start_time, classroom:classrooms(name), subject:subjects(name)')
-      .eq('day_of_week', dayOfWeek),
-    supabase
-      .from('picket_schedules')
-      .select('teacher_id, jtm_allocated')
-      .eq('day_of_week', dayOfWeek),
+    schedulesQuery,
+    picketQuery,
     supabase
       .from('teachers_staff')
       .select('id, full_name, email, profile:profiles(email)'),
@@ -83,6 +120,17 @@ export async function processPaidHolidayJtm(
       .limit(1)
       .maybeSingle(),
   ]);
+
+  if (schedErr || picketErr || teacherErr) {
+    return {
+      date: targetDate,
+      isPaidHoliday: true,
+      holidayTitle: calEvent.title,
+      teachersCredited: 0,
+      emailsSent: 0,
+      message: `Gagal memuat jadwal/guru untuk memproses JTM libur berbayar: ${schedErr?.message || picketErr?.message || teacherErr?.message}`,
+    };
+  }
 
   const teacherMap = new Map<
     string,

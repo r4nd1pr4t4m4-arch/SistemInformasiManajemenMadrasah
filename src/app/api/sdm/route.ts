@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
+import { normalizeThesisKeywords, thesisArticleUrlSchema } from '@/lib/validation/identity';
 
 const GtkCreateSchema = z.object({
   full_name: z.string().min(2),
@@ -23,14 +24,7 @@ const GtkCreateSchema = z.object({
   thesis_title: z.string().optional().nullable(),
   thesis_abstract: z.string().optional().nullable(),
   thesis_keywords: z.union([z.array(z.string()), z.string()]).optional().nullable(),
-  thesis_article_url: z
-    .string()
-    .trim()
-    .refine((val) => !val || /^https?:\/\//i.test(val), {
-      message: 'URL artikel ilmiah harus diawali http:// atau https://',
-    })
-    .optional()
-    .nullable(),
+  thesis_article_url: thesisArticleUrlSchema,
   employment_status: z.string().optional().nullable(),
   join_date: z.string().optional().nullable(),
   profile_id: z.string().uuid().optional().nullable(),
@@ -120,23 +114,6 @@ function emptyToNull<T extends Record<string, unknown>>(obj: T): T {
     result[key] = val === '' ? null : val;
   }
   return result as T;
-}
-
-function normalizeThesisKeywords(value: string | string[] | null | undefined): string[] {
-  const rawList = Array.isArray(value)
-    ? value
-    : typeof value === 'string'
-      ? value.split(',')
-      : [];
-  const seen = new Set<string>();
-  const normalized: string[] = [];
-  for (const item of rawList) {
-    const cleaned = item.trim().replace(/^#+/, '').trim();
-    if (!cleaned || seen.has(cleaned.toLowerCase())) continue;
-    seen.add(cleaned.toLowerCase());
-    normalized.push(cleaned);
-  }
-  return normalized;
 }
 
 async function fetchActiveAccounts(supabase: ReturnType<typeof createSupabaseAdminClient>) {

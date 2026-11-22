@@ -43,7 +43,7 @@ function drawRoundedRect(
   ctx.closePath();
 }
 
-export async function renderSppSlipCanvas(
+async function renderSppSlipCanvas(
   data: SppSlipData,
   institutionName = 'SIMMS — Administrasi Keuangan'
 ): Promise<HTMLCanvasElement> {
@@ -138,19 +138,21 @@ export async function renderSppSlipCanvas(
   ctx.fillText(statusLabel, cardX + 54, cardY + 146);
 
   // Reference & Date
-  const dateLabel = data.paymentDate
-    ? new Date(data.paymentDate).toLocaleString('id-ID', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : new Date().toLocaleDateString('id-ID', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      });
+  const parsedPayDate = data.paymentDate ? new Date(data.paymentDate) : null;
+  const dateLabel =
+    parsedPayDate && !Number.isNaN(parsedPayDate.getTime())
+      ? parsedPayDate.toLocaleString('id-ID', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : new Date().toLocaleDateString('id-ID', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
 
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(255,255,255,0.75)';

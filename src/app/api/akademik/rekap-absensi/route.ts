@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     supabase
       .from('teacher_attendances')
       .select(
-        'id, teacher_id, attendance_date, attendance_type, admin_confirmed, jtm_credited, school_presence_percentage, teacher:teachers_staff(id, full_name, nip)'
+        'id, teacher_id, attendance_date, attendance_type, admin_confirmed, jtm_earned, teacher:teachers_staff(id, full_name, nip)'
       )
       .gte('attendance_date', startDate)
       .lte('attendance_date', endDate),
@@ -99,13 +99,11 @@ export async function GET(request: NextRequest) {
       event_sessions: number;
       confirmed_sessions: number;
       total_jtm: number;
-      pctSum: number;
-      pctCount: number;
     }
   >();
 
   for (const row of teacherAtts || []) {
-    if (!isGlobalRecapViewer && myTeacherId && row.teacher_id !== myTeacherId) continue;
+    if (!isGlobalRecapViewer && (!myTeacherId || row.teacher_id !== myTeacherId)) continue;
     if (teacherId && row.teacher_id !== teacherId) continue;
     const tObj = Array.isArray(row.teacher) ? row.teacher[0] : row.teacher;
     if (!teacherMap.has(row.teacher_id)) {
@@ -120,8 +118,6 @@ export async function GET(request: NextRequest) {
         event_sessions: 0,
         confirmed_sessions: 0,
         total_jtm: 0,
-        pctSum: 0,
-        pctCount: 0,
       });
     }
     const acc = teacherMap.get(row.teacher_id)!;
@@ -130,13 +126,11 @@ export async function GET(request: NextRequest) {
     else if (row.attendance_type === 'PIKET') acc.picket_sessions++;
     else if (row.attendance_type === 'PENGAWAS_UJIAN' || row.attendance_type === 'PANITIA_UJIAN') {
       acc.exam_sessions++;
-    } else if (row.attendance_type === 'ACARA') acc.event_sessions++;
-    if (row.admin_confirmed) acc.confirmed_sessions++;
-    acc.total_jtm += Number(row.jtm_credited || 0);
-    if (row.school_presence_percentage != null) {
-      acc.pctSum += Number(row.school_presence_percentage);
-      acc.pctCount++;
+    } else if (row.attendance_type === 'ACARA' || row.attendance_type === 'UPACARA') {
+      acc.event_sessions++;
     }
+    if (row.admin_confirmed) acc.confirmed_sessions++;
+    acc.total_jtm += Number(row.jtm_earned || 0);
   }
 
   const teacherRecap = Array.from(teacherMap.values())
@@ -152,7 +146,7 @@ export async function GET(request: NextRequest) {
       confirmed_sessions: t.confirmed_sessions,
       total_jtm: Number(t.total_jtm.toFixed(2)),
       total_short_leave_minutes: leaveMap.get(t.teacher_id) || 0,
-      avg_presence_pct: t.pctCount > 0 ? Math.round((t.pctSum / t.pctCount) * 10) / 10 : null,
+      avg_presence_pct: null,
     }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
@@ -245,9 +239,7 @@ export async function GET(request: NextRequest) {
       const rowTeacherId = schObj?.teacher_id || tchrObj?.id || 'UNKNOWN';
       if (
         !isGlobalRecapViewer &&
-        myTeacherId &&
-        rowTeacherId !== myTeacherId &&
-        !homeroomSet.has(row.classroom_id)
+        (!myTeacherId || (rowTeacherId !== myTeacherId && !homeroomSet.has(row.classroom_id)))
       ) {
         continue;
       }
@@ -318,10 +310,11 @@ export async function GET(request: NextRequest) {
     ? subjects || []
     : (subjects || []).filter((s) => taughtSubjectSet.has(s.id) || homeroomSet.size > 0);
 
-  const scopedFilterTeachers =
-    !isGlobalRecapViewer && myTeacherId
+  const scopedFilterTeachers = !isGlobalRecapViewer
+    ? myTeacherId
       ? (teachers || []).filter((t) => t.id === myTeacherId)
-      : teachers || [];
+      : []
+    : teachers || [];
 
   return NextResponse.json({
     startDate,

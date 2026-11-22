@@ -40,8 +40,9 @@ export async function sendInstitutionalEmail(params: {
     },
   });
 
+  const safeSenderLabel = params.senderLabel.replace(/[\r\n"]/g, '').trim() || 'SIMMS';
   await transporter.sendMail({
-    from: `"${params.senderLabel}" <${smtpUser}>`,
+    from: `"${safeSenderLabel}" <${smtpUser}>`,
     to: params.to,
     subject: params.subject,
     text: params.text,

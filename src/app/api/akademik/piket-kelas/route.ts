@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
-import { PERMISSIONS } from '@/lib/auth/rbac';
 
 const AddPicketSchema = z.object({
   action: z.literal('ADD'),
@@ -57,7 +56,7 @@ export async function GET(request: NextRequest) {
     .eq('is_active', true)
     .maybeSingle();
 
-  let targetClassroomId = requestedClassroomId || null;
+  let targetClassroomId = canManage ? requestedClassroomId || null : null;
   const myStudentIds: string[] = [];
 
   if (!canManage || !targetClassroomId) {
@@ -69,10 +68,14 @@ export async function GET(request: NextRequest) {
         .maybeSingle();
       if (student?.id) {
         myStudentIds.push(student.id);
-        const { data: enr } = await supabase
+        let stEnrQuery = supabase
           .from('student_enrollments')
           .select('classroom_id')
-          .eq('student_id', student.id)
+          .eq('student_id', student.id);
+        if (activeYear?.id) {
+          stEnrQuery = stEnrQuery.eq('academic_year_id', activeYear.id);
+        }
+        const { data: enr } = await stEnrQuery
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -98,10 +101,14 @@ export async function GET(request: NextRequest) {
           : childIds[0];
 
       if (activeChildId && !targetClassroomId) {
-        const { data: enr } = await supabase
+        let childEnrQuery = supabase
           .from('student_enrollments')
           .select('classroom_id')
-          .eq('student_id', activeChildId)
+          .eq('student_id', activeChildId);
+        if (activeYear?.id) {
+          childEnrQuery = childEnrQuery.eq('academic_year_id', activeYear.id);
+        }
+        const { data: enr } = await childEnrQuery
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -137,10 +144,14 @@ export async function GET(request: NextRequest) {
     }
 
     if (targetClassroomId) {
-      const { data: enrData } = await supabase
+      let enrQuery = supabase
         .from('student_enrollments')
         .select('student_id, student:students(id, full_name, nis, gender)')
         .eq('classroom_id', targetClassroomId);
+      if (activeYear?.id) {
+        enrQuery = enrQuery.eq('academic_year_id', activeYear.id);
+      }
+      const { data: enrData } = await enrQuery;
       enrolledStudents = (enrData || [])
         .map((e) => e.student as unknown as Record<string, unknown> | null)
         .filter((s): s is Record<string, unknown> => Boolean(s));
@@ -149,13 +160,16 @@ export async function GET(request: NextRequest) {
 
   let pickets: Array<Record<string, unknown>> = [];
   if (targetClassroomId) {
-    const { data: picketData } = await supabase
+    let picketQuery = supabase
       .from('student_picket_schedules')
       .select(
         'id, classroom_id, student_id, day_of_week, task_notes, student:students(id, full_name, nis, gender), classroom:classrooms(id, name, grade_level)'
       )
-      .eq('classroom_id', targetClassroomId)
-      .order('day_of_week', { ascending: true });
+      .eq('classroom_id', targetClassroomId);
+    if (activeYear?.id) {
+      picketQuery = picketQuery.eq('academic_year_id', activeYear.id);
+    }
+    const { data: picketData } = await picketQuery.order('day_of_week', { ascending: true });
     pickets = picketData || [];
   }
 
@@ -222,6 +236,23 @@ export async function POST(request: NextRequest) {
         .select('id')
         .eq('is_active', true)
         .maybeSingle();
+
+      // Pastikan siswa benar-benar terdaftar di kelas target
+      let enrollCheck = supabase
+        .from('student_enrollments')
+        .select('id')
+        .eq('classroom_id', parsed.data.classroom_id)
+        .eq('student_id', parsed.data.student_id);
+      if (activeYear?.id) {
+        enrollCheck = enrollCheck.eq('academic_year_id', activeYear.id);
+      }
+      const { data: enrolledStudent } = await enrollCheck.limit(1).maybeSingle();
+      if (!enrolledStudent) {
+        return NextResponse.json(
+          { error: 'Siswa tersebut tidak terdaftar pada kelas yang dipilih.' },
+          { status: 400 }
+        );
+      }
 
       const { data, error } = await supabase
         .from('student_picket_schedules')

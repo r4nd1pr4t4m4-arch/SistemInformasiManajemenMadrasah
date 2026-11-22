@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 
 const CreatePostSchema = z.object({
   title: z.string().min(4),
@@ -28,12 +29,21 @@ export async function GET() {
     return NextResponse.json({ posts: [] });
   }
 
+  const session = await getCurrentUserWithRoles();
+  const canViewAll = hasAnyRole(session, PERMISSIONS.CMS_VIEW);
+
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from('posts')
     .select('*')
     .order('created_at', { ascending: false })
     .limit(50);
+
+  if (!canViewAll) {
+    query = query.eq('status', 'PUBLISHED');
+  }
+
+  const { data, error } = await query;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ posts: data || [] });

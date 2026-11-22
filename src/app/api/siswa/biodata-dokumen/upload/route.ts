@@ -42,9 +42,17 @@ export async function POST(request: Request) {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const safeExt = file.name.split('.').pop() || 'bin';
+    const mimeToExt: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'application/pdf': 'pdf',
+    };
+    const safeExt = mimeToExt[file.type] || 'bin';
+    const safeDocType = docType.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || 'DOKUMEN';
     const userId = guard.session.userId;
-    const fileName = `${docType.toLowerCase()}-${userId.slice(0, 8)}-${Date.now()}.${safeExt}`;
+    const fileName = `${safeDocType.toLowerCase()}-${userId.slice(0, 8)}-${Date.now()}.${safeExt}`;
 
     if (isR2Configured()) {
       const uploaded = await uploadBufferToR2({

@@ -4,17 +4,21 @@ import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import {
+  escapeLikePattern,
   FAMILY_SHARED_STUDENT_DOC_TYPES,
   resolveTeacherForProfile,
   syncGuardianToStudent,
   syncSharedBiodataAcrossSelfEntities,
 } from '@/lib/sdm/sync';
-import { nikSchema } from '@/lib/validation/identity';
+import {
+  nikSchema,
+  normalizeThesisKeywords,
+  thesisArticleUrlSchema,
+} from '@/lib/validation/identity';
 
 const UpdateSelfGtkSchema = z.object({
   scope: z.literal('gtk'),
   id: z.string().uuid(),
-  full_name: z.string().optional().nullable(),
   nik: nikSchema,
   gender: z.enum(['L', 'P']).optional().nullable(),
   birth_place: z.string().optional().nullable(),
@@ -27,12 +31,25 @@ const UpdateSelfGtkSchema = z.object({
   province: z.string().optional().nullable(),
   education_level: z.string().optional().nullable(),
   major: z.string().optional().nullable(),
+  last_campus: z.string().optional().nullable(),
+  graduation_year: z.preprocess(
+    (v) => (v === '' || v === undefined ? null : v),
+    z.coerce
+      .number()
+      .int('Tahun lulus harus berupa bilangan bulat.')
+      .min(1950, 'Tahun lulus minimal 1950.')
+      .max(2100, 'Tahun lulus maksimal 2100.')
+      .nullable()
+  ),
+  thesis_title: z.string().optional().nullable(),
+  thesis_abstract: z.string().optional().nullable(),
+  thesis_keywords: z.union([z.array(z.string()), z.string()]).optional().nullable(),
+  thesis_article_url: thesisArticleUrlSchema,
 });
 
 const UpdateSelfGuardianSchema = z.object({
   scope: z.literal('orang-tua'),
   id: z.string().uuid(),
-  full_name: z.string().optional().nullable(),
   nik: nikSchema,
   occupation: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
@@ -84,14 +101,18 @@ export async function GET() {
   const canonicalPhone = profileRes.data?.phone ?? null;
   const canonicalEmail = profileRes.data?.email ?? session.email ?? null;
 
-  const resolvedTeacher =
-    teacherRes.data ||
+  const canViewGtk = hasAnyRole(session, PERMISSIONS.GTK_BIODATA_VIEW);
+  const canViewOrtu = hasAnyRole(session, PERMISSIONS.ORTU_BIODATA_VIEW);
+
+  const resolvedTeacher = canViewGtk
+    ? teacherRes.data ||
     (await resolveTeacherForProfile(supabase, {
       userId: session.userId,
       email: canonicalEmail,
       fullName: canonicalFullName,
       phone: canonicalPhone,
-    }));
+    }))
+    : null;
 
   let gtkPayload: Record<string, unknown> | null = null;
   if (resolvedTeacher) {
@@ -123,14 +144,14 @@ export async function GET() {
     };
   }
 
-  let guardianRows = guardiansRes.data || [];
+  let guardianRows = canViewOrtu ? guardiansRes.data || [] : [];
 
   // Fallback: jika profile_id belum tertaut pada baris student_guardians tetapi email cocok
-  if (guardianRows.length === 0 && session.email) {
+  if (canViewOrtu && guardianRows.length === 0 && session.email) {
     const { data: byEmailGuards } = await supabase
       .from('student_guardians')
       .select('*, student:students(id, full_name, nis, nisn, status)')
-      .ilike('email', session.email)
+      .ilike('email', escapeLikePattern(session.email.trim()))
       .is('profile_id', null)
       .eq('is_active', true)
       .order('is_primary', { ascending: false });
@@ -142,7 +163,8 @@ export async function GET() {
         .in(
           'id',
           byEmailGuards.map((g) => g.id as string)
-        );
+        )
+        .is('profile_id', null);
       guardianRows = byEmailGuards;
     }
   }
@@ -162,11 +184,11 @@ export async function GET() {
         .order('created_at', { ascending: false }),
       studentIds.length > 0
         ? supabase
-            .from('student_documents')
-            .select('*')
-            .in('student_id', studentIds)
-            .in('document_type', [...FAMILY_SHARED_STUDENT_DOC_TYPES])
-            .order('updated_at', { ascending: false })
+          .from('student_documents')
+          .select('*')
+          .in('student_id', studentIds)
+          .in('document_type', [...FAMILY_SHARED_STUDENT_DOC_TYPES])
+          .order('updated_at', { ascending: false })
         : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     ]);
 
@@ -294,6 +316,14 @@ export async function PATCH(request: Request) {
           province: cleanStr(parsed.data.province),
           education_level: cleanStr(parsed.data.education_level),
           major: cleanStr(parsed.data.major),
+          last_campus: cleanStr(parsed.data.last_campus),
+          graduation_year: parsed.data.graduation_year ?? null,
+          thesis_title: cleanStr(parsed.data.thesis_title),
+          thesis_abstract: cleanStr(parsed.data.thesis_abstract),
+          ...(parsed.data.thesis_keywords !== undefined
+            ? { thesis_keywords: normalizeThesisKeywords(parsed.data.thesis_keywords) }
+            : {}),
+          thesis_article_url: cleanStr(parsed.data.thesis_article_url),
           updated_at: new Date().toISOString(),
         })
         .eq('id', parsed.data.id)

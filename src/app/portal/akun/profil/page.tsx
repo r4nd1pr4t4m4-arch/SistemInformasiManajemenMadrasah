@@ -151,7 +151,10 @@ export default function AkunProfilPage() {
   }, []);
 
   useEffect(() => {
-    loadProfile();
+    const id = setTimeout(() => {
+      void loadProfile();
+    }, 0);
+    return () => clearTimeout(id);
   }, [loadProfile]);
 
   async function handleSaveBasic(e: React.FormEvent) {

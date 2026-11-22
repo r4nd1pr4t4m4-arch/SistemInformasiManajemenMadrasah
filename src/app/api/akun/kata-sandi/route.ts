@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { getCurrentUserWithRoles } from '@/lib/auth/session';
 import { OTP_COOKIE_NAME, verifySignedOtpToken } from '@/lib/auth/otp-token';
@@ -41,9 +42,28 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Validasi kata sandi saat ini
+    // 1. Jika menggunakan MFA, pastikan sesi saat ini sudah AAL2 sebelum verifikasi password
     const serverClient = await createSupabaseServerClient();
-    const { error: pwdErr } = await serverClient.auth.signInWithPassword({
+    if (parsed.data.method === 'mfa') {
+      const { data: aal } = await serverClient.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal?.currentLevel !== 'aal2') {
+        return NextResponse.json(
+          { error: 'Verifikasi MFA (AAL2) diperlukan sebelum mengganti kata sandi.' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // 2. Validasi kata sandi saat ini menggunakan client stateless agar cookie sesi (termasuk AAL2) tidak tertimpa
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json({ error: 'Layanan autentikasi belum siap.' }, { status: 503 });
+    }
+    const verifyClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { error: pwdErr } = await verifyClient.auth.signInWithPassword({
       email: session.email,
       password: parsed.data.currentPassword,
     });
@@ -54,7 +74,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Validasi kebijakan kekuatan kata sandi baru
+    // 3. Validasi kebijakan kekuatan kata sandi baru
     const strengthCheck = validatePasswordStrength(parsed.data.newPassword, session.fullName);
     if (!strengthCheck.isValid) {
       return NextResponse.json(
@@ -63,7 +83,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Verifikasi OTP atau MFA AAL2
+    // 4. Verifikasi OTP jika method === 'otp'
     if (parsed.data.method === 'otp') {
       const cookieStore = await cookies();
       const token = cookieStore.get(OTP_COOKIE_NAME)?.value;
@@ -78,19 +98,11 @@ export async function POST(request: Request) {
         );
       }
 
-      const check = verifySignedOtpToken(token, session.userId, parsed.data.otpCode);
+      const check = await verifySignedOtpToken(token, session.userId, parsed.data.otpCode);
       if (!check.valid) {
         return NextResponse.json(
           { error: check.reason || 'Kode OTP tidak valid.' },
           { status: 400 }
-        );
-      }
-    } else {
-      const { data: aal } = await serverClient.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (aal?.currentLevel !== 'aal2') {
-        return NextResponse.json(
-          { error: 'Verifikasi MFA (AAL2) diperlukan sebelum mengganti kata sandi.' },
-          { status: 403 }
         );
       }
     }

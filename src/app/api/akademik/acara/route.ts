@@ -300,7 +300,7 @@ export async function POST(request: Request) {
       if (picket_attendance_id) {
         const { data: picketAtt } = await supabase
           .from('teacher_attendances')
-          .select('id, attendance_type, attendance_date, is_within_geofence, admin_confirmed')
+          .select('id, teacher_id, attendance_type, attendance_date, is_within_geofence, admin_confirmed')
           .eq('id', picket_attendance_id)
           .maybeSingle();
 
@@ -312,6 +312,12 @@ export async function POST(request: Request) {
         ) {
           return NextResponse.json(
             { error: 'Presensi Guru Piket belum valid atau belum dikonfirmasi Admin.' },
+            { status: 403 }
+          );
+        }
+        if (!isAdmin && picketAtt.teacher_id !== guard.session.teacherAssignments?.teacherId) {
+          return NextResponse.json(
+            { error: 'Presensi Guru Piket bukan milik akun Anda.' },
             { status: 403 }
           );
         }
@@ -674,11 +680,17 @@ export async function POST(request: Request) {
       if (!ceremony) {
         return NextResponse.json({ error: 'Jadwal upacara tidak ditemukan.' }, { status: 404 });
       }
+      if (ceremony.status === 'TERLAKSANA') {
+        return NextResponse.json(
+          { error: 'Pelaksanaan upacara ini sudah dikonfirmasi sebelumnya.' },
+          { status: 400 }
+        );
+      }
 
       if (parsed.data.picket_attendance_id) {
         const { data: picketAtt } = await supabase
           .from('teacher_attendances')
-          .select('id, attendance_type, attendance_date, is_within_geofence, admin_confirmed')
+          .select('id, teacher_id, attendance_type, attendance_date, is_within_geofence, admin_confirmed')
           .eq('id', parsed.data.picket_attendance_id)
           .maybeSingle();
 
@@ -687,10 +699,11 @@ export async function POST(request: Request) {
           picketAtt.attendance_type !== 'PIKET' ||
           !picketAtt.is_within_geofence ||
           !picketAtt.admin_confirmed ||
-          picketAtt.attendance_date !== ceremony.ceremony_date
+          picketAtt.attendance_date !== ceremony.ceremony_date ||
+          (!isAdmin && picketAtt.teacher_id !== guard.session.teacherAssignments?.teacherId)
         ) {
           return NextResponse.json(
-            { error: 'Presensi Guru Piket pada tanggal upacara belum valid/terkonfirmasi Admin.' },
+            { error: 'Presensi Guru Piket pada tanggal upacara belum valid/terkonfirmasi Admin atau bukan milik Anda.' },
             { status: 403 }
           );
         }

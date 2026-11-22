@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { createSignedOtpToken, generateNumericOtp } from '@/lib/auth/otp-token';
+import { createSignedOtpToken, generateNumericOtp, RESET_OTP_COOKIE_NAME } from '@/lib/auth/otp-token';
 import { getInstitutionSettings } from '@/lib/data/public-queries';
 import {
   formatWibDateTime,
@@ -11,8 +11,6 @@ import {
 import { buildPasswordOtpEmail } from '@/lib/email/templates';
 import { verifyCaptchaToken } from '@/lib/security/captcha-server';
 import type { CaptchaPayload } from '@/lib/security/captcha-types';
-
-export const RESET_OTP_COOKIE_NAME = 'simms_reset_otp';
 
 const SendResetOtpSchema = z.object({
   email: z.string().email(),

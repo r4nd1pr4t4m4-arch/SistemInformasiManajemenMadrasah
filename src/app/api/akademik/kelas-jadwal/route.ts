@@ -234,7 +234,19 @@ export async function GET() {
   ]);
   const ta = guard.session.teacherAssignments;
 
-  if (!isGlobalViewer && ta && !ta.isPicketTeacher) {
+  if (!isGlobalViewer && !ta?.isPicketTeacher) {
+    if (!ta) {
+      return NextResponse.json({
+        classrooms: [],
+        subjects: [],
+        schedules: [],
+        pickets: [],
+        enrollments: [],
+        homeroomTeacherCandidates,
+        canManageSchedule,
+        homeroomClassroomIds,
+      });
+    }
     const allowedClassIds = new Set([
       ...(ta.homeroomClassroomIds || []),
       ...(ta.taughtClassroomIds || []),
@@ -434,7 +446,8 @@ export async function POST(request: Request) {
           { status: 403 }
         );
       }
-      const { action: _, ...payload } = parsed.data;
+      const payload = { ...parsed.data } as Record<string, unknown>;
+      delete payload.action;
       const { data, error } = await supabase
         .from('schedules')
         .insert({ ...payload, academic_year_id: academicYearId })
@@ -555,7 +568,8 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data jadwal piket tidak valid.' }, { status: 400 });
       }
-      const { action: _, ...payload } = parsed.data;
+      const payload = { ...parsed.data } as Record<string, unknown>;
+      delete payload.action;
       const { data, error } = await supabase
         .from('picket_schedules')
         .insert({ ...payload, academic_year_id: academicYearId })
@@ -591,7 +605,8 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Pilih rombel dan minimal 1 siswa.' }, { status: 400 });
       }
-      const rows = parsed.data.student_ids.map((student_id) => ({
+      const uniqueStudentIds = Array.from(new Set(parsed.data.student_ids));
+      const rows = uniqueStudentIds.map((student_id) => ({
         student_id,
         classroom_id: parsed.data.classroom_id,
         academic_year_id: academicYearId,

@@ -356,21 +356,21 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
       setRooms(loadedRooms);
       setExamRoomStudents(uj.examRoomStudents || []);
 
-      setSelectedExamPeriodId((prevPeriodId) => {
-        const activePeriodId =
-          prevPeriodId && loadedPeriods.some((p) => p.id === prevPeriodId)
-            ? prevPeriodId
-            : loadedPeriods[0]?.id || '';
-        setRoomForm((prev) =>
-          prev.exam_period_id ? prev : { ...prev, exam_period_id: activePeriodId }
-        );
-        const periodRooms = loadedRooms.filter((r) => r.exam_period_id === activePeriodId);
-        setSelectedExamRoomId((prevRoomId) =>
-          prevRoomId && periodRooms.some((r) => r.id === prevRoomId)
-            ? prevRoomId
-            : periodRooms[0]?.id || ''
-        );
-        return activePeriodId;
+      const fallbackPeriodId = loadedPeriods[0]?.id || '';
+      setSelectedExamPeriodId((prevPeriodId) =>
+        prevPeriodId && loadedPeriods.some((p) => p.id === prevPeriodId)
+          ? prevPeriodId
+          : fallbackPeriodId
+      );
+      setRoomForm((prev) =>
+        prev.exam_period_id ? prev : { ...prev, exam_period_id: fallbackPeriodId }
+      );
+      setSelectedExamRoomId((prevRoomId) => {
+        if (prevRoomId && loadedRooms.some((r) => r.id === prevRoomId)) {
+          return prevRoomId;
+        }
+        const periodRooms = loadedRooms.filter((r) => r.exam_period_id === fallbackPeriodId);
+        return periodRooms[0]?.id || loadedRooms[0]?.id || '';
       });
 
       setExamStudentAttendances(uj.studentAttendances || []);

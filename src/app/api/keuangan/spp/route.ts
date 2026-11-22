@@ -119,11 +119,11 @@ export async function GET() {
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
-    return NextResponse.json({ feeTypes: [], bills: [], payments: [], siblingGroups: [] });
+    return NextResponse.json({ feeTypes: [], bills: [], siblingGroups: [] });
   }
 
   const supabase = createSupabaseAdminClient();
-  const [{ data: feeTypes }, { data: bills }, { data: payments }, { data: groups }, { data: members }] =
+  const [{ data: feeTypes }, { data: bills }, { data: groups }, { data: members }] =
     await Promise.all([
       supabase.from('fee_types').select('*').order('name'),
       supabase
@@ -131,11 +131,6 @@ export async function GET() {
         .select('*, student:students(full_name, nis), fee_type:fee_types(name, category)')
         .order('created_at', { ascending: false })
         .limit(150),
-      supabase
-        .from('bill_payments')
-        .select('*, bill:student_bills(student:students(full_name), fee_type:fee_types(name))')
-        .order('payment_date', { ascending: false })
-        .limit(50),
       supabase.from('sibling_groups').select('*').order('name', { ascending: true }),
       supabase
         .from('sibling_group_members')
@@ -168,7 +163,6 @@ export async function GET() {
   return NextResponse.json({
     feeTypes: feeTypes || [],
     bills: bills || [],
-    payments: payments || [],
     siblingGroups,
   });
 }
@@ -190,7 +184,8 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data jenis biaya tidak valid.' }, { status: 400 });
       }
-      const { action: _, ...payload } = parsed.data;
+      const payload = { ...parsed.data } as Record<string, unknown>;
+      delete payload.action;
       const { data, error } = await supabase
         .from('fee_types')
         .insert(payload)
@@ -205,21 +200,22 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data tagihan tidak valid.' }, { status: 400 });
       }
-      const { action: _, ...payload } = parsed.data;
+      const payload = { ...parsed.data } as Record<string, unknown>;
+      delete payload.action;
 
       const { data: feeType } = await supabase
         .from('fee_types')
         .select('id, category')
-        .eq('id', payload.fee_type_id)
+        .eq('id', parsed.data.fee_type_id)
         .single();
 
       let siblingInfo: Awaited<ReturnType<typeof resolveStudentSiblingExemption>> = null;
       if (feeType && isSiblingDiscountCategory(feeType.category)) {
-        siblingInfo = await resolveStudentSiblingExemption(supabase, payload.student_id);
+        siblingInfo = await resolveStudentSiblingExemption(supabase, parsed.data.student_id);
       }
 
       const isExempt = Boolean(siblingInfo?.isExempt);
-      const originalAmount = payload.amount;
+      const originalAmount = parsed.data.amount;
       const discountAmount = isExempt ? originalAmount : 0;
       const finalAmount = isExempt ? 0 : originalAmount;
 
@@ -253,7 +249,7 @@ export async function POST(request: Request) {
 
       const { data: bill, error: billErr } = await supabase
         .from('student_bills')
-        .select('id, amount, paid_amount')
+        .select('id, amount, paid_amount, status')
         .eq('id', parsed.data.bill_id)
         .single();
 
@@ -261,12 +257,45 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Tagihan tidak ditemukan.' }, { status: 404 });
       }
 
-      const newPaid = Number(bill.paid_amount) + parsed.data.amount_paid;
       const totalAmount = Number(bill.amount);
+      const currentPaid = Number(bill.paid_amount);
+      const remaining = Math.max(0, totalAmount - currentPaid);
+      if (bill.status === 'LUNAS' || remaining <= 0) {
+        return NextResponse.json({ error: 'Tagihan ini sudah lunas.' }, { status: 400 });
+      }
+      if (parsed.data.amount_paid > remaining) {
+        return NextResponse.json(
+          { error: `Nominal pembayaran melebihi sisa tagihan (${remaining}).` },
+          { status: 400 }
+        );
+      }
+
+      const newPaid = currentPaid + parsed.data.amount_paid;
       const newStatus =
         newPaid >= totalAmount ? 'LUNAS' : newPaid > 0 ? 'CICILAN' : 'BELUM_LUNAS';
 
-      const receiptNumber = `KW-${Date.now().toString().slice(-8)}`;
+      // Optimistic lock pada paid_amount untuk mencegah double payment / overpayment bersamaan
+      const { data: updatedBill, error: updBillErr } = await supabase
+        .from('student_bills')
+        .update({ paid_amount: newPaid, status: newStatus })
+        .eq('id', bill.id)
+        .eq('paid_amount', bill.paid_amount)
+        .select('id')
+        .maybeSingle();
+
+      if (updBillErr || !updatedBill) {
+        return NextResponse.json(
+          {
+            error:
+              updBillErr?.message ||
+              'Status tagihan berubah karena pembayaran bersamaan. Silakan muat ulang dan coba lagi.',
+          },
+          { status: 409 }
+        );
+      }
+
+      const receiptRand = Math.random().toString(36).slice(2, 6).toUpperCase();
+      const receiptNumber = `KW-${Date.now().toString().slice(-8)}-${receiptRand}`;
       const { data: payment, error: payErr } = await supabase
         .from('bill_payments')
         .insert({
@@ -274,17 +303,20 @@ export async function POST(request: Request) {
           receipt_number: receiptNumber,
           amount_paid: parsed.data.amount_paid,
           payment_method: parsed.data.payment_method,
+          recorded_by: guard.session.userId,
           notes: parsed.data.notes || null,
         })
         .select('*')
         .single();
 
-      if (payErr) return NextResponse.json({ error: payErr.message }, { status: 500 });
-
-      await supabase
-        .from('student_bills')
-        .update({ paid_amount: newPaid, status: newStatus })
-        .eq('id', bill.id);
+      if (payErr) {
+        await supabase
+          .from('student_bills')
+          .update({ paid_amount: bill.paid_amount, status: bill.status })
+          .eq('id', bill.id)
+          .eq('paid_amount', newPaid);
+        return NextResponse.json({ error: payErr.message }, { status: 500 });
+      }
 
       return NextResponse.json({ payment, status: newStatus });
     }
@@ -354,8 +386,8 @@ export async function POST(request: Request) {
 
     if (body.action === 'DELETE_SIBLING_GROUP') {
       const groupId = body.group_id as string | undefined;
-      if (!groupId) {
-        return NextResponse.json({ error: 'ID kelompok saudara wajib diisi.' }, { status: 400 });
+      if (!groupId || !z.string().uuid().safeParse(groupId).success) {
+        return NextResponse.json({ error: 'ID kelompok saudara tidak valid.' }, { status: 400 });
       }
       const { error } = await supabase.from('sibling_groups').delete().eq('id', groupId);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -124,6 +124,32 @@ export async function GET(request: NextRequest) {
   const rangeHeader = request.headers.get('range');
   const isInitialRequest = !rangeHeader || rangeHeader.startsWith('bytes=0-');
 
+function isBlockedUpstreamHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (
+    h === 'localhost' ||
+    h === '0.0.0.0' ||
+    h === '::1' ||
+    h.endsWith('.local') ||
+    h.endsWith('.internal') ||
+    h.startsWith('127.') ||
+    h.startsWith('10.') ||
+    h.startsWith('192.168.') ||
+    h.startsWith('169.254.') ||
+    h.startsWith('fc') ||
+    h.startsWith('fd') ||
+    h.startsWith('fe80:')
+  ) {
+    return true;
+  }
+  const m172 = h.match(/^172\.(\d+)\./);
+  if (m172) {
+    const second = Number(m172[1]);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
   try {
     // 1. Stream directly from Cloudflare R2 if stored there
     const r2PublicBase = process.env.R2_PUBLIC_URL?.replace(/\/$/, '') || '';
@@ -136,7 +162,14 @@ export async function GET(request: NextRequest) {
       }
 
       if (r2Key) {
-        const r2Res = await getR2ObjectStream(r2Key, rangeHeader);
+        const normalizedKey = r2Key.replace(/^\/+/, '');
+        if (!normalizedKey.startsWith('ebooks/') || normalizedKey.includes('..')) {
+          return NextResponse.json(
+            { error: 'Lokasi berkas E-Book tidak diizinkan.' },
+            { status: 403 }
+          );
+        }
+        const r2Res = await getR2ObjectStream(normalizedKey, rangeHeader);
         const headers: Record<string, string> = {
           'Content-Type': 'application/pdf',
           'Content-Disposition': 'inline',
@@ -158,9 +191,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 2. Otherwise stream from upstream HTTP(S) with Range pass-through
+    // 2. Otherwise stream from upstream HTTP(S) with Range pass-through (blokir SSRF)
     const resolvedUrl = normalizeEbookUrl(fileUrl, request.nextUrl.origin);
-    const upstream = await fetch(resolvedUrl, {
+    let parsedUpstream: URL;
+    try {
+      parsedUpstream = new URL(resolvedUrl);
+    } catch {
+      return NextResponse.json({ error: 'URL berkas E-Book tidak valid.' }, { status: 400 });
+    }
+    if (parsedUpstream.protocol !== 'https:' && parsedUpstream.origin !== request.nextUrl.origin) {
+      return NextResponse.json({ error: 'URL sumber E-Book harus menggunakan HTTPS.' }, { status: 400 });
+    }
+    if (
+      parsedUpstream.origin !== request.nextUrl.origin &&
+      isBlockedUpstreamHost(parsedUpstream.hostname)
+    ) {
+      return NextResponse.json({ error: 'Host sumber E-Book tidak diizinkan.' }, { status: 403 });
+    }
+
+    const upstream = await fetch(parsedUpstream.toString(), {
       cache: 'no-store',
       redirect: 'follow',
       headers: rangeHeader ? { Range: rangeHeader } : undefined,

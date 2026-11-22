@@ -102,7 +102,7 @@ export async function POST(request: Request) {
 
   const { data: existing } = await db
     .from('assessment_chapters')
-    .select('chapter_number, sort_order')
+    .select('chapter_number')
     .eq('academic_year_id', activeYear.id)
     .eq('subject_id', parsed.data.subject_id)
     .eq('grade_level', parsed.data.grade_level)
@@ -141,6 +141,10 @@ export async function PATCH(request: Request) {
   const { session, errorResponse } = await requireApiRoles(PERMISSIONS.PENILAIAN_TEACHER);
   if (errorResponse || !session) return errorResponse;
 
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Konfigurasi database belum siap.' }, { status: 500 });
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = UpdateChapterSchema.safeParse(body);
   if (!parsed.success) {
@@ -148,14 +152,26 @@ export async function PATCH(request: Request) {
   }
 
   const db = createSupabaseAdminClient();
+  const activeYear = await getActiveAcademicYear(db);
+  if (!activeYear) {
+    return NextResponse.json({ error: 'Tahun ajaran aktif tidak ditemukan.' }, { status: 404 });
+  }
+
   const { data: chapter } = await db
     .from('assessment_chapters')
-    .select('id, subject_id, grade_level')
+    .select('id, academic_year_id, subject_id, grade_level')
     .eq('id', parsed.data.id)
     .maybeSingle();
 
   if (!chapter) {
     return NextResponse.json({ error: 'BAB tidak ditemukan.' }, { status: 404 });
+  }
+
+  if (chapter.academic_year_id !== activeYear.id) {
+    return NextResponse.json(
+      { error: 'BAB dari tahun ajaran sebelumnya tidak dapat diubah.' },
+      { status: 403 }
+    );
   }
 
   if (!canManageSubjectGrade(session, chapter.subject_id, chapter.grade_level)) {
@@ -191,21 +207,37 @@ export async function DELETE(request: Request) {
   const { session, errorResponse } = await requireApiRoles(PERMISSIONS.PENILAIAN_TEACHER);
   if (errorResponse || !session) return errorResponse;
 
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Konfigurasi database belum siap.' }, { status: 500 });
+  }
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
-  if (!id) {
-    return NextResponse.json({ error: 'ID BAB wajib diisi.' }, { status: 400 });
+  if (!id || !z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ error: 'ID BAB tidak valid.' }, { status: 400 });
   }
 
   const db = createSupabaseAdminClient();
+  const activeYear = await getActiveAcademicYear(db);
+  if (!activeYear) {
+    return NextResponse.json({ error: 'Tahun ajaran aktif tidak ditemukan.' }, { status: 404 });
+  }
+
   const { data: chapter } = await db
     .from('assessment_chapters')
-    .select('id, subject_id, grade_level')
+    .select('id, academic_year_id, subject_id, grade_level')
     .eq('id', id)
     .maybeSingle();
 
   if (!chapter) {
     return NextResponse.json({ error: 'BAB tidak ditemukan.' }, { status: 404 });
+  }
+
+  if (chapter.academic_year_id !== activeYear.id) {
+    return NextResponse.json(
+      { error: 'BAB dari tahun ajaran sebelumnya tidak dapat dihapus.' },
+      { status: 403 }
+    );
   }
 
   if (!canManageSubjectGrade(session, chapter.subject_id, chapter.grade_level)) {

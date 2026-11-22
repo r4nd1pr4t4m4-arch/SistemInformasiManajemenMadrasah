@@ -83,9 +83,10 @@ export async function GET(request: Request) {
   const type = searchParams.get('type') as AssessmentCategory | AssessmentExamType | null;
   const chapterId = searchParams.get('chapterId');
 
-  if (!subjectId || !classroomId || !type) {
+  const VALID_TYPES = new Set(['FORMATIF', 'SUMATIF', 'PRAKTIK', 'STS', 'SAS']);
+  if (!subjectId || !classroomId || !type || !VALID_TYPES.has(type)) {
     return NextResponse.json(
-      { error: 'Parameter subjectId, classroomId, dan type wajib diisi.' },
+      { error: 'Parameter subjectId, classroomId, dan type (FORMATIF/SUMATIF/PRAKTIK/STS/SAS) wajib valid.' },
       { status: 400 }
     );
   }
@@ -323,6 +324,21 @@ export async function POST(request: Request) {
     }
 
     const studentIds = Array.from(new Set(parsed.data.scores.map((s) => s.student_id)));
+    if (studentIds.length > 0) {
+      const { data: enrolledRows } = await db
+        .from('student_enrollments')
+        .select('student_id')
+        .eq('classroom_id', parsed.data.classroom_id)
+        .eq('academic_year_id', activeYear.id)
+        .in('student_id', studentIds);
+      const enrolledSet = new Set((enrolledRows || []).map((r) => r.student_id as string));
+      if (studentIds.some((id) => !enrolledSet.has(id))) {
+        return NextResponse.json(
+          { error: 'Terdapat siswa yang tidak terdaftar di kelas ini pada tahun ajaran aktif.' },
+          { status: 403 }
+        );
+      }
+    }
     const { data: studentRows } =
       studentIds.length > 0
         ? await db.from('students').select('id, full_name').in('id', studentIds)
@@ -393,6 +409,21 @@ export async function POST(request: Request) {
     );
 
     const studentIds = Array.from(new Set(parsed.data.scores.map((s) => s.student_id)));
+    if (studentIds.length > 0) {
+      const { data: enrolledRows } = await db
+        .from('student_enrollments')
+        .select('student_id')
+        .eq('classroom_id', parsed.data.classroom_id)
+        .eq('academic_year_id', activeYear.id)
+        .in('student_id', studentIds);
+      const enrolledSet = new Set((enrolledRows || []).map((r) => r.student_id as string));
+      if (studentIds.some((id) => !enrolledSet.has(id))) {
+        return NextResponse.json(
+          { error: 'Terdapat siswa yang tidak terdaftar di kelas ini pada tahun ajaran aktif.' },
+          { status: 403 }
+        );
+      }
+    }
     const { data: studentRows } =
       studentIds.length > 0
         ? await db.from('students').select('id, full_name').in('id', studentIds)
@@ -413,7 +444,7 @@ export async function POST(request: Request) {
     }
 
     if (parsed.data.config) {
-      await db.from('assessment_exam_configs').upsert(
+      const { error: cfgErr } = await db.from('assessment_exam_configs').upsert(
         {
           academic_year_id: activeYear.id,
           subject_id: parsed.data.subject_id,
@@ -427,6 +458,9 @@ export async function POST(request: Request) {
         },
         { onConflict: 'academic_year_id,subject_id,grade_level,exam_type' }
       );
+      if (cfgErr) {
+        return NextResponse.json({ error: 'Gagal menyimpan pengaturan ujian.' }, { status: 500 });
+      }
     }
 
     const upserts = parsed.data.scores.map((s) => ({

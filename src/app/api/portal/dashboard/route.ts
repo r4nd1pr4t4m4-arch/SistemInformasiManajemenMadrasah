@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
-import { mapDutyCodeToRole } from '@/lib/auth/rbac';
+import { mapDutyCodeToRole, PERMISSIONS } from '@/lib/auth/rbac';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getWibTodayDateString } from '@/lib/domain/jtm-late-penalty';
 import type { AppRole } from '@/types/database';
@@ -10,23 +10,6 @@ function getIsoDayOfWeek(dateStr: string): number {
   const day = d.getUTCDay();
   return day === 0 ? 7 : day;
 }
-
-const DUTY_CODE_TO_ROLE: Partial<Record<string, AppRole>> = {
-  WAKA_KURIKULUM: 'WAKA_KURIKULUM',
-  WAKA_KESISWAAN: 'WAKA_KESISWAAN',
-  WAKA_HUMAS: 'WAKA_HUMAS',
-  WAKA_SARPRAS: 'WAKA_SARPRAS',
-  KEPALA_TU: 'KEPALA_TU',
-  BENDAHARA: 'BENDAHARA',
-  BENDAHARA_KOMITE: 'BENDAHARA_KOMITE',
-  PENGELOLA_TABUNGAN: 'PENGELOLA_TABUNGAN',
-  PUSTAKAWAN: 'PUSTAKAWAN',
-  WALI_KELAS: 'WALI_KELAS',
-  GURU_BK: 'GURU_BK',
-  GURU_WALI: 'GURU_WALI',
-  PEMBINA_OSIM: 'PEMBINA_OSIM',
-  PEMBINA_EKSTRAKURIKULER: 'PEMBINA_EKSTRAKURIKULER',
-};
 
 export async function GET() {
   const session = await getCurrentUserWithRoles();
@@ -136,7 +119,7 @@ export async function GET() {
       const dt = Array.isArray(d.duty_type) ? d.duty_type[0] : d.duty_type;
       const code = String(dt?.code || '');
       const name = String(dt?.name || code);
-      const mappedRole = DUTY_CODE_TO_ROLE[code] || mapDutyCodeToRole(code) || mapDutyCodeToRole(name);
+      const mappedRole = mapDutyCodeToRole(code) || mapDutyCodeToRole(name);
       if (mappedRole) effectiveRolesSet.add(mappedRole);
       return {
         id: d.id,
@@ -633,41 +616,50 @@ export async function GET() {
   let guruWaliSummary: Record<string, unknown> | null = null;
   if (isGuruWaliRole) {
     const isGlobalAdmin = hasRole(['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA']);
-    let assignQuery = supabase
-      .from('guru_wali_assignments')
-      .select('id, teacher_id, teacher:teachers_staff(full_name), student:students(id, full_name, nis)');
-    if (teacherRow && !isGlobalAdmin) {
-      assignQuery = assignQuery.eq('teacher_id', teacherRow.id);
+    if (!isGlobalAdmin && !teacherRow) {
+      guruWaliSummary = {
+        mentoredStudentsCount: 0,
+        mentoredStudents: [],
+        recentLogs: [],
+      };
+    } else {
+      let assignQuery = supabase
+        .from('guru_wali_assignments')
+        .select('id, teacher_id, teacher:teachers_staff(full_name), student:students(id, full_name, nis)');
+      if (teacherRow && !isGlobalAdmin) {
+        assignQuery = assignQuery.eq('teacher_id', teacherRow.id);
+      }
+      const [{ data: gwAssigns }, { data: gwLogs }] = await Promise.all([
+        assignQuery.limit(100),
+        supabase
+          .from('guru_wali_mentoring_logs')
+          .select(
+            'id, mentoring_date, topic, aspect, notes, assignment:guru_wali_assignments(teacher_id, teacher:teachers_staff(full_name), student:students(full_name))'
+          )
+          .order('mentoring_date', { ascending: false })
+          .limit(30),
+      ]);
+
+      const filteredLogs =
+        teacherRow && !isGlobalAdmin
+          ? (gwLogs || []).filter((l) => {
+              const a = Array.isArray(l.assignment) ? l.assignment[0] : l.assignment;
+              return a?.teacher_id === teacherRow.id;
+            })
+          : gwLogs || [];
+
+      guruWaliSummary = {
+        mentoredStudentsCount: (gwAssigns || []).length,
+        mentoredStudents: (gwAssigns || []).slice(0, 8),
+        recentLogs: filteredLogs.slice(0, 5),
+      };
     }
-    const [{ data: gwAssigns }, { data: gwLogs }] = await Promise.all([
-      assignQuery.limit(100),
-      supabase
-        .from('guru_wali_mentoring_logs')
-        .select(
-          'id, mentoring_date, topic, aspect, notes, assignment:guru_wali_assignments(teacher_id, teacher:teachers_staff(full_name), student:students(full_name))'
-        )
-        .order('mentoring_date', { ascending: false })
-        .limit(30),
-    ]);
-
-    const filteredLogs =
-      teacherRow && !isGlobalAdmin
-        ? (gwLogs || []).filter((l) => {
-            const a = Array.isArray(l.assignment) ? l.assignment[0] : l.assignment;
-            return a?.teacher_id === teacherRow.id;
-          })
-        : gwLogs || [];
-
-    guruWaliSummary = {
-      mentoredStudentsCount: (gwAssigns || []).length,
-      mentoredStudents: (gwAssigns || []).slice(0, 8),
-      recentLogs: filteredLogs.slice(0, 5),
-    };
   }
 
   // --- F. Library Summary ---
   let librarySummary: Record<string, unknown> | null = null;
   if (isLibraryRole) {
+    const canViewAllLibraryMembers = hasRole(PERMISSIONS.PERPUSTAKAAN_ANGGOTA_VIEW);
     const [
       { data: booksRows },
       { count: membersCount },
@@ -698,7 +690,7 @@ export async function GET() {
       totalMembersCount: membersCount ?? 0,
       activeLoansCount: loansList.filter((l) => l.status === 'DIPINJAM').length,
       recentBooks: booksList.slice(0, 5),
-      recentLoans: loansList.slice(0, 5),
+      recentLoans: canViewAllLibraryMembers ? loansList.slice(0, 5) : [],
       personalLoans,
     };
   }
@@ -794,6 +786,7 @@ export async function GET() {
   // --- H. Alumni Summary ---
   let alumniSummary: Record<string, unknown> | null = null;
   if (isAlumniRole) {
+    const canViewAllAlumniTracers = hasRole(PERMISSIONS.SDM_ALUMNI_VIEW);
     const { data: tracerRows } = await supabase
       .from('alumni_tracers')
       .select('id, full_name, graduation_year, current_activity, institution_or_company, major_or_position')
@@ -807,7 +800,7 @@ export async function GET() {
       bekerjaCount: list.filter((a) => a.current_activity === 'BEKERJA').length,
       wirausahaCount: list.filter((a) => a.current_activity === 'WIRAUSAHA').length,
       pesantrenCount: list.filter((a) => a.current_activity === 'PESANTREN').length,
-      recentTracers: list.slice(0, 5),
+      recentTracers: canViewAllAlumniTracers ? list.slice(0, 5) : [],
     };
   }
 

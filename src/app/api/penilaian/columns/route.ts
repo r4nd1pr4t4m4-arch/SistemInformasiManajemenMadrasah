@@ -66,6 +66,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Tahun ajaran aktif tidak ditemukan.' }, { status: 404 });
   }
 
+  if (parsed.data.category === 'FORMATIF' && parsed.data.chapter_id) {
+    const { data: validChapter } = await db
+      .from('assessment_chapters')
+      .select('id')
+      .eq('id', parsed.data.chapter_id)
+      .eq('academic_year_id', activeYear.id)
+      .eq('subject_id', parsed.data.subject_id)
+      .eq('grade_level', parsed.data.grade_level)
+      .maybeSingle();
+    if (!validChapter) {
+      return NextResponse.json(
+        { error: 'BAB tidak valid atau tidak sesuai dengan mata pelajaran/tingkat kelas.' },
+        { status: 400 }
+      );
+    }
+  }
+
   let existingQuery = db
     .from('assessment_columns')
     .select('id, sort_order')
@@ -74,12 +91,17 @@ export async function POST(request: Request) {
     .eq('grade_level', parsed.data.grade_level)
     .eq('category', parsed.data.category);
 
-  existingQuery = parsed.data.chapter_id
-    ? existingQuery.eq('chapter_id', parsed.data.chapter_id)
-    : existingQuery.is('chapter_id', null);
+  existingQuery =
+    parsed.data.category === 'FORMATIF' && parsed.data.chapter_id
+      ? existingQuery.eq('chapter_id', parsed.data.chapter_id)
+      : existingQuery.is('chapter_id', null);
 
   const { data: existingCols } = await existingQuery.order('sort_order', { ascending: true });
-  const nextOrder = (existingCols?.length || 0) + 1;
+  const maxOrder = (existingCols || []).reduce(
+    (max, c) => Math.max(max, Number(c.sort_order) || 0),
+    0
+  );
+  const nextOrder = maxOrder + 1;
 
   const resolvedLabel =
     parsed.data.naming_mode === 'CUSTOM' && parsed.data.label?.trim()
@@ -113,6 +135,10 @@ export async function PATCH(request: Request) {
   const { session, errorResponse } = await requireApiRoles(PERMISSIONS.PENILAIAN_TEACHER);
   if (errorResponse || !session) return errorResponse;
 
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Konfigurasi database belum siap.' }, { status: 500 });
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = UpdateColumnSchema.safeParse(body);
   if (!parsed.success) {
@@ -120,14 +146,26 @@ export async function PATCH(request: Request) {
   }
 
   const db = createSupabaseAdminClient();
+  const activeYear = await getActiveAcademicYear(db);
+  if (!activeYear) {
+    return NextResponse.json({ error: 'Tahun ajaran aktif tidak ditemukan.' }, { status: 404 });
+  }
+
   const { data: col } = await db
     .from('assessment_columns')
-    .select('id, subject_id, grade_level, category, sort_order')
+    .select('id, academic_year_id, subject_id, grade_level, category, sort_order')
     .eq('id', parsed.data.id)
     .maybeSingle();
 
   if (!col) {
     return NextResponse.json({ error: 'Kolom tidak ditemukan.' }, { status: 404 });
+  }
+
+  if (col.academic_year_id !== activeYear.id) {
+    return NextResponse.json(
+      { error: 'Kolom dari tahun ajaran sebelumnya tidak dapat diubah.' },
+      { status: 403 }
+    );
   }
 
   if (!canManageSubjectGrade(session, col.subject_id, col.grade_level)) {
@@ -162,13 +200,22 @@ export async function DELETE(request: Request) {
   const { session, errorResponse } = await requireApiRoles(PERMISSIONS.PENILAIAN_TEACHER);
   if (errorResponse || !session) return errorResponse;
 
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Konfigurasi database belum siap.' }, { status: 500 });
+  }
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
-  if (!id) {
-    return NextResponse.json({ error: 'ID kolom wajib diisi.' }, { status: 400 });
+  if (!id || !z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ error: 'ID kolom tidak valid.' }, { status: 400 });
   }
 
   const db = createSupabaseAdminClient();
+  const activeYear = await getActiveAcademicYear(db);
+  if (!activeYear) {
+    return NextResponse.json({ error: 'Tahun ajaran aktif tidak ditemukan.' }, { status: 404 });
+  }
+
   const { data: col } = await db
     .from('assessment_columns')
     .select('id, academic_year_id, subject_id, grade_level, category, chapter_id')
@@ -177,6 +224,13 @@ export async function DELETE(request: Request) {
 
   if (!col) {
     return NextResponse.json({ error: 'Kolom tidak ditemukan.' }, { status: 404 });
+  }
+
+  if (col.academic_year_id !== activeYear.id) {
+    return NextResponse.json(
+      { error: 'Kolom dari tahun ajaran sebelumnya tidak dapat dihapus.' },
+      { status: 403 }
+    );
   }
 
   if (!canManageSubjectGrade(session, col.subject_id, col.grade_level)) {

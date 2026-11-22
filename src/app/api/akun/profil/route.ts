@@ -12,7 +12,6 @@ const AVATAR_COOLDOWN_MS = AVATAR_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
 // Catatan: full_name TIDAK dapat diubah langsung di sini.
 // Perubahan Nama Lengkap wajib melalui pengajuan (/api/akun/nama) + persetujuan Admin.
 const UpdateProfileSchema = z.object({
-  full_name: z.string().optional().nullable(),
   phone: phoneSchema,
   avatar_url: z.string().max(3_000_000).optional().nullable(),
 });

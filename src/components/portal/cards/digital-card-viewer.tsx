@@ -40,8 +40,17 @@ function fetchInstitutionInfo(): Promise<CardInstitutionInfo> {
   if (!cachedInstitutionPromise) {
     cachedInstitutionPromise = fetch('/api/cms/settings')
       .then((res) => (res.ok ? res.json() : null))
-      .then((json) => (json?.settings ? (json.settings as CardInstitutionInfo) : DEFAULT_INSTITUTION))
-      .catch(() => DEFAULT_INSTITUTION);
+      .then((json) => {
+        if (json?.settings) {
+          return json.settings as CardInstitutionInfo;
+        }
+        cachedInstitutionPromise = null;
+        return DEFAULT_INSTITUTION;
+      })
+      .catch(() => {
+        cachedInstitutionPromise = null;
+        return DEFAULT_INSTITUTION;
+      });
   }
   return cachedInstitutionPromise;
 }
@@ -260,8 +269,12 @@ export function DigitalStudentCard({
                       {institution.name}
                     </p>
                     <p className="text-[10px] text-emerald-100 truncate">
-                      {institution.nsm ? `NSM: ${institution.nsm}` : ''}{' '}
-                      {institution.npsn ? `• NPSN: ${institution.npsn}` : ''}
+                      {[
+                        institution.nsm ? `NSM: ${institution.nsm}` : '',
+                        institution.npsn ? `NPSN: ${institution.npsn}` : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' • ')}
                     </p>
                   </div>
                 </div>
@@ -417,6 +430,8 @@ export function DigitalLibraryCard({
   const [downloading, setDownloading] = useState<'front' | 'back' | 'both' | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const hasProfilePhoto = Boolean(member.avatar_url?.trim() || member.photo_url?.trim());
+  const requiresProfilePhoto = member.member_type !== 'UMUM';
+  const canDownloadCard = !requiresProfilePhoto || hasProfilePhoto;
 
   useEffect(() => {
     if (institutionProp) return;
@@ -440,7 +455,7 @@ export function DigitalLibraryCard({
   }, [member.id, member.member_code]);
 
   async function handleDownload(side: 'front' | 'back' | 'both') {
-    if (!hasProfilePhoto) {
+    if (!canDownloadCard) {
       setDownloadError(
         'Unduhan ditolak: Pengguna belum memiliki foto profil yang disetujui Admin. Silakan unggah foto profil di halaman Profil Akun dan tunggu persetujuan Admin terlebih dahulu.'
       );
@@ -464,6 +479,8 @@ export function DigitalLibraryCard({
         const combined = combineFrontBackCanvases(front, back);
         downloadCanvasAsPng(combined, `kartu-perpustakaan-${slug}-lengkap.png`);
       }
+    } catch {
+      setDownloadError('Gagal membuat gambar kartu perpustakaan. Silakan coba lagi.');
     } finally {
       setDownloading(null);
     }
@@ -472,7 +489,7 @@ export function DigitalLibraryCard({
   return (
     <div className="space-y-3">
       {/* Toolbar View & Download */}
-      {(!hasProfilePhoto || downloadError) && (
+      {(!canDownloadCard || downloadError) && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
           {downloadError ||
             'Foto profil yang disetujui Admin wajib tersedia sebelum Kartu Anggota Perpustakaan dapat diunduh.'}

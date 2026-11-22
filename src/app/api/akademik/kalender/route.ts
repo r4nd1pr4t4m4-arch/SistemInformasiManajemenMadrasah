@@ -26,7 +26,10 @@ const DeleteCalendarSchema = z.object({
 
 const RunAutoJtmSchema = z.object({
   action: z.literal('RUN_AUTO_JTM_NOW'),
-  date: z.string().optional(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal harus YYYY-MM-DD')
+    .optional(),
 });
 
 export async function GET() {
@@ -69,10 +72,11 @@ export async function GET() {
     'BENDAHARA',
   ]);
   const myTeacherId = guard.session.teacherAssignments?.teacherId;
-  const scopedLogs =
-    !isGlobalLogsViewer && myTeacherId
+  const scopedLogs = !isGlobalLogsViewer
+    ? myTeacherId
       ? (logs || []).filter((l) => l.teacher_id === myTeacherId)
-      : logs || [];
+      : []
+    : logs || [];
 
   return NextResponse.json({
     events: events || [],

@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const check = verifySignedOtpToken(
+    const check = await verifySignedOtpToken(
       verifiedCookie,
       `verified:${normalizedEmail}`,
       'VERIFIED'
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     const { data: existingProfile } = await admin
       .from('profiles')
       .select('id, account_status, is_active, rejection_reason')
-      .ilike('email', normalizedEmail)
+      .ilike('email', normalizedEmail.replace(/[\\%_]/g, '\\$&'))
       .maybeSingle();
 
     if (existingProfile) {

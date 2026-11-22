@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -334,6 +334,9 @@ export function FlipbookReader({
     loadPdf();
     return () => {
       cancelled = true;
+      renderEpochRef.current += 1;
+      pdfDocRef.current = null;
+      setTotalPages(0);
       if (loadingTask?.destroy) {
         try {
           loadingTask.destroy();
@@ -344,9 +347,12 @@ export function FlipbookReader({
     };
   }, [bookId]);
 
-  async function renderPageWindow(centerPage: number) {
+  const renderEpochRef = useRef(0);
+
+  const renderPageWindow = useCallback(async (centerPage: number) => {
     const pdf = pdfDocRef.current;
     if (!pdf) return;
+    const epoch = renderEpochRef.current;
 
     const minPage = Math.max(1, centerPage - 2);
     const maxPage = Math.min(maxAllowedPages, centerPage + 4);
@@ -365,22 +371,28 @@ export function FlipbookReader({
     await Promise.all(
       targets.map(async (pageNum) => {
         try {
+          if (epoch !== renderEpochRef.current) return;
           const canvas = canvasMapRef.current.get(pageNum);
           if (!canvas) return;
           const page = await pdf.getPage(pageNum);
+          if (epoch !== renderEpochRef.current) return;
           const vp = page.getViewport({ scale: (pageWidth / baseWidth) * 1.5 });
           const ctx = canvas.getContext('2d');
           if (!ctx) return;
           canvas.width = vp.width;
           canvas.height = vp.height;
           await page.render({ canvasContext: ctx, viewport: vp }).promise;
-          renderedPagesRef.current.add(pageNum);
+          if (epoch === renderEpochRef.current) {
+            renderedPagesRef.current.add(pageNum);
+          }
         } finally {
-          renderingPagesRef.current.delete(pageNum);
+          if (epoch === renderEpochRef.current) {
+            renderingPagesRef.current.delete(pageNum);
+          }
         }
       })
     );
-  }
+  }, [maxAllowedPages]);
 
   // Mount PageFlip (StPageFlip) engine imperatively inside host container
   useEffect(() => {
@@ -417,6 +429,7 @@ export function FlipbookReader({
         height: pageHeight,
       });
       pageScaleRef.current = { pageWidth, baseWidth: baseVp.width };
+      renderEpochRef.current += 1;
       canvasMapRef.current.clear();
       renderedPagesRef.current.clear();
       renderingPagesRef.current.clear();
@@ -527,14 +540,14 @@ export function FlipbookReader({
       if (host) host.innerHTML = '';
       pageFlipInstanceRef.current = null;
     };
-  }, [loading, error, totalPages, maxAllowedPages, hasPublicLockPage, isMobile, mobileViewportWidth]);
+  }, [loading, error, totalPages, maxAllowedPages, hasPublicLockPage, isMobile, mobileViewportWidth, renderPageWindow]);
 
   // Ensure nearby pages stay rendered when currentPage updates
   useEffect(() => {
     if (!loading && !error && totalPages > 0) {
       void renderPageWindow(currentPage);
     }
-  }, [currentPage, loading, error, totalPages]);
+  }, [currentPage, loading, error, totalPages, renderPageWindow]);
 
   function handlePrev() {
     if (!pageFlipInstanceRef.current) return;

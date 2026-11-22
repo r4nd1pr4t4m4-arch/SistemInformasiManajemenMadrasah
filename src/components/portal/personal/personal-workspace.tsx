@@ -181,17 +181,23 @@ interface PersonalPayload {
     billing_month?: number | null;
     billing_year?: number | null;
     amount: number;
+    original_amount?: number | null;
+    discount_amount?: number | null;
+    is_sibling_exempt?: boolean | null;
+    notes?: string | null;
     paid_amount?: number | null;
     status: string;
     due_date?: string | null;
-    fee_type?: { name?: string | null } | null;
+    fee_type?: { name?: string | null; category?: string | null } | null;
   }>;
   payments: Array<{
     id: string;
     bill_id: string;
-    amount: number;
+    amount_paid?: number;
+    amount?: number;
     payment_date: string;
     payment_method?: string | null;
+    receipt_number?: string | null;
     reference_number?: string | null;
   }>;
   honorariums: Array<Record<string, unknown>>;
@@ -199,7 +205,7 @@ interface PersonalPayload {
     id: string;
     incident_date: string;
     record_type: string;
-    category?: string | null;
+    title?: string | null;
     description: string;
     follow_up?: string | null;
     counselor?: { full_name?: string | null } | null;
@@ -209,9 +215,6 @@ interface PersonalPayload {
     seat_number?: string | null;
     exam_room?: {
       room_name?: string | null;
-      exam_date?: string | null;
-      start_time?: string | null;
-      end_time?: string | null;
       period?: { name?: string | null; start_date?: string | null; end_date?: string | null } | null;
     } | null;
   }>;
@@ -2274,19 +2277,30 @@ export function PersonalWorkspace({
                   const relatedPay = data.payments.find((p) => p.bill_id === b.id);
                   setActiveSppSlip({
                     billId: b.id,
-                    referenceNumber: relatedPay?.reference_number || null,
+                    referenceNumber: relatedPay?.receipt_number || relatedPay?.reference_number || null,
                     studentName: data.student?.full_name || data.profile.fullName,
                     studentNis: data.student?.nis || null,
                     feeName: b.title || b.fee_type?.name || 'SPP / Iuran Komite',
+                    feeCategory: b.fee_type?.category || null,
                     periodLabel:
                       b.billing_month && b.billing_year
                         ? `${b.billing_month}/${b.billing_year}`
                         : null,
                     amount: Number(b.amount) || 0,
+                    originalAmount:
+                      b.original_amount !== null && b.original_amount !== undefined
+                        ? Number(b.original_amount)
+                        : null,
+                    discountAmount:
+                      b.discount_amount !== null && b.discount_amount !== undefined
+                        ? Number(b.discount_amount)
+                        : null,
+                    isSiblingExempt: Boolean(b.is_sibling_exempt),
                     paidAmount: Number(b.paid_amount) || 0,
                     status: b.status,
                     paymentDate: relatedPay?.payment_date || null,
                     paymentMethod: relatedPay?.payment_method || null,
+                    notes: b.notes || null,
                   });
                 };
 
@@ -2633,9 +2647,9 @@ export function PersonalWorkspace({
                     const monthLabel = HONOR_MONTHS[mNum] || String(h.period_month || '-');
                     const statusStr = String(h.status || 'DRAFT').toUpperCase();
                     const statusBadge =
-                      statusStr === 'DIBAYAR' || statusStr === 'LUNAS'
+                      statusStr === 'PAID' || statusStr === 'DIBAYAR' || statusStr === 'LUNAS'
                         ? 'bg-emerald-100 text-emerald-800'
-                        : statusStr === 'DISETUJUI'
+                        : statusStr === 'APPROVED' || statusStr === 'DISETUJUI'
                           ? 'bg-sky-100 text-sky-800'
                           : 'bg-amber-100 text-amber-800';
 
@@ -2730,16 +2744,16 @@ export function PersonalWorkspace({
           {section === 'ujian' && (() => {
             const q = examSearch.trim().toLowerCase();
             const sortedRooms = [...data.examRooms].sort((a, b) => {
-              const dateA = a.exam_room?.exam_date || a.exam_room?.period?.start_date || '';
-              const dateB = b.exam_room?.exam_date || b.exam_room?.period?.start_date || '';
+              const dateA = a.exam_room?.period?.start_date || '';
+              const dateB = b.exam_room?.period?.start_date || '';
               if (dateA !== dateB) return dateA.localeCompare(dateB);
-              return (a.exam_room?.start_time || '').localeCompare(b.exam_room?.start_time || '');
+              return (a.exam_room?.room_name || '').localeCompare(b.exam_room?.room_name || '');
             });
             const filteredRooms = q
               ? sortedRooms.filter((er) => {
                   const haystack = `${er.exam_room?.period?.name || ''} ${
                     er.exam_room?.room_name || ''
-                  } ${er.seat_number || ''} ${er.exam_room?.exam_date || ''}`.toLowerCase();
+                  } ${er.seat_number || ''} ${er.exam_room?.period?.start_date || ''}`.toLowerCase();
                   return haystack.includes(q);
                 })
               : sortedRooms;
@@ -2814,25 +2828,14 @@ export function PersonalWorkspace({
                               </div>
 
                               <div className="pt-2 border-t border-slate-100 text-xs text-slate-500 space-y-1">
-                                {er.exam_room?.exam_date ? (
+                                {(period?.start_date || period?.end_date) && (
                                   <p className="flex items-center gap-1.5 flex-wrap">
                                     <CalendarDays className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                     <span>
-                                      {formatDateId(er.exam_room.exam_date)} (
-                                      {formatTimeShort(er.exam_room.start_time)} –{' '}
-                                      {formatTimeShort(er.exam_room.end_time)})
+                                      Periode: {formatDateId(period?.start_date)} –{' '}
+                                      {formatDateId(period?.end_date)}
                                     </span>
                                   </p>
-                                ) : (
-                                  (period?.start_date || period?.end_date) && (
-                                    <p className="flex items-center gap-1.5 flex-wrap">
-                                      <CalendarDays className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                      <span>
-                                        Periode: {formatDateId(period?.start_date)} –{' '}
-                                        {formatDateId(period?.end_date)}
-                                      </span>
-                                    </p>
-                                  )
                                 )}
                               </div>
                             </div>
@@ -2866,7 +2869,7 @@ export function PersonalWorkspace({
               const recType = String(rec.record_type || '').toUpperCase();
               if (bkTypeFilter !== 'ALL' && recType !== bkTypeFilter) return false;
               if (q) {
-                const haystack = `${recType} ${rec.category || ''} ${rec.description || ''} ${
+                const haystack = `${recType} ${rec.title || ''} ${rec.description || ''} ${
                   rec.follow_up || ''
                 } ${rec.counselor?.full_name || ''} ${rec.incident_date || ''} ${formatDateId(
                   rec.incident_date
@@ -3016,7 +3019,7 @@ export function PersonalWorkspace({
                                 <span
                                   className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold max-w-full break-words ${badgeClass}`}
                                 >
-                                  {recType || 'CATATAN'} {rec.category ? `• ${rec.category}` : ''}
+                                  {recType || 'CATATAN'} {rec.title ? `• ${rec.title}` : ''}
                                 </span>
                                 <span className="text-[11px] font-mono text-slate-500 shrink-0">
                                   {formatDateId(rec.incident_date)}

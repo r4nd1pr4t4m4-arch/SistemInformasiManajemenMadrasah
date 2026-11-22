@@ -12,7 +12,7 @@ export const FAMILY_SHARED_STUDENT_DOC_TYPES = [
   'PKH',
 ] as const;
 
-export function guardianRelationshipToStudentDocType(relationship?: string | null): string | null {
+function guardianRelationshipToStudentDocType(relationship?: string | null): string | null {
   const rel = (relationship || '').toUpperCase();
   if (rel === 'AYAH') return 'KTP_AYAH';
   if (rel === 'IBU') return 'KTP_IBU';
@@ -20,7 +20,7 @@ export function guardianRelationshipToStudentDocType(relationship?: string | nul
   return null;
 }
 
-export function studentDocTypeToGuardianRelationship(docType: string): string | null {
+function studentDocTypeToGuardianRelationship(docType: string): string | null {
   if (docType === 'KTP_AYAH') return 'AYAH';
   if (docType === 'KTP_IBU') return 'IBU';
   if (docType === 'KTP_WALI') return 'WALI';
@@ -384,10 +384,16 @@ export async function syncSharedBiodataAcrossSelfEntities(
 }
 
 /**
+ * Escape karakter wildcard PostgreSQL LIKE (`%`, `_`, `\`) agar pencocokan `.ilike()` bersifat eksak (case-insensitive).
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
+}
+
+/**
  * Cari dan tautkan otomatis baris `teachers_staff` untuk user yang login:
  * 1) Cocokkan `profile_id = userId`
- * 2) Fallback: jika `profile_id IS NULL`, cocokkan `email` (case-insensitive)
- * 3) Fallback: jika masih belum ketemu, cocokkan unik `phone` atau `full_name` (exact) dengan `profile_id IS NULL`
+ * 2) Fallback aman: jika `profile_id IS NULL`, cocokkan unik `email` terverifikasi (case-insensitive eksak)
  */
 export async function resolveTeacherForProfile(
   supabase: AdminClient,
@@ -409,11 +415,11 @@ export async function resolveTeacherForProfile(
 
   let matched: Record<string, unknown> | null = null;
 
-  if (params.email) {
+  if (params.email && params.email.trim()) {
     const { data: byEmail } = await supabase
       .from('teachers_staff')
       .select('*')
-      .ilike('email', params.email.trim())
+      .ilike('email', escapeLikePattern(params.email.trim()))
       .is('profile_id', null)
       .limit(2);
     if (byEmail && byEmail.length === 1) {
@@ -421,32 +427,8 @@ export async function resolveTeacherForProfile(
     }
   }
 
-  if (!matched && params.phone && params.phone.trim()) {
-    const { data: byPhone } = await supabase
-      .from('teachers_staff')
-      .select('*')
-      .eq('phone', params.phone.trim())
-      .is('profile_id', null)
-      .limit(2);
-    if (byPhone && byPhone.length === 1) {
-      matched = byPhone[0] as Record<string, unknown>;
-    }
-  }
-
-  if (!matched && params.fullName && params.fullName.trim()) {
-    const { data: byName } = await supabase
-      .from('teachers_staff')
-      .select('*')
-      .ilike('full_name', params.fullName.trim())
-      .is('profile_id', null)
-      .limit(2);
-    if (byName && byName.length === 1) {
-      matched = byName[0] as Record<string, unknown>;
-    }
-  }
-
   if (matched?.id) {
-    await supabase
+    const { error: linkErr } = await supabase
       .from('teachers_staff')
       .update({
         profile_id: params.userId,
@@ -455,6 +437,7 @@ export async function resolveTeacherForProfile(
       })
       .eq('id', matched.id)
       .is('profile_id', null);
+    if (linkErr) return null;
     return {
       ...matched,
       profile_id: params.userId,

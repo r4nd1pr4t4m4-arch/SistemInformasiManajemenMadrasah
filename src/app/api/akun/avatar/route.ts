@@ -6,8 +6,28 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 const AVATAR_COOLDOWN_DAYS = 45;
 const AVATAR_COOLDOWN_MS = AVATAR_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
 
+function isSafeAvatarUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (/^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(trimmed)) {
+    return true;
+  }
+  if (trimmed.startsWith('/')) {
+    return !trimmed.startsWith('//');
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 const SubmitAvatarSchema = z.object({
-  avatar_url: z.string().min(10, 'Foto profil tidak valid.').max(3_000_000, 'Ukuran foto terlalu besar.'),
+  avatar_url: z
+    .string()
+    .min(10, 'Foto profil tidak valid.')
+    .max(3_000_000, 'Ukuran foto terlalu besar.')
+    .refine(isSafeAvatarUrl, 'Format foto profil harus berupa gambar JPEG/PNG/WebP atau URL HTTPS yang valid.'),
 });
 
 export async function POST(request: Request) {

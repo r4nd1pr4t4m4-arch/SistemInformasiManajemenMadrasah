@@ -437,11 +437,16 @@ export async function DELETE(request: NextRequest) {
     }
   }
 
+  const targetSelect =
+    table === 'sdm_documents'
+      ? 'id, file_url, object_key, entity_type, entity_id, document_type'
+      : 'id, file_url, object_key, document_type';
   const { data: targetRow } = await supabase
     .from(table)
-    .select('id, file_url, object_key, entity_type, entity_id, document_type')
+    .select(targetSelect)
     .eq('id', id)
     .maybeSingle();
+  const target = targetRow as Record<string, unknown> | null;
 
   const { error } = await supabase.from(table).delete().eq('id', id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -449,14 +454,14 @@ export async function DELETE(request: NextRequest) {
   // Hapus salinan dokumen bersama (KTP / KK) milik profile_id yang sama
   if (
     table === 'sdm_documents' &&
-    targetRow &&
-    SHARED_SELF_DOC_TYPES.includes(String(targetRow.document_type || '') as 'KTP' | 'KK') &&
-    (targetRow.entity_type === 'GTK' || targetRow.entity_type === 'ORANG_TUA')
+    target &&
+    SHARED_SELF_DOC_TYPES.includes(String(target.document_type || '') as 'KTP' | 'KK') &&
+    (target.entity_type === 'GTK' || target.entity_type === 'ORANG_TUA')
   ) {
     const ownerProfileId = await resolveOwnerProfileIdOfSdmEntity(
       supabase,
-      String(targetRow.entity_type),
-      String(targetRow.entity_id)
+      String(target.entity_type),
+      String(target.entity_id)
     );
     if (ownerProfileId) {
       const [{ data: teacher }, { data: guardians }] = await Promise.all([
@@ -474,32 +479,33 @@ export async function DELETE(request: NextRequest) {
       const siblingIds = [
         ...(teacher?.id ? [teacher.id as string] : []),
         ...(guardians || []).map((g) => g.id as string),
-      ].filter((sid) => sid !== String(targetRow.entity_id));
+      ].filter((sid) => sid !== String(target.entity_id));
 
-      if (siblingIds.length > 0 && targetRow.file_url) {
+      if (siblingIds.length > 0 && target.file_url) {
         await supabase
           .from('sdm_documents')
           .delete()
           .in('entity_id', siblingIds)
-          .eq('document_type', String(targetRow.document_type))
-          .eq('file_url', String(targetRow.file_url));
+          .eq('document_type', String(target.document_type))
+          .eq('file_url', String(target.file_url));
       }
     }
   }
 
-  if (targetRow?.object_key) {
+  if (target?.object_key) {
+    const objectKey = String(target.object_key);
     const [{ count: sdmRefCount }, { count: studentRefCount }] = await Promise.all([
       supabase
         .from('sdm_documents')
         .select('id', { count: 'exact', head: true })
-        .eq('object_key', targetRow.object_key),
+        .eq('object_key', objectKey),
       supabase
         .from('student_documents')
         .select('id', { count: 'exact', head: true })
-        .eq('object_key', targetRow.object_key),
+        .eq('object_key', objectKey),
     ]);
     if ((sdmRefCount || 0) === 0 && (studentRefCount || 0) === 0 && !isR2Configured()) {
-      await supabase.storage.from('student-documents').remove([targetRow.object_key]);
+      await supabase.storage.from('student-documents').remove([objectKey]);
     }
   }
   return NextResponse.json({ ok: true });

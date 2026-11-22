@@ -153,10 +153,14 @@ export async function DELETE(request: Request) {
   const guard = await requireApiRoles(PERMISSIONS.CMS_PPDB_MANAGE);
   if (guard.errorResponse) return guard.errorResponse;
 
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
+  }
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
-  if (!id) {
-    return NextResponse.json({ error: 'ID periode wajib diisi.' }, { status: 400 });
+  if (!id || !z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ error: 'ID periode tidak valid.' }, { status: 400 });
   }
 
   const supabase = createSupabaseAdminClient();

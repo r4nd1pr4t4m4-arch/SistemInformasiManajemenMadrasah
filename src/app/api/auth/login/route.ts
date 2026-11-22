@@ -3,7 +3,13 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseServerClient, isSupabaseServerConfigured } from '@/lib/supabase/server';
-import { verifyCaptchaToken } from '@/lib/security/captcha-server';
+import { getRequestClientIp, verifyCaptchaToken } from '@/lib/security/captcha-server';
+import {
+  clearRateLimit,
+  getRateLimitState,
+  incrementRateLimit,
+  type RateLimitState,
+} from '@/lib/security/rate-limit';
 import type { CaptchaPayload } from '@/lib/security/captcha-types';
 
 const LOGIN_ATTEMPTS_COOKIE = 'simms_login_attempts';
@@ -25,11 +31,25 @@ interface AttemptState {
 }
 
 function getAttemptSecret(): string {
-  return (
-    process.env.CAPTCHA_SIGNING_SECRET ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    'simms-dev-login-attempts-secret'
-  );
+  const secret =
+    process.env.CAPTCHA_SIGNING_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (secret) return secret;
+  if (process.env.NODE_ENV !== 'production') {
+    return 'simms-dev-login-attempts-secret';
+  }
+  throw new Error('CAPTCHA_SIGNING_SECRET atau SUPABASE_SERVICE_ROLE_KEY belum dikonfigurasi.');
+}
+
+function mergeAttemptStates(...states: RateLimitState[]): AttemptState {
+  let maxCount = 0;
+  let maxLocked: number | null = null;
+  for (const s of states) {
+    if (s.count > maxCount) maxCount = s.count;
+    if (s.lockedUntil && (!maxLocked || s.lockedUntil > maxLocked)) {
+      maxLocked = s.lockedUntil;
+    }
+  }
+  return { count: maxCount, lockedUntil: maxLocked };
 }
 
 function readAttemptState(rawCookie: string | undefined): AttemptState {
@@ -95,9 +115,12 @@ function mapSupabaseAuthError(rawMessage: string): string {
   return rawMessage;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const cookieStore = await cookies();
-  const state = readAttemptState(cookieStore.get(LOGIN_ATTEMPTS_COOKIE)?.value);
+  const cookieState = readAttemptState(cookieStore.get(LOGIN_ATTEMPTS_COOKIE)?.value);
+  const ip = getRequestClientIp(request);
+  const ipState = ip ? await getRateLimitState(`login:ip:${ip}`) : { count: 0, lockedUntil: null };
+  const state = mergeAttemptStates(cookieState, ipState);
   const now = Date.now();
   const isLocked = Boolean(state.lockedUntil && state.lockedUntil > now);
   const remainingLockSeconds = isLocked
@@ -135,8 +158,18 @@ export async function POST(request: Request) {
       );
     }
 
+    const normalizedEmail = parsed.data.email.trim().toLowerCase();
+    const clientIp = getRequestClientIp(request);
+    const emailKey = `login:email:${normalizedEmail}`;
+    const ipKey = clientIp ? `login:ip:${clientIp}` : null;
+
     const cookieStore = await cookies();
-    const attemptState = readAttemptState(cookieStore.get(LOGIN_ATTEMPTS_COOKIE)?.value);
+    const cookieState = readAttemptState(cookieStore.get(LOGIN_ATTEMPTS_COOKIE)?.value);
+    const [emailState, ipState] = await Promise.all([
+      getRateLimitState(emailKey),
+      ipKey ? getRateLimitState(ipKey) : Promise.resolve({ count: 0, lockedUntil: null }),
+    ]);
+    const attemptState = mergeAttemptStates(cookieState, emailState, ipState);
     const now = Date.now();
 
     if (attemptState.lockedUntil && attemptState.lockedUntil > now) {
@@ -199,9 +232,30 @@ export async function POST(request: Request) {
         );
       }
 
-      const nextCount = failedAttempts + 1;
+      const [nextEmailState, nextIpState] = await Promise.all([
+        incrementRateLimit(emailKey, {
+          ttlSeconds: ATTEMPTS_TTL_SECONDS,
+          lockoutThreshold: LOGIN_LOCKOUT_THRESHOLD,
+          lockoutDurationMs: LOCKOUT_DURATION_MS,
+        }),
+        ipKey
+          ? incrementRateLimit(ipKey, {
+              ttlSeconds: ATTEMPTS_TTL_SECONDS,
+              lockoutThreshold: LOGIN_LOCKOUT_THRESHOLD,
+              lockoutDurationMs: LOCKOUT_DURATION_MS,
+            })
+          : Promise.resolve({ count: 0, lockedUntil: null }),
+      ]);
+      const mergedNext = mergeAttemptStates(
+        { count: failedAttempts + 1, lockedUntil: null },
+        nextEmailState,
+        nextIpState
+      );
+      const nextCount = mergedNext.count;
       const isLocked = nextCount >= LOGIN_LOCKOUT_THRESHOLD;
-      const lockedUntil = isLocked ? Date.now() + LOCKOUT_DURATION_MS : null;
+      const lockedUntil = isLocked
+        ? mergedNext.lockedUntil || Date.now() + LOCKOUT_DURATION_MS
+        : null;
       const remainingAttempts = Math.max(0, LOGIN_LOCKOUT_THRESHOLD - nextCount);
       const showLockWarningModal = nextCount === LOGIN_WARNING_THRESHOLD;
 
@@ -287,6 +341,11 @@ export async function POST(request: Request) {
 
       return NextResponse.json({ error: errorMessage }, { status: 403 });
     }
+
+    await Promise.all([
+      clearRateLimit(emailKey),
+      ipKey ? clearRateLimit(ipKey) : Promise.resolve(),
+    ]);
 
     const res = NextResponse.json({
       ok: true,

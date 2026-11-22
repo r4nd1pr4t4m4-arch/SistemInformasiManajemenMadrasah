@@ -199,7 +199,6 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
   const { toast, showToast, dismissToast } = useAkademikToast();
 
   const [teachers, setTeachers] = useState<TeacherOpt[]>([]);
-  const [, setStudents] = useState<{ id: string; full_name: string; nis: string | null }[]>([]);
   const [classrooms, setClassrooms] = useState<{ id: string; name: string }[]>([]);
   const [enrollments, setEnrollments] = useState<
     {
@@ -419,7 +418,6 @@ export function PresensiWorkspace({ section }: { section: PresensiSection }) {
           prev.teacher_id ? prev : { ...prev, teacher_id: loadedTeachers[0].id }
         );
       }
-      setStudents(pr.students || []);
       setClassrooms(pr.classrooms || []);
       setEnrollments(pr.enrollments || []);
       setStudentAttendances(pr.studentAttendances || []);

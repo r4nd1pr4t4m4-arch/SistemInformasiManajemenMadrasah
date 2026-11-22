@@ -42,12 +42,13 @@ export async function GET(request: NextRequest) {
 
   // 1. TABUNGAN (TRX-...)
   if (!docType || docType === 'TABUNGAN' || ref.toUpperCase().startsWith('TRX-')) {
+    const safeRefLike = ref.replace(/[\\%_]/g, '\\$&');
     const { data: trx } = await supabase
       .from('savings_transactions')
       .select(
         'id, reference_number, transaction_type, amount, fee_percentage, fee_amount, net_amount, balance_after, transaction_date, notes, account:savings_accounts(account_number, owner_name, owner_type)'
       )
-      .ilike('reference_number', ref)
+      .ilike('reference_number', safeRefLike)
       .maybeSingle();
 
     if (trx) {
@@ -163,7 +164,7 @@ export async function GET(request: NextRequest) {
         .select(
           '*, bill:student_bills(*, student:students(full_name, nis), fee_type:fee_types(name, category))'
         )
-        .ilike('reference_number', ref)
+        .ilike('receipt_number', ref.replace(/[\\%_]/g, '\\$&'))
         .maybeSingle();
       if (pay?.bill) {
         billRow = Array.isArray(pay.bill) ? pay.bill[0] : pay.bill;
@@ -193,7 +194,7 @@ export async function GET(request: NextRequest) {
   }
 
   // 4. KARTU PELAJAR (students: qr_token, nisn, nis, id)
-  if (!docType || docType === 'KARTU_SISWA') {
+  if ((!docType || docType === 'KARTU_SISWA') && /^[A-Za-z0-9._-]{1,80}$/.test(ref)) {
     const { data: student } = await supabase
       .from('students')
       .select('id, full_name, nis, nisn, status, qr_token')
@@ -223,7 +224,7 @@ export async function GET(request: NextRequest) {
     const { data: member } = await supabase
       .from('library_members')
       .select('id, member_code, member_type, full_name, status, joined_at')
-      .ilike('member_code', ref)
+      .ilike('member_code', ref.replace(/[\\%_]/g, '\\$&'))
       .maybeSingle();
 
     if (member) {
@@ -248,8 +249,8 @@ export async function GET(request: NextRequest) {
   if (!docType || docType === 'SURAT') {
     const { data: letter } = await supabase
       .from('letters')
-      .select('id, letter_number, letter_type, subject, recipient_or_sender, letter_date, created_at')
-      .ilike('letter_number', ref)
+      .select('id, letter_number, direction, category, subject, counterparty, letter_date, created_at')
+      .ilike('letter_number', ref.replace(/[\\%_]/g, '\\$&'))
       .limit(1)
       .maybeSingle();
 
@@ -263,9 +264,9 @@ export async function GET(request: NextRequest) {
         issuedAt: letter.letter_date || letter.created_at,
         details: [
           { label: 'Nomor Surat', value: letter.letter_number },
-          { label: 'Jenis Surat', value: letter.letter_type },
+          { label: 'Jenis Surat', value: `${letter.direction} - ${letter.category}` },
           { label: 'Perihal', value: letter.subject || '-' },
-          { label: 'Tujuan / Pengirim', value: letter.recipient_or_sender || '-' },
+          { label: 'Tujuan / Pengirim', value: letter.counterparty || '-' },
           { label: 'Tanggal Surat', value: letter.letter_date || '-' },
         ],
       });

@@ -231,12 +231,19 @@ export async function POST(request: Request) {
 
       const { data: account, error: accErr } = await supabase
         .from('savings_accounts')
-        .select('id, balance')
+        .select('id, balance, is_active')
         .eq('id', parsed.data.account_id)
         .single();
 
       if (accErr || !account) {
         return NextResponse.json({ error: 'Rekening tabungan tidak ditemukan.' }, { status: 404 });
+      }
+
+      if (account.is_active === false) {
+        return NextResponse.json(
+          { error: 'Rekening tabungan ini sedang nonaktif/ditutup dan tidak dapat bertransaksi.' },
+          { status: 400 }
+        );
       }
 
       const currentBalance = Number(account.balance);
@@ -272,6 +279,27 @@ export async function POST(request: Request) {
         netAmount = feeCalc.netAmount;
       }
 
+      // Optimistic lock pada balance untuk mencegah race condition / double withdrawal
+      const { data: updatedAcc, error: balErr } = await supabase
+        .from('savings_accounts')
+        .update({ balance: newBalance, updated_at: new Date().toISOString() })
+        .eq('id', account.id)
+        .eq('balance', account.balance)
+        .select('id')
+        .maybeSingle();
+
+      if (balErr || !updatedAcc) {
+        return NextResponse.json(
+          {
+            error:
+              balErr?.message ||
+              'Saldo rekening berubah karena transaksi bersamaan. Silakan muat ulang dan coba lagi.',
+          },
+          { status: 409 }
+        );
+      }
+
+      const refRand = Math.random().toString(36).slice(2, 6).toUpperCase();
       const { data: trx, error: trxErr } = await supabase
         .from('savings_transactions')
         .insert({
@@ -282,19 +310,22 @@ export async function POST(request: Request) {
           fee_amount: feeAmount,
           net_amount: netAmount,
           balance_after: newBalance,
-          reference_number: `TRX-${Date.now().toString().slice(-8)}`,
+          reference_number: `TRX-${Date.now().toString().slice(-8)}-${refRand}`,
           notes: parsed.data.notes || null,
           recorded_by: guard.session.userId,
         })
         .select('*')
         .single();
 
-      if (trxErr) return NextResponse.json({ error: trxErr.message }, { status: 500 });
-
-      await supabase
-        .from('savings_accounts')
-        .update({ balance: newBalance, updated_at: new Date().toISOString() })
-        .eq('id', account.id);
+      if (trxErr) {
+        // Kompensasi rollback saldo jika pencatatan log transaksi gagal
+        await supabase
+          .from('savings_accounts')
+          .update({ balance: account.balance, updated_at: new Date().toISOString() })
+          .eq('id', account.id)
+          .eq('balance', newBalance);
+        return NextResponse.json({ error: trxErr.message }, { status: 500 });
+      }
 
       return NextResponse.json({
         transaction: trx,
@@ -307,9 +338,13 @@ export async function POST(request: Request) {
 
     if (body.action === 'UPDATE_FEE_TIERS') {
       const parsed = UpdateFeeTiersSchema.safeParse(body);
-      if (!parsed.success) {
+      if (!parsed.success || parsed.data.tiers.length === 0) {
         return NextResponse.json(
-          { error: parsed.error.issues[0]?.message || 'Data aturan fee tidak valid.' },
+          {
+            error: !parsed.success
+              ? parsed.error.issues[0]?.message || 'Data aturan fee tidak valid.'
+              : 'Minimal harus terdapat 1 rentang aturan fee penarikan.',
+          },
           { status: 400 }
         );
       }

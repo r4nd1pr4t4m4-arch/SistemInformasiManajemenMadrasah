@@ -72,7 +72,10 @@ export async function GET() {
   ]);
   const ta = guard.session.teacherAssignments;
 
-  if (!isGlobalGwViewer && ta) {
+  if (!isGlobalGwViewer) {
+    if (!ta?.teacherId) {
+      return NextResponse.json({ assignments: [], logs: [] });
+    }
     let homeroomStudentIds = new Set<string>();
     if (ta.homeroomClassroomIds && ta.homeroomClassroomIds.length > 0) {
       const { data: enrolls } = await supabase
@@ -154,9 +157,15 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Data bimbingan Guru Wali tidak valid.' }, { status: 400 });
       }
 
-      const isAdminActor = hasAnyRole(guard.session, ['SUPERADMIN', 'OPERATOR', 'WAKA_KESISWAAN']);
+      const isAdminActor = hasAnyRole(guard.session, ['SUPERADMIN', 'OPERATOR']);
       const myTeacherId = guard.session.teacherAssignments?.teacherId;
-      if (!isAdminActor && myTeacherId) {
+      if (!isAdminActor) {
+        if (!myTeacherId) {
+          return NextResponse.json(
+            { error: 'Akun Anda belum tertaut ke data GTK.' },
+            { status: 403 }
+          );
+        }
         const { data: assignRow } = await supabase
           .from('guru_wali_assignments')
           .select('teacher_id')
@@ -169,12 +178,14 @@ export async function POST(request: Request) {
           );
         }
       }
-      const { action: _, ...payload } = parsed.data;
+      const payload = { ...parsed.data } as Record<string, unknown>;
+      delete payload.action;
+      const wibToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
       const { data, error } = await supabase
         .from('guru_wali_mentoring_logs')
         .insert({
           ...payload,
-          mentoring_date: payload.mentoring_date || new Date().toISOString().slice(0, 10),
+          mentoring_date: parsed.data.mentoring_date || wibToday,
         })
         .select('*')
         .single();

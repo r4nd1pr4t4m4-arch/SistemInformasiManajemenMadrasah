@@ -151,13 +151,7 @@ async function loadImageSafe(url?: string | null): Promise<HTMLImageElement | nu
     });
 
   const isSameOriginOrData = trimmed.startsWith('data:') || trimmed.startsWith('/');
-  const first = await tryLoad(trimmed, !isSameOriginOrData);
-  if (first) return first;
-
-  if (!isSameOriginOrData) {
-    return await tryLoad('/api/cms/logo', false);
-  }
-  return null;
+  return await tryLoad(trimmed, !isSameOriginOrData);
 }
 
 async function generateQrImage(payload: string): Promise<HTMLImageElement | null> {

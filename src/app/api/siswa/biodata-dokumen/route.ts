@@ -270,9 +270,14 @@ export async function PATCH(request: NextRequest) {
     const fields = isStaff
       ? rawFields
       : (() => {
-        const { nis: _nis, nisn: _nisn, phone: _phone, email: _email, full_name: _fn, ...allowed } = rawFields;
-        return allowed;
-      })();
+          const allowed = { ...rawFields } as Record<string, unknown>;
+          delete allowed.nis;
+          delete allowed.nisn;
+          delete allowed.phone;
+          delete allowed.email;
+          delete allowed.full_name;
+          return allowed;
+        })();
 
     if (existing) {
       const { data, error } = await supabase
@@ -315,8 +320,8 @@ export async function PATCH(request: NextRequest) {
       .from('students')
       .insert({
         ...fields,
-        profile_id: session.userId,
-        email: rawFields.email || session.email,
+        profile_id: null,
+        email: rawFields.email || null,
         status: 'AKTIF',
       })
       .select('*')
@@ -453,7 +458,7 @@ export async function DELETE(request: NextRequest) {
     .maybeSingle();
 
   if (!isStaff) {
-    const student = await resolveTargetStudent(supabase, session);
+    const student = await resolveTargetStudent(supabase, session, targetDoc?.student_id);
     if (!student || !targetDoc || targetDoc.student_id !== student.id) {
       return NextResponse.json({ error: 'Data siswa atau dokumen tidak ditemukan.' }, { status: 404 });
     }

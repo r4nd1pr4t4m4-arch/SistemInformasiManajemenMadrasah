@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { getCurrentUserWithRoles } from '@/lib/auth/session';
 import { verifySignedOtpToken } from '@/lib/auth/otp-token';
@@ -43,15 +44,23 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Verifikasi kata sandi saat ini
-    const serverClient = await createSupabaseServerClient();
-    const { error: pwdErr } = await serverClient.auth.signInWithPassword({
+    // 1. Verifikasi kata sandi saat ini menggunakan client stateless agar cookie sesi (termasuk AAL2) tidak tertimpa
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json({ error: 'Layanan autentikasi belum siap.' }, { status: 503 });
+    }
+    const verifyClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { error: pwdErr } = await verifyClient.auth.signInWithPassword({
       email: session.email,
       password: parsed.data.currentPassword,
     });
     if (pwdErr) {
       return NextResponse.json({ error: 'Kata sandi saat ini salah.' }, { status: 400 });
     }
+    const serverClient = await createSupabaseServerClient();
 
     // 2. Verifikasi MFA jika akun memiliki faktor TOTP aktif
     const admin = createSupabaseAdminClient();
@@ -99,7 +108,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const otpCheck = verifySignedOtpToken(
+    const otpCheck = await verifySignedOtpToken(
       token,
       `${session.userId}:${normalizedNewEmail}`,
       parsed.data.otpCode.trim()

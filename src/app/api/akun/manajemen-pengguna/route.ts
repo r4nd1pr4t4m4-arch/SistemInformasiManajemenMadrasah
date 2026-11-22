@@ -158,6 +158,20 @@ export async function PATCH(request: Request) {
       );
     }
 
+    const isActorSuperadmin = guard.session.roles.includes('SUPERADMIN');
+    if (userId === guard.session.userId && action === 'UPDATE_ROLE') {
+      return NextResponse.json(
+        { error: 'Anda tidak dapat mengubah peran akun Anda sendiri.' },
+        { status: 400 }
+      );
+    }
+    if (!isActorSuperadmin && primaryRole === 'SUPERADMIN') {
+      return NextResponse.json(
+        { error: 'Hanya SUPERADMIN yang dapat menetapkan peran SUPERADMIN.' },
+        { status: 403 }
+      );
+    }
+
     const supabase = createSupabaseAdminClient();
     const { data: targetUser, error: fetchErr } = await supabase
       .from('profiles')
@@ -167,6 +181,13 @@ export async function PATCH(request: Request) {
 
     if (fetchErr || !targetUser) {
       return NextResponse.json({ error: 'Pengguna tidak ditemukan.' }, { status: 404 });
+    }
+
+    if (!isActorSuperadmin && targetUser.primary_role === 'SUPERADMIN') {
+      return NextResponse.json(
+        { error: 'Hanya SUPERADMIN yang dapat mengubah status atau peran akun SUPERADMIN.' },
+        { status: 403 }
+      );
     }
 
     const nowIso = new Date().toISOString();
@@ -237,9 +258,22 @@ export async function PATCH(request: Request) {
     }
 
     if (primaryRole) {
-      await supabase
+      if (targetUser.primary_role && targetUser.primary_role !== primaryRole) {
+        await supabase
+          .from('user_roles')
+          .delete()
+          .eq('user_id', userId)
+          .eq('role', targetUser.primary_role);
+      }
+      const { error: roleUpsertErr } = await supabase
         .from('user_roles')
         .upsert({ user_id: userId, role: primaryRole }, { onConflict: 'user_id,role' });
+      if (roleUpsertErr) {
+        return NextResponse.json(
+          { error: roleUpsertErr.message || 'Gagal memperbarui peran pengguna.' },
+          { status: 500 }
+        );
+      }
     }
 
     let emailSent = false;

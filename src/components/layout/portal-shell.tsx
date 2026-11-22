@@ -84,7 +84,6 @@ interface NavItem {
   id?: string;
   href?: string;
   path?: string;
-  tab?: string;
   label: string;
   icon: React.ReactNode;
   allowedRoles?: AppRole[];

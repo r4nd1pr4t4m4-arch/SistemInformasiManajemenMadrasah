@@ -275,12 +275,3 @@ export function hasAnyRole(
   if (!session) return false;
   return session.roles.some((r) => allowed.includes(r));
 }
-
-export const CMS_MANAGER_ROLES: AppRole[] = [
-  'SUPERADMIN',
-  'OPERATOR',
-  'KEPALA_LEMBAGA',
-  'WAKA_HUMAS',
-  'STAF_TU',
-  'KEPALA_TU',
-];

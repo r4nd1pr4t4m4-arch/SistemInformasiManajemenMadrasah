@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
@@ -153,8 +154,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const prefix = isMutasi ? 'MUTASI-2026' : 'PPDB-2026';
-    const registrationNumber = `${prefix}-${Math.floor(10000 + Math.random() * 90000)}`;
+    const currentYear = new Date().getFullYear();
+    const prefix = isMutasi ? `MUTASI-${currentYear}` : `PPDB-${currentYear}`;
     const extraMutationNote = isMutasi
       ? [
           parsed.data.targetGrade ? `Kelas Tujuan: ${parsed.data.targetGrade}` : '',
@@ -164,27 +165,39 @@ export async function POST(request: Request) {
           .join(' | ')
       : null;
 
-    const { data: inserted, error: insertErr } = await supabase
-      .from('ppdb_registrations')
-      .insert({
-        period_id: activePeriod?.id ?? null,
-        registration_number: registrationNumber,
-        full_name: parsed.data.fullName,
-        nisn: parsed.data.nisn || null,
-        nik: parsed.data.nik,
-        gender: parsed.data.gender,
-        birth_place: parsed.data.birthPlace,
-        birth_date: parsed.data.birthDate,
-        previous_school: parsed.data.previousSchool,
-        address: parsed.data.address,
-        parent_name: parsed.data.parentName,
-        parent_phone: parsed.data.parentPhone,
-        pathway: parsed.data.pathway,
-        status: 'MENUNGGU_VERIFIKASI',
-        admin_notes: extraMutationNote,
-      })
-      .select('id, registration_number')
-      .single();
+    let inserted: { id: string; registration_number: string } | null = null;
+    let insertErr: { code?: string; message?: string } | null = null;
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const registrationNumber = `${prefix}-${crypto.randomInt(100000, 1000000)}`;
+      const res = await supabase
+        .from('ppdb_registrations')
+        .insert({
+          period_id: activePeriod?.id ?? null,
+          registration_number: registrationNumber,
+          full_name: parsed.data.fullName,
+          nisn: parsed.data.nisn || null,
+          nik: parsed.data.nik,
+          gender: parsed.data.gender,
+          birth_place: parsed.data.birthPlace,
+          birth_date: parsed.data.birthDate,
+          previous_school: parsed.data.previousSchool,
+          address: parsed.data.address,
+          parent_name: parsed.data.parentName,
+          parent_phone: parsed.data.parentPhone,
+          pathway: parsed.data.pathway,
+          status: 'MENUNGGU_VERIFIKASI',
+          admin_notes: extraMutationNote,
+        })
+        .select('id, registration_number')
+        .single();
+
+      inserted = res.data;
+      insertErr = res.error;
+      if (!insertErr || insertErr.code !== '23505') {
+        break;
+      }
+    }
 
     if (insertErr || !inserted) {
       return NextResponse.json(

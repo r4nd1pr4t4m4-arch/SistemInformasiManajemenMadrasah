@@ -238,44 +238,51 @@ export async function GET() {
   const ta = guard.session.teacherAssignments;
   const isFullExamActor = isGlobalExamViewer || Boolean(ta?.isExamCommittee);
 
-  const scopedSupervisors =
-    !isFullExamActor && ta?.teacherId
+  const scopedSupervisors = !isFullExamActor
+    ? ta?.teacherId
       ? (supervisors || []).filter(
           (s) => s.teacher_id === ta.teacherId || s.original_teacher_id === ta.teacherId
         )
-      : supervisors || [];
+      : []
+    : supervisors || [];
 
-  const scopedCommittees =
-    !isFullExamActor && ta?.teacherId
+  const scopedCommittees = !isFullExamActor
+    ? ta?.teacherId
       ? (committees || []).filter(
           (c) => c.teacher_id === ta.teacherId || c.original_teacher_id === ta.teacherId
         )
-      : committees || [];
+      : []
+    : committees || [];
 
-  const scopedBapReports =
-    !isFullExamActor && ta?.teacherId
+  const scopedBapReports = !isFullExamActor
+    ? ta?.teacherId
       ? (bapReports || []).filter((b) => b.teacher_id === ta.teacherId)
-      : bapReports || [];
+      : []
+    : bapReports || [];
 
-  const scopedCommitteeDailyReports =
-    !isGlobalExamViewer && ta?.teacherId
+  const scopedCommitteeDailyReports = !isGlobalExamViewer
+    ? ta?.teacherId
       ? (committeeDailyReports || []).filter((r) => r.teacher_id === ta.teacherId)
-      : committeeDailyReports || [];
+      : []
+    : committeeDailyReports || [];
 
-  const scopedSupervisorAttendances =
-    !isFullExamActor && ta?.teacherId
+  const scopedSupervisorAttendances = !isFullExamActor
+    ? ta?.teacherId
       ? (supervisorAttendances || []).filter((a) => a.teacher_id === ta.teacherId)
-      : supervisorAttendances || [];
+      : []
+    : supervisorAttendances || [];
 
-  const scopedCommitteeAttendances =
-    !isGlobalExamViewer && ta?.teacherId
+  const scopedCommitteeAttendances = !isGlobalExamViewer
+    ? ta?.teacherId
       ? (committeeAttendances || []).filter((a) => a.teacher_id === ta.teacherId)
-      : committeeAttendances || [];
+      : []
+    : committeeAttendances || [];
 
-  const scopedSupervisorConfirmations =
-    !isFullExamActor && ta?.teacherId
+  const scopedSupervisorConfirmations = !isFullExamActor
+    ? ta?.teacherId
       ? (supervisorSessionConfirmations || []).filter((c) => c.teacher_id === ta.teacherId)
-      : supervisorSessionConfirmations || [];
+      : []
+    : supervisorSessionConfirmations || [];
 
   const supervisedRoomIds = new Set(
     scopedSupervisors.map((s) => s.exam_room_id).filter(Boolean)
@@ -286,14 +293,15 @@ export async function GET() {
       .map((e) => e.student_id)
   );
 
-  const scopedStudentAttendances =
-    !isFullExamActor && ta?.teacherId
+  const scopedStudentAttendances = !isFullExamActor
+    ? ta?.teacherId
       ? (studentAttendances || []).filter(
           (a) =>
             (a.exam_room_id && supervisedRoomIds.has(a.exam_room_id)) ||
             homeroomStudentIds.has(a.student_id)
         )
-      : studentAttendances || [];
+      : []
+    : studentAttendances || [];
 
   return NextResponse.json({
     periods: periods || [],
@@ -350,7 +358,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Data periode ujian tidak valid.' }, { status: 400 });
       }
       const academicYearId = await getActiveAcademicYearId(supabase);
-      const { action: _, ...payload } = parsed.data;
+      const payload = { ...parsed.data } as Record<string, unknown>;
+      delete payload.action;
       const { data, error } = await supabase
         .from('exam_periods')
         .insert({ ...payload, academic_year_id: academicYearId, is_active: true })
@@ -365,7 +374,8 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data ruang ujian tidak valid.' }, { status: 400 });
       }
-      const { action: _, ...payload } = parsed.data;
+      const payload = { ...parsed.data } as Record<string, unknown>;
+      delete payload.action;
       const { data, error } = await supabase
         .from('exam_rooms')
         .insert(payload)
@@ -396,7 +406,8 @@ export async function POST(request: Request) {
         );
       }
 
-      const rows = parsed.data.student_ids.map((student_id) => ({
+      const uniqueStudentIds = Array.from(new Set(parsed.data.student_ids));
+      const rows = uniqueStudentIds.map((student_id) => ({
         exam_period_id: parsed.data.exam_period_id,
         exam_room_id: parsed.data.exam_room_id,
         student_id,
@@ -439,10 +450,11 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data pengawas ujian tidak valid.' }, { status: 400 });
       }
-      const { action: _, ...payload } = parsed.data;
+      const payload = { ...parsed.data } as Record<string, unknown>;
+      delete payload.action;
       const { data, error } = await supabase
         .from('exam_supervisors')
-        .insert({ ...payload, exam_room_id: payload.exam_room_id || null })
+        .insert({ ...payload, exam_room_id: parsed.data.exam_room_id || null })
         .select('*')
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -454,7 +466,8 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: 'Data panitia ujian tidak valid.' }, { status: 400 });
       }
-      const { action: _, ...payload } = parsed.data;
+      const payload = { ...parsed.data } as Record<string, unknown>;
+      delete payload.action;
       const { data, error } = await supabase
         .from('exam_committees')
         .insert(payload)
@@ -992,8 +1005,8 @@ export async function POST(request: Request) {
           .update({
             is_within_geofence: true,
             admin_confirmed: true,
-            admin_confirmed_by: guard.session.userId,
-            admin_confirmed_at: new Date().toISOString(),
+            confirmed_by: guard.session.userId,
+            confirmed_at: new Date().toISOString(),
             approved_jtm: comRow.jtm_allocated,
           })
           .eq('id', existingAtt.id)
@@ -1016,8 +1029,8 @@ export async function POST(request: Request) {
           distance_meters: 0,
           is_within_geofence: true,
           admin_confirmed: true,
-          admin_confirmed_by: guard.session.userId,
-          admin_confirmed_at: new Date().toISOString(),
+          confirmed_by: guard.session.userId,
+          confirmed_at: new Date().toISOString(),
           notes: 'Konfirmasi Panitia Ujian tanpa geofencing (fitur geofencing nonaktif)',
         })
         .select('*')

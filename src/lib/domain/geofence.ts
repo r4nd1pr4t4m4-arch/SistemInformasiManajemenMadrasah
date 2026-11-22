@@ -25,9 +25,14 @@ export function calculateDistanceMeters(a: Coordinates, b: Coordinates): number 
   const sinDLat = Math.sin(dLat / 2);
   const sinDLng = Math.sin(dLng / 2);
 
-  const h =
-    sinDLat * sinDLat +
-    Math.cos(toRadians(a.lat)) * Math.cos(toRadians(b.lat)) * sinDLng * sinDLng;
+  const h = Math.min(
+    1,
+    Math.max(
+      0,
+      sinDLat * sinDLat +
+        Math.cos(toRadians(a.lat)) * Math.cos(toRadians(b.lat)) * sinDLng * sinDLng
+    )
+  );
 
   const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   return Math.round(EARTH_RADIUS_METERS * c);

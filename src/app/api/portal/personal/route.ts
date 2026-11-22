@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
-import { getCurrentUserWithRoles } from '@/lib/auth/session';
-import { resolveTeacherForProfile } from '@/lib/sdm/sync';
+import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
+import { PERMISSIONS } from '@/lib/auth/rbac';
+import { escapeLikePattern, resolveTeacherForProfile } from '@/lib/sdm/sync';
 
 export async function GET(request: NextRequest) {
   const session = await getCurrentUserWithRoles();
@@ -39,13 +40,28 @@ export async function GET(request: NextRequest) {
   const section = request.nextUrl.searchParams.get('section') || 'all';
   const requestedStudentId = request.nextUrl.searchParams.get('student_id');
 
+  const canViewGtk = hasAnyRole(session, PERMISSIONS.GTK_BIODATA_VIEW);
+  const canViewOrtu = hasAnyRole(session, PERMISSIONS.ORTU_BIODATA_VIEW);
+  const canViewSiswa = hasAnyRole(session, PERMISSIONS.SISWA_BIODATA_VIEW);
+
+  if (
+    (scopeParam === 'gtk' && !canViewGtk) ||
+    (scopeParam === 'orang-tua' && !canViewOrtu) ||
+    (scopeParam === 'siswa' && !canViewSiswa)
+  ) {
+    return NextResponse.json(
+      { error: 'Akses ditolak. Peran akun Anda tidak memiliki izin untuk ruang lingkup ini.' },
+      { status: 403 }
+    );
+  }
+
   const scope =
     scopeParam ||
     (session.roles.includes('SISWA')
       ? 'siswa'
       : session.roles.includes('ORANG_TUA')
       ? 'orang-tua'
-      : session.roles.some((r) => !['ALUMNI', 'UMUM', 'SISWA', 'ORANG_TUA'].includes(r))
+      : canViewGtk
       ? 'gtk'
       : 'umum');
 
@@ -64,7 +80,7 @@ export async function GET(request: NextRequest) {
     if (st) activeStudent = st;
   }
 
-  if (scope === 'orang-tua' || session.roles.includes('ORANG_TUA')) {
+  if ((scope === 'orang-tua' || session.roles.includes('ORANG_TUA')) && canViewOrtu) {
     const { data: guards, error: guardsErr } = await supabase
       .from('student_guardians')
       .select(
@@ -87,7 +103,7 @@ export async function GET(request: NextRequest) {
         .select(
           'id, relationship, is_primary, student:students(id, full_name, nis, nisn, gender, status, phone, email)'
         )
-        .ilike('email', session.email)
+        .ilike('email', escapeLikePattern(session.email.trim()))
         .is('profile_id', null)
         .eq('is_active', true)
         .order('is_primary', { ascending: false });
@@ -99,7 +115,8 @@ export async function GET(request: NextRequest) {
           .in(
             'id',
             byEmailGuards.map((g) => g.id)
-          );
+          )
+          .is('profile_id', null);
         guardianRows = byEmailGuards;
       }
     }
@@ -127,7 +144,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  if (scope === 'gtk') {
+  if (scope === 'gtk' && canViewGtk) {
     const { data: prof } = await supabase
       .from('profiles')
       .select('full_name, phone, email')
@@ -223,16 +240,14 @@ export async function GET(request: NextRequest) {
     } else if (scope === 'gtk' && activeTeacher?.id) {
       accQuery = accQuery.eq('teacher_id', activeTeacher.id as string);
     } else {
-      // UMUM / ALUMNI: match by phone or owner_name from user profile
+      // UMUM / ALUMNI: match by phone from user profile, restricted to UMUM owner_type
       const { data: prof } = await supabase
         .from('profiles')
-        .select('full_name, phone')
+        .select('phone')
         .eq('id', session.userId)
         .maybeSingle();
       if (prof?.phone) {
-        accQuery = accQuery.eq('owner_phone', prof.phone);
-      } else if (prof?.full_name) {
-        accQuery = accQuery.ilike('owner_name', prof.full_name);
+        accQuery = accQuery.eq('owner_type', 'UMUM').eq('owner_phone', prof.phone);
       } else {
         accQuery = accQuery.eq('id', '00000000-0000-0000-0000-000000000000');
       }
@@ -285,7 +300,7 @@ export async function GET(request: NextRequest) {
   if (wants('spp') && (scope === 'siswa' || scope === 'orang-tua') && activeStudent?.id) {
     const { data: billData } = await supabase
       .from('student_bills')
-      .select('*, fee_type:fee_types(id, name, billing_cycle)')
+      .select('*, fee_type:fee_types(id, name, category, is_recurring_monthly)')
       .eq('student_id', activeStudent.id as string)
       .order('billing_year', { ascending: false })
       .order('billing_month', { ascending: false });
@@ -320,7 +335,7 @@ export async function GET(request: NextRequest) {
   if (wants('bk') && (scope === 'siswa' || scope === 'orang-tua') && activeStudent?.id) {
     const { data } = await supabase
       .from('bk_records')
-      .select('id, incident_date, record_type, category, description, follow_up, counselor:teachers_staff(full_name)')
+      .select('id, incident_date, record_type, title, description, follow_up, counselor:teachers_staff(full_name)')
       .eq('student_id', activeStudent.id as string)
       .eq('is_confidential', false)
       .order('incident_date', { ascending: false })
@@ -334,7 +349,7 @@ export async function GET(request: NextRequest) {
     const { data } = await supabase
       .from('exam_room_students')
       .select(
-        'id, seat_number, exam_room:exam_rooms(id, room_name, exam_date, start_time, end_time, period:exam_periods(name, start_date, end_date))'
+        'id, seat_number, exam_room:exam_rooms(id, room_name, period:exam_periods(name, start_date, end_date))'
       )
       .eq('student_id', activeStudent.id as string);
     examRooms = data || [];

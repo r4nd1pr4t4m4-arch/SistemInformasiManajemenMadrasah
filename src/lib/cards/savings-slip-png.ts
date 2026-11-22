@@ -39,7 +39,7 @@ function drawRoundedRect(
   ctx.closePath();
 }
 
-export async function renderSavingsSlipCanvas(
+async function renderSavingsSlipCanvas(
   data: SavingsSlipData,
   institutionName = 'SIMMS — Tabungan Digital'
 ): Promise<HTMLCanvasElement> {
@@ -130,21 +130,15 @@ export async function renderSavingsSlipCanvas(
   ctx.fillText('✓  TRANSAKSI BERHASIL', cardX + 54, cardY + 146);
 
   // Reference & Date on right of header
-  const dateLabel = data.transactionDate
-    ? new Date(data.transactionDate).toLocaleString('id-ID', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : new Date().toLocaleString('id-ID', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+  const parsedDate = data.transactionDate ? new Date(data.transactionDate) : new Date();
+  const safeDate = Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+  const dateLabel = safeDate.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
@@ -227,7 +221,8 @@ export async function renderSavingsSlipCanvas(
   if (isTarik) {
     const feeAmt = Number(data.feeAmount) || 0;
     const feePct = Number(data.feePercentage) || 0;
-    const netAmt = Number(data.netAmount ?? data.amount - feeAmt);
+    const rawNet = Number(data.netAmount ?? (Number(data.amount) || 0) - feeAmt);
+    const netAmt = Number.isFinite(rawNet) ? rawNet : 0;
 
     drawRow(
       `Potongan Fee Transaksi (${feePct}%)`,

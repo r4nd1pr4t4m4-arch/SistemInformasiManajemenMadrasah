@@ -50,7 +50,7 @@ function syncBrowserFavicon(logoUrl?: string | null) {
   }
 }
 
-export function invalidateInstitutionSettingsCache() {
+function invalidateInstitutionSettingsCache() {
   cachedSettings = null;
   inflightPromise = null;
 }

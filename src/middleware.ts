@@ -51,20 +51,17 @@ export async function middleware(request: NextRequest) {
         ).data
       : profile;
 
-    const accountStatus = (profile as { account_status?: string } | null)?.account_status;
+    const accountStatus = (fallbackProfile as { account_status?: string } | null)?.account_status;
     const isAllowed =
       Boolean(fallbackProfile?.is_active) && (!accountStatus || accountStatus === 'AKTIF');
 
     if (isAllowed) {
       const rawNext = request.nextUrl.searchParams.get('next');
       const targetPath =
-        rawNext && rawNext.startsWith('/') && !rawNext.startsWith('/login')
+        rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') && !rawNext.startsWith('/login')
           ? rawNext
           : '/portal';
-      const portalUrl = request.nextUrl.clone();
-      portalUrl.pathname = targetPath;
-      portalUrl.search = '';
-      return NextResponse.redirect(portalUrl);
+      return NextResponse.redirect(new URL(targetPath, request.url));
     }
   }
 
@@ -92,7 +89,7 @@ export async function middleware(request: NextRequest) {
         ).data
       : profile;
 
-    const accountStatus = (profile as { account_status?: string } | null)?.account_status;
+    const accountStatus = (fallbackProfile as { account_status?: string } | null)?.account_status;
     const isAllowed =
       Boolean(fallbackProfile?.is_active) && (!accountStatus || accountStatus === 'AKTIF');
 

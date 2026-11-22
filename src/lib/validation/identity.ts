@@ -32,3 +32,31 @@ export const RELIGION_OPTIONS = [
 ] as const;
 
 export const COUNT_OPTIONS_1_TO_12 = Array.from({ length: 12 }, (_, i) => String(i + 1));
+
+export const thesisArticleUrlSchema = z
+  .string()
+  .trim()
+  .refine((val) => !val || /^https?:\/\//i.test(val), {
+    message: 'URL artikel ilmiah harus diawali http:// atau https://',
+  })
+  .optional()
+  .nullable();
+
+export function normalizeThesisKeywords(
+  value: string | string[] | null | undefined
+): string[] {
+  const rawList = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const item of rawList) {
+    const cleaned = item.trim().replace(/^#+/, '').trim();
+    if (!cleaned || seen.has(cleaned.toLowerCase())) continue;
+    seen.add(cleaned.toLowerCase());
+    normalized.push(cleaned);
+  }
+  return normalized;
+}

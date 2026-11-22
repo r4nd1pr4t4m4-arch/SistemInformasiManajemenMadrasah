@@ -178,15 +178,37 @@ export async function GET(request: Request) {
         weight_praktik: 0,
       };
 
-  const weights: RaportWeights = weightRow
-    ? {
-        weight_formatif: Number(weightRow.weight_formatif),
-        weight_sumatif: Number(weightRow.weight_sumatif),
-        weight_sts: Number(weightRow.weight_sts),
-        weight_sas: Number(weightRow.weight_sas),
-        weight_praktik: hasPraktik ? Number(weightRow.weight_praktik) : 0,
-      }
-    : defaultWeights;
+  const weights: RaportWeights = (() => {
+    if (!weightRow) return defaultWeights;
+    const wF = Number(weightRow.weight_formatif);
+    const wS = Number(weightRow.weight_sumatif);
+    const wSts = Number(weightRow.weight_sts);
+    const wSas = Number(weightRow.weight_sas);
+    const wP = Number(weightRow.weight_praktik);
+    if (hasPraktik || wP === 0) {
+      return {
+        weight_formatif: wF,
+        weight_sumatif: wS,
+        weight_sts: wSts,
+        weight_sas: wSas,
+        weight_praktik: hasPraktik ? wP : 0,
+      };
+    }
+    const baseSum = wF + wS + wSts + wSas;
+    if (baseSum <= 0) return defaultWeights;
+    const scale = 100 / baseSum;
+    const nf = Math.round(wF * scale * 100) / 100;
+    const ns = Math.round(wS * scale * 100) / 100;
+    const nsts = Math.round(wSts * scale * 100) / 100;
+    const nsas = Math.round((100 - nf - ns - nsts) * 100) / 100;
+    return {
+      weight_formatif: nf,
+      weight_sumatif: ns,
+      weight_sts: nsts,
+      weight_sas: nsas,
+      weight_praktik: 0,
+    };
+  })();
 
   const rows = students.map((st) => {
     const colBucket = studentColScores.get(st.id);

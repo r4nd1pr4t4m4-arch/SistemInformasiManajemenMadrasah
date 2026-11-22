@@ -233,7 +233,32 @@ export async function GET() {
   const ta = guard.session.teacherAssignments;
   const isPicketOrCommittee = Boolean(ta?.isPicketTeacher || ta?.isExamCommittee);
 
-  if (!isGlobalPresensiViewer && ta?.teacherId) {
+  if (!isGlobalPresensiViewer) {
+    if (!ta?.teacherId) {
+      return NextResponse.json({
+        studentAttendances: [],
+        teacherAttendances: [],
+        delegations: [],
+        journals: [],
+        picketReports: [],
+        shortLeaves: [],
+        sessionConfirmations: [],
+        schedules: [],
+        students: [],
+        classrooms: [],
+        enrollments: [],
+        examSupervisors: [],
+        examCommittees: [],
+        todayDate: getWibTodayDateString(),
+        geofenceConfig: {
+          enabled: settings?.geofence_enabled ?? true,
+          latitude: settings?.geofence_lat ?? -6.2,
+          longitude: settings?.geofence_lng ?? 106.816666,
+          radiusMeters: settings?.geofence_radius_meters ?? 100,
+        },
+        canAdminConfirm,
+      });
+    }
     const myTeacherId = ta.teacherId;
     const allowedClassIds = new Set([
       ...(ta.homeroomClassroomIds || []),
@@ -513,7 +538,13 @@ export async function POST(request: Request) {
 
       const isAdminActor = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
       const ta = guard.session.teacherAssignments;
-      if (!isAdminActor && !ta?.isPicketTeacher && ta?.teacherId) {
+      if (!isAdminActor && !ta?.isPicketTeacher) {
+        if (!ta?.teacherId) {
+          return NextResponse.json(
+            { error: 'Akun Anda belum tertaut ke data GTK sehingga tidak dapat menginput absensi mata pelajaran.' },
+            { status: 403 }
+          );
+        }
         const [{ data: schedRow }, { data: delRow }] = await Promise.all([
           supabase.from('schedules').select('teacher_id').eq('id', schedule_id).maybeSingle(),
           supabase
@@ -586,7 +617,7 @@ export async function POST(request: Request) {
 
       const isAdminActor = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
       const myTeacherId = guard.session.teacherAssignments?.teacherId;
-      if (!isAdminActor && myTeacherId && parsed.data.teacher_id !== myTeacherId) {
+      if (!isAdminActor && (!myTeacherId || parsed.data.teacher_id !== myTeacherId)) {
         return NextResponse.json(
           { error: 'Anda hanya dapat mencatat presensi untuk akun GTK Anda sendiri.' },
           { status: 403 }
@@ -749,7 +780,7 @@ export async function POST(request: Request) {
 
         const isAdminActor = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
         const myTeacherId = guard.session.teacherAssignments?.teacherId;
-        if (!isAdminActor && myTeacherId && conf.teacher_id !== myTeacherId) {
+        if (!isAdminActor && (!myTeacherId || conf.teacher_id !== myTeacherId)) {
           return NextResponse.json(
             { error: 'Anda hanya dapat mengisi jurnal pembelajaran untuk jadwal mengajar Anda sendiri.' },
             { status: 403 }
@@ -831,7 +862,7 @@ export async function POST(request: Request) {
       }
       const isAdminActor = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
       const myTeacherId = guard.session.teacherAssignments?.teacherId;
-      if (!isAdminActor && myTeacherId && att.teacher_id !== myTeacherId) {
+      if (!isAdminActor && (!myTeacherId || att.teacher_id !== myTeacherId)) {
         return NextResponse.json(
           { error: 'Anda hanya dapat mengisi jurnal pembelajaran untuk jadwal mengajar Anda sendiri.' },
           { status: 403 }
@@ -1103,6 +1134,18 @@ export async function POST(request: Request) {
         }
       }
 
+      if (
+        parsed.data.diff_recipient_teacher_id &&
+        parsed.data.approved_jtm != null &&
+        ['MENGAJAR', 'PENGAWAS_UJIAN', 'PIKET', 'PANITIA_UJIAN'].includes(att.attendance_type) &&
+        parsed.data.diff_recipient_teacher_id === att.teacher_id
+      ) {
+        return NextResponse.json(
+          { error: 'Penerima selisih JTM tidak boleh sama dengan guru/pengawas/panitia yang bersangkutan.' },
+          { status: 400 }
+        );
+      }
+
       const { data: updated, error: updErr } = await supabase
         .from('teacher_attendances')
         .update(updateFields)
@@ -1119,12 +1162,6 @@ export async function POST(request: Request) {
         parsed.data.approved_jtm != null &&
         ['MENGAJAR', 'PENGAWAS_UJIAN', 'PIKET', 'PANITIA_UJIAN'].includes(att.attendance_type)
       ) {
-        if (parsed.data.diff_recipient_teacher_id === att.teacher_id) {
-          return NextResponse.json(
-            { error: 'Penerima selisih JTM tidak boleh sama dengan guru/pengawas/panitia yang bersangkutan.' },
-            { status: 400 }
-          );
-        }
 
         if (att.attendance_type === 'MENGAJAR') {
           let expectedJtm = 2;
@@ -1279,6 +1316,13 @@ export async function POST(request: Request) {
 
       if (attErr || !att || att.attendance_type !== 'PIKET') {
         return NextResponse.json({ error: 'Data presensi Guru Piket tidak ditemukan.' }, { status: 404 });
+      }
+      const isPicketReportAdmin = hasAnyRole(guard.session, ROLE_GROUPS.ADMIN_CONFIRM);
+      if (!isPicketReportAdmin && att.teacher_id !== guard.session.teacherAssignments?.teacherId) {
+        return NextResponse.json(
+          { error: 'Anda hanya dapat mengisi Laporan Harian Piket untuk presensi Anda sendiri.' },
+          { status: 403 }
+        );
       }
       if (!att.is_within_geofence || !att.admin_confirmed) {
         return NextResponse.json(
@@ -1723,6 +1767,13 @@ export async function POST(request: Request) {
       }
 
       const approvedJtm = d.approved_jtm != null ? Number(d.approved_jtm) : expectedJtm;
+      const diffJtm = Math.max(0, Number((expectedJtm - approvedJtm).toFixed(2)));
+      if (diffJtm > 0 && d.diff_recipient_teacher_id && d.diff_recipient_teacher_id === d.teacher_id) {
+        return NextResponse.json(
+          { error: 'Penerima selisih JTM tidak boleh sama dengan guru/pengawas yang bersangkutan.' },
+          { status: 400 }
+        );
+      }
 
       const { data: confirmation, error: confErr } = await supabase
         .from('schedule_session_confirmations')
@@ -1754,14 +1805,7 @@ export async function POST(request: Request) {
       }
 
       let allocatedDiffJtm = 0;
-      const diffJtm = Math.max(0, Number((expectedJtm - approvedJtm).toFixed(2)));
       if (diffJtm > 0 && d.diff_recipient_teacher_id) {
-        if (d.diff_recipient_teacher_id === d.teacher_id) {
-          return NextResponse.json(
-            { error: 'Penerima selisih JTM tidak boleh sama dengan guru/pengawas yang bersangkutan.' },
-            { status: 400 }
-          );
-        }
         if (d.session_type === 'MENGAJAR') {
           await supabase.from('teacher_delegations').insert({
             delegation_date: d.session_date,

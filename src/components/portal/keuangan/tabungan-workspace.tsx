@@ -723,7 +723,7 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                     amount: trxForm.amount,
                     feePercentage: result.fee_percentage || 0,
                     feeAmount: result.fee_amount || 0,
-                    netAmount: result.net_amount || trxForm.amount,
+                    netAmount: result.net_amount ?? trxForm.amount,
                     balanceAfter: result.balance,
                     transactionDate:
                       result.transaction.transaction_date || new Date().toISOString(),

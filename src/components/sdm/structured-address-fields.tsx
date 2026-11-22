@@ -66,18 +66,8 @@ export function StructuredAddressFields({
   const [rwCustomMode, setRwCustomMode] = useState(
     () => Boolean(parsed.rw && !RT_RW_OPTIONS.includes(parsed.rw))
   );
-
-  useEffect(() => {
-    if (parsed.rt && !RT_RW_OPTIONS.includes(parsed.rt)) {
-      setRtCustomMode(true);
-    }
-  }, [parsed.rt]);
-
-  useEffect(() => {
-    if (parsed.rw && !RT_RW_OPTIONS.includes(parsed.rw)) {
-      setRwCustomMode(true);
-    }
-  }, [parsed.rw]);
+  const isRtCustom = rtCustomMode || Boolean(parsed.rt && !RT_RW_OPTIONS.includes(parsed.rt));
+  const isRwCustom = rwCustomMode || Boolean(parsed.rw && !RT_RW_OPTIONS.includes(parsed.rw));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -91,23 +81,16 @@ export function StructuredAddressFields({
     return () => controller.abort();
   }, []);
 
-  // Pre-match saved province name when provinces finish loading
-  useEffect(() => {
-    if (!value.province || provinces.length === 0) return;
-    const target = value.province.trim().toUpperCase();
-    const matched = provinces.find((p) => p.name.trim().toUpperCase() === target);
-    if (matched && matched.id !== provinceId) {
-      setProvinceId(matched.id);
-    }
-  }, [value.province, provinces, provinceId]);
+  const activeProvinceId =
+    provinceId ||
+    (value.province
+      ? provinces.find((p) => p.name.trim().toUpperCase() === value.province.trim().toUpperCase())?.id || ''
+      : '');
 
   useEffect(() => {
-    if (!provinceId) {
-      setRegencies([]);
-      return;
-    }
+    if (!activeProvinceId) return;
     const controller = new AbortController();
-    fetch(`${EMSIFA_BASE}/regencies/${provinceId}.json`, { signal: controller.signal })
+    fetch(`${EMSIFA_BASE}/regencies/${activeProvinceId}.json`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setRegencies(Array.isArray(data) ? data : []))
       .catch((err) => {
@@ -115,24 +98,19 @@ export function StructuredAddressFields({
         setRegencies([]);
       });
     return () => controller.abort();
-  }, [provinceId]);
+  }, [activeProvinceId]);
+
+  const visibleRegencies = activeProvinceId ? regencies : [];
+  const activeRegencyId =
+    regencyId ||
+    (value.city
+      ? visibleRegencies.find((r) => r.name.trim().toUpperCase() === value.city.trim().toUpperCase())?.id || ''
+      : '');
 
   useEffect(() => {
-    if (!value.city || regencies.length === 0) return;
-    const target = value.city.trim().toUpperCase();
-    const matched = regencies.find((r) => r.name.trim().toUpperCase() === target);
-    if (matched && matched.id !== regencyId) {
-      setRegencyId(matched.id);
-    }
-  }, [value.city, regencies, regencyId]);
-
-  useEffect(() => {
-    if (!regencyId) {
-      setDistricts([]);
-      return;
-    }
+    if (!activeRegencyId) return;
     const controller = new AbortController();
-    fetch(`${EMSIFA_BASE}/districts/${regencyId}.json`, { signal: controller.signal })
+    fetch(`${EMSIFA_BASE}/districts/${activeRegencyId}.json`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setDistricts(Array.isArray(data) ? data : []))
       .catch((err) => {
@@ -140,24 +118,19 @@ export function StructuredAddressFields({
         setDistricts([]);
       });
     return () => controller.abort();
-  }, [regencyId]);
+  }, [activeRegencyId]);
+
+  const visibleDistricts = activeRegencyId ? districts : [];
+  const activeDistrictId =
+    districtId ||
+    (value.district
+      ? visibleDistricts.find((d) => d.name.trim().toUpperCase() === value.district.trim().toUpperCase())?.id || ''
+      : '');
 
   useEffect(() => {
-    if (!value.district || districts.length === 0) return;
-    const target = value.district.trim().toUpperCase();
-    const matched = districts.find((d) => d.name.trim().toUpperCase() === target);
-    if (matched && matched.id !== districtId) {
-      setDistrictId(matched.id);
-    }
-  }, [value.district, districts, districtId]);
-
-  useEffect(() => {
-    if (!districtId) {
-      setVillages([]);
-      return;
-    }
+    if (!activeDistrictId) return;
     const controller = new AbortController();
-    fetch(`${EMSIFA_BASE}/villages/${districtId}.json`, { signal: controller.signal })
+    fetch(`${EMSIFA_BASE}/villages/${activeDistrictId}.json`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setVillages(Array.isArray(data) ? data : []))
       .catch((err) => {
@@ -165,16 +138,14 @@ export function StructuredAddressFields({
         setVillages([]);
       });
     return () => controller.abort();
-  }, [districtId]);
+  }, [activeDistrictId]);
 
-  useEffect(() => {
-    if (!value.village || villages.length === 0) return;
-    const target = value.village.trim().toUpperCase();
-    const matched = villages.find((v) => v.name.trim().toUpperCase() === target);
-    if (matched && matched.id !== villageId) {
-      setVillageId(matched.id);
-    }
-  }, [value.village, villages, villageId]);
+  const visibleVillages = activeDistrictId ? villages : [];
+  const activeVillageId =
+    villageId ||
+    (value.village
+      ? visibleVillages.find((v) => v.name.trim().toUpperCase() === value.village.trim().toUpperCase())?.id || ''
+      : '');
 
   return (
     <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3 min-w-0">
@@ -188,7 +159,7 @@ export function StructuredAddressFields({
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">Provinsi</label>
           <select
             required={required}
-            value={provinceId}
+            value={activeProvinceId}
             onChange={(e) => {
               const id = e.target.value;
               const name = provinces.find((p) => p.id === id)?.name || '';
@@ -196,6 +167,9 @@ export function StructuredAddressFields({
               setRegencyId('');
               setDistrictId('');
               setVillageId('');
+              setRegencies([]);
+              setDistricts([]);
+              setVillages([]);
               onChange({
                 ...value,
                 province: name,
@@ -207,7 +181,7 @@ export function StructuredAddressFields({
             className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
           >
             <option value="">
-              {value.province && !provinceId ? value.province : '-- Pilih Provinsi --'}
+              {value.province && !activeProvinceId ? value.province : '-- Pilih Provinsi --'}
             </option>
             {provinces.map((p) => (
               <option key={p.id} value={p.id}>
@@ -223,14 +197,16 @@ export function StructuredAddressFields({
           </label>
           <select
             required={required}
-            disabled={!provinceId}
-            value={regencyId}
+            disabled={!activeProvinceId}
+            value={activeRegencyId}
             onChange={(e) => {
               const id = e.target.value;
-              const name = regencies.find((r) => r.id === id)?.name || '';
+              const name = visibleRegencies.find((r) => r.id === id)?.name || '';
               setRegencyId(id);
               setDistrictId('');
               setVillageId('');
+              setDistricts([]);
+              setVillages([]);
               onChange({
                 ...value,
                 city: name,
@@ -241,9 +217,9 @@ export function StructuredAddressFields({
             className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs disabled:bg-slate-100 disabled:border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
           >
             <option value="">
-              {value.city && !regencyId ? value.city : '-- Pilih Kabupaten / Kota --'}
+              {value.city && !activeRegencyId ? value.city : '-- Pilih Kabupaten / Kota --'}
             </option>
-            {regencies.map((r) => (
+            {visibleRegencies.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
               </option>
@@ -255,13 +231,14 @@ export function StructuredAddressFields({
           <label className="block text-[11px] font-semibold text-slate-600 mb-1">Kecamatan</label>
           <select
             required={required}
-            disabled={!regencyId}
-            value={districtId}
+            disabled={!activeRegencyId}
+            value={activeDistrictId}
             onChange={(e) => {
               const id = e.target.value;
-              const name = districts.find((d) => d.id === id)?.name || '';
+              const name = visibleDistricts.find((d) => d.id === id)?.name || '';
               setDistrictId(id);
               setVillageId('');
+              setVillages([]);
               onChange({
                 ...value,
                 district: name,
@@ -271,9 +248,9 @@ export function StructuredAddressFields({
             className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs disabled:bg-slate-100 disabled:border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
           >
             <option value="">
-              {value.district && !districtId ? value.district : '-- Pilih Kecamatan --'}
+              {value.district && !activeDistrictId ? value.district : '-- Pilih Kecamatan --'}
             </option>
-            {districts.map((d) => (
+            {visibleDistricts.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
               </option>
@@ -287,11 +264,11 @@ export function StructuredAddressFields({
           </label>
           <select
             required={required}
-            disabled={!districtId}
-            value={villageId}
+            disabled={!activeDistrictId}
+            value={activeVillageId}
             onChange={(e) => {
               const id = e.target.value;
-              const name = villages.find((v) => v.id === id)?.name || '';
+              const name = visibleVillages.find((v) => v.id === id)?.name || '';
               setVillageId(id);
               onChange({
                 ...value,
@@ -301,9 +278,9 @@ export function StructuredAddressFields({
             className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs disabled:bg-slate-100 disabled:border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
           >
             <option value="">
-              {value.village && !villageId ? value.village : '-- Pilih Kelurahan / Desa --'}
+              {value.village && !activeVillageId ? value.village : '-- Pilih Kelurahan / Desa --'}
             </option>
-            {villages.map((v) => (
+            {visibleVillages.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.name}
               </option>
@@ -317,7 +294,7 @@ export function StructuredAddressFields({
             <select
               required={required}
               value={
-                rtCustomMode
+                isRtCustom
                   ? LAINNYA_VALUE
                   : RT_RW_OPTIONS.includes(parsed.rt)
                     ? parsed.rt
@@ -349,7 +326,7 @@ export function StructuredAddressFields({
               ))}
               <option value={LAINNYA_VALUE}>Lainnya</option>
             </select>
-            {rtCustomMode && (
+            {isRtCustom && (
               <input
                 required={required}
                 type="text"
@@ -372,7 +349,7 @@ export function StructuredAddressFields({
             <select
               required={required}
               value={
-                rwCustomMode
+                isRwCustom
                   ? LAINNYA_VALUE
                   : RT_RW_OPTIONS.includes(parsed.rw)
                     ? parsed.rw
@@ -404,7 +381,7 @@ export function StructuredAddressFields({
               ))}
               <option value={LAINNYA_VALUE}>Lainnya</option>
             </select>
-            {rwCustomMode && (
+            {isRwCustom && (
               <input
                 required={required}
                 type="text"

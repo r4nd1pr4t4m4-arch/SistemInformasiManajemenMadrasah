@@ -42,7 +42,10 @@ export async function GET() {
   ]);
   const ta = guard.session.teacherAssignments;
 
-  if (!isGlobalBkViewer && ta?.homeroomClassroomIds?.length) {
+  if (!isGlobalBkViewer) {
+    if (!ta?.homeroomClassroomIds?.length) {
+      return NextResponse.json({ records: [] });
+    }
     const { data: enrolls } = await supabase
       .from('student_enrollments')
       .select('student_id')
@@ -75,12 +78,13 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseAdminClient();
+    const wibToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
     const { data, error } = await supabase
       .from('bk_records')
       .insert({
         ...parsed.data,
         counselor_id: parsed.data.counselor_id || null,
-        incident_date: parsed.data.incident_date || new Date().toISOString().slice(0, 10),
+        incident_date: parsed.data.incident_date || wibToday,
       })
       .select('*')
       .single();

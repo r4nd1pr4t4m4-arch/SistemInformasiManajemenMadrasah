@@ -1,19 +1,10 @@
 import crypto from 'node:crypto';
 import type { CaptchaPayload } from './captcha-types';
+import { consumeSingleUseNonce } from './rate-limit';
 
 const LOCAL_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 menit
 const LOCAL_POW_DIFFICULTY = 3; // 3 nol hex di awal SHA-256 (~4096 iterasi, <20ms di browser)
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
-
-// In-memory replay guard untuk nonce lokal yang sudah dipakai
-const usedNonces = new Map<string, number>();
-
-function pruneUsedNonces(now: number) {
-  if (usedNonces.size < 200) return;
-  for (const [nonce, exp] of usedNonces.entries()) {
-    if (exp <= now) usedNonces.delete(nonce);
-  }
-}
 
 function getCaptchaSigningSecret(): string {
   const secret =
@@ -27,13 +18,14 @@ function getCaptchaSigningSecret(): string {
 
 function isLocalhostRequest(request?: Request): boolean {
   if (!request) return false;
-  const host = (
-    request.headers.get('x-forwarded-host') ||
-    request.headers.get('host') ||
-    ''
-  ).toLowerCase();
-  const hostname = host.split(':')[0];
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  // Jangan pernah percaya x-forwarded-host untuk bypass CAPTCHA di balik reverse proxy
+  if (request.headers.get('x-forwarded-host')) return false;
+  try {
+    const hostname = new URL(request.url).hostname.toLowerCase();
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  } catch {
+    return false;
+  }
 }
 
 export function isCaptchaBypassed(request?: Request): boolean {
@@ -85,11 +77,11 @@ export function createLocalCaptchaChallenge(): LocalCaptchaChallenge {
   };
 }
 
-export function verifyLocalCaptchaChallenge(
+export async function verifyLocalCaptchaChallenge(
   challengeToken: string,
   solution: string,
   honeypot?: string
-): { valid: boolean; reason?: string } {
+): Promise<{ valid: boolean; reason?: string }> {
   if (honeypot && honeypot.trim().length > 0) {
     return { valid: false, reason: 'Permintaan terdeteksi sebagai bot.' };
   }
@@ -122,14 +114,9 @@ export function verifyLocalCaptchaChallenge(
   }
 
   const now = Date.now();
-  pruneUsedNonces(now);
 
   if (!parsed.nonce || !parsed.exp || now > parsed.exp) {
     return { valid: false, reason: 'Tantangan CAPTCHA lokal telah kedaluwarsa. Silakan coba lagi.' };
-  }
-
-  if (usedNonces.has(parsed.nonce)) {
-    return { valid: false, reason: 'Token CAPTCHA sudah digunakan. Silakan kirim ulang.' };
   }
 
   const trimmedSolution = String(solution || '').trim();
@@ -147,7 +134,10 @@ export function verifyLocalCaptchaChallenge(
     return { valid: false, reason: 'Verifikasi CAPTCHA lokal gagal. Silakan coba lagi.' };
   }
 
-  usedNonces.set(parsed.nonce, parsed.exp);
+  const claimed = await consumeSingleUseNonce(`captcha:${parsed.nonce}`, parsed.exp);
+  if (!claimed) {
+    return { valid: false, reason: 'Token CAPTCHA sudah digunakan. Silakan kirim ulang.' };
+  }
   return { valid: true };
 }
 
@@ -175,7 +165,7 @@ export async function verifyCaptchaToken(
   }
 
   if (payload.provider === 'local') {
-    const localRes = verifyLocalCaptchaChallenge(
+    const localRes = await verifyLocalCaptchaChallenge(
       payload.challengeToken,
       payload.solution,
       payload.honeypot

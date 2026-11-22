@@ -83,7 +83,7 @@ export function sortClassroomsAsc<T extends { name: string; gradeLevel: string }
   });
 }
 
-export function getAutoColumnPrefix(category: AssessmentCategory): string {
+function getAutoColumnPrefix(category: AssessmentCategory): string {
   switch (category) {
     case 'FORMATIF':
       return 'TP';
@@ -215,9 +215,8 @@ export function validateExamScoreAgainstKkm(
       return `${studentName}: tidak dapat mengisi nilai Pengayaan jika memiliki atau wajib mengisi nilai Remedial.`;
     }
   }
-  if (remedialScore !== null) {
-    const finalAfterRemedial =
-      score !== null ? Math.round(((score + remedialScore) / 2) * 100) / 100 : remedialScore;
+  if (remedialScore !== null && score !== null) {
+    const finalAfterRemedial = Math.round(((score + remedialScore) / 2) * 100) / 100;
     if (finalAfterRemedial < kkmMinScore) {
       return `${studentName}: nilai akhir setelah remedial (${finalAfterRemedial}) masih di bawah KKM (${kkmMinScore}). Ubah nilai remedial agar nilai akhir >= ${kkmMinScore}.`;
     }

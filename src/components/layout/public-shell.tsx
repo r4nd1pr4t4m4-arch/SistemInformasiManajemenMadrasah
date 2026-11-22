@@ -422,53 +422,66 @@ export function PublicFooter() {
               </a>
             </p>
           )}
-          {(school.social_links?.facebook ||
-            school.social_links?.instagram ||
-            school.social_links?.youtube ||
-            school.social_links?.tiktok) && (
-            <div className="flex flex-wrap gap-2 pt-1.5">
-              {school.social_links?.facebook && (
-                <a
-                  href={school.social_links.facebook}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
-                >
-                  Facebook
-                </a>
-              )}
-              {school.social_links?.instagram && (
-                <a
-                  href={school.social_links.instagram}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
-                >
-                  Instagram
-                </a>
-              )}
-              {school.social_links?.youtube && (
-                <a
-                  href={school.social_links.youtube}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
-                >
-                  YouTube
-                </a>
-              )}
-              {school.social_links?.tiktok && (
-                <a
-                  href={school.social_links.tiktok}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
-                >
-                  TikTok
-                </a>
-              )}
-            </div>
-          )}
+          {(() => {
+            const safeUrl = (raw?: string) => {
+              if (!raw) return null;
+              try {
+                const u = new URL(raw);
+                return u.protocol === 'http:' || u.protocol === 'https:' ? raw : null;
+              } catch {
+                return null;
+              }
+            };
+            const fb = safeUrl(school.social_links?.facebook);
+            const ig = safeUrl(school.social_links?.instagram);
+            const yt = safeUrl(school.social_links?.youtube);
+            const tt = safeUrl(school.social_links?.tiktok);
+            if (!fb && !ig && !yt && !tt) return null;
+            return (
+              <div className="flex flex-wrap gap-2 pt-1.5">
+                {fb && (
+                  <a
+                    href={fb}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
+                  >
+                    Facebook
+                  </a>
+                )}
+                {ig && (
+                  <a
+                    href={ig}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
+                  >
+                    Instagram
+                  </a>
+                )}
+                {yt && (
+                  <a
+                    href={yt}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
+                  >
+                    YouTube
+                  </a>
+                )}
+                {tt && (
+                  <a
+                    href={tt}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-medium transition"
+                  >
+                    TikTok
+                  </a>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
 

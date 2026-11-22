@@ -74,7 +74,7 @@ function drawRoundedRect(
   ctx.closePath();
 }
 
-export async function renderHonorariumSlipCanvas(
+async function renderHonorariumSlipCanvas(
   data: HonorariumSlipData,
   institutionName = 'SIMMS — Administrasi Keuangan'
 ): Promise<HTMLCanvasElement> {
@@ -253,7 +253,7 @@ export async function renderHonorariumSlipCanvas(
   ctx.fillStyle = '#0f172a';
   ctx.font = '700 15px system-ui, -apple-system, sans-serif';
   ctx.fillText(
-    `Subtotal Honorarium JTM (${data.totalJtm} JTM × ${formatRupiah(data.ratePerJtm)})`,
+    `Subtotal Honorarium JTM (${Number(data.totalJtm) || 0} JTM × ${formatRupiah(Number(data.ratePerJtm) || 0)})`,
     rowX + 16,
     curY + 32
   );
