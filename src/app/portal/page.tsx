@@ -28,6 +28,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { AppRole } from '@/types/database';
+import { mapDutyCodeToRole } from '@/lib/auth/rbac';
 
 const DAY_NAMES: Record<number, string> = {
   1: 'Senin',
@@ -510,6 +511,29 @@ export default function PortalDashboardPage() {
   const exec = data?.executiveSummary;
   const teaching = data?.teachingSummary;
   const finance = data?.financeSummary;
+  const baseRoles: AppRole[] = user?.roles || [];
+  const isPrivilegedFinanceBaseRole = baseRoles.some((r) =>
+    ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'BENDAHARA', 'KEPALA_TU'].includes(r)
+  );
+  const isGuruOnlyDashboard = baseRoles.includes('GURU') && !isPrivilegedFinanceBaseRole;
+  const hasBendaharaKomiteDuty = additionalDuties.some(
+    (d) =>
+      mapDutyCodeToRole(d.code) === 'BENDAHARA_KOMITE' ||
+      mapDutyCodeToRole(d.name) === 'BENDAHARA_KOMITE'
+  );
+  const hasPengelolaTabunganDuty = additionalDuties.some(
+    (d) =>
+      mapDutyCodeToRole(d.code) === 'PENGELOLA_TABUNGAN' ||
+      mapDutyCodeToRole(d.name) === 'PENGELOLA_TABUNGAN'
+  );
+
+  const showSppCard = Boolean(finance?.spp) && (!isGuruOnlyDashboard || hasBendaharaKomiteDuty);
+  const showTabunganCard =
+    Boolean(finance?.tabungan) && (!isGuruOnlyDashboard || hasPengelolaTabunganDuty);
+  const showHonorariumCard = Boolean(finance?.honorarium) && !isGuruOnlyDashboard;
+  const showFinanceSection = showSppCard || showTabunganCard || showHonorariumCard;
+  const visibleFinanceCardsCount =
+    Number(showSppCard) + Number(showTabunganCard) + Number(showHonorariumCard);
   const bk = data?.bkSummary;
   const guruWali = data?.guruWaliSummary;
   const library = data?.librarySummary;
@@ -1273,23 +1297,49 @@ export default function PortalDashboardPage() {
       )}
 
       {/* 4. PANEL KEUANGAN: SPP/KOMITE, TABUNGAN DIGITAL & HONORARIUM */}
-      {finance && (finance.spp || finance.tabungan || finance.honorarium) && (
+      {showFinanceSection && finance && (
         <section className="space-y-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-            <Wallet className="w-4 h-4 text-emerald-700" />
-            Informasi Keuangan Sesuai Wewenang &amp; Tugas Tambahan Anda
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2 min-w-0">
+              <Wallet className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>Informasi Keuangan Sesuai Wewenang &amp; Tugas Tambahan Anda</span>
+            </h2>
+            {isGuruOnlyDashboard && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {hasBendaharaKomiteDuty && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-semibold">
+                    Bendahara Komite
+                  </span>
+                )}
+                {hasPengelolaTabunganDuty && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-semibold">
+                    Pengelola Tabungan
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
 
-          <div className="grid lg:grid-cols-3 gap-5">
-            {finance.spp && (
-              <div className="glass-card rounded-3xl p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center">
+          <div
+            className={`grid gap-5 ${
+              visibleFinanceCardsCount === 1
+                ? 'grid-cols-1'
+                : visibleFinanceCardsCount === 2
+                  ? 'grid-cols-1 lg:grid-cols-2'
+                  : 'grid-cols-1 lg:grid-cols-3'
+            }`}
+          >
+            {showSppCard && finance.spp && (
+              <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shrink-0">
                       <Receipt className="w-5 h-5" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">SPP &amp; Iuran Komite</h3>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-slate-900 truncate">
+                        SPP &amp; Iuran Komite
+                      </h3>
                       <p className="text-[11px] text-slate-500">
                         {finance.spp.paidBillsCount} Lunas • {finance.spp.unpaidBillsCount} Belum Lunas
                       </p>
@@ -1297,7 +1347,7 @@ export default function PortalDashboardPage() {
                   </div>
                   <Link
                     href="/portal/keuangan/spp/pembayaran"
-                    className="text-xs font-semibold text-emerald-700 hover:underline"
+                    className="text-xs font-semibold text-emerald-700 hover:underline shrink-0"
                   >
                     Detail →
                   </Link>
@@ -1350,15 +1400,15 @@ export default function PortalDashboardPage() {
               </div>
             )}
 
-            {finance.tabungan && (
-              <div className="glass-card rounded-3xl p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center">
+            {showTabunganCard && finance.tabungan && (
+              <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center shrink-0">
                       <PiggyBank className="w-5 h-5" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">Tabungan Digital</h3>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-slate-900 truncate">Tabungan Digital</h3>
                       <p className="text-[11px] text-slate-500">
                         {finance.tabungan.activeAccountsCount} Rekening Aktif
                       </p>
@@ -1366,7 +1416,7 @@ export default function PortalDashboardPage() {
                   </div>
                   <Link
                     href="/portal/keuangan/tabungan/transaksi"
-                    className="text-xs font-semibold text-emerald-700 hover:underline"
+                    className="text-xs font-semibold text-emerald-700 hover:underline shrink-0"
                   >
                     Detail →
                   </Link>
@@ -1414,8 +1464,8 @@ export default function PortalDashboardPage() {
               </div>
             )}
 
-            {finance.honorarium && (
-              <div className="glass-card rounded-3xl p-6 space-y-4">
+            {showHonorariumCard && finance.honorarium && (
+              <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4 min-w-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-10 h-10 rounded-2xl bg-orange-50 border border-orange-200 text-orange-700 flex items-center justify-center">
@@ -1761,7 +1811,7 @@ export default function PortalDashboardPage() {
           </div>
         )}
       </div>
-      {!teaching && !exec && !finance && !bk && !guruWali && !studentPersonal && !library && !alumni && (
+      {!teaching && !exec && !showFinanceSection && !bk && !guruWali && !studentPersonal && !library && !alumni && (
         <div className="glass-card rounded-3xl p-6 sm:p-8 text-center space-y-3">
           <Sparkles className="w-8 h-8 text-emerald-600 mx-auto" />
           <h2 className="text-base font-bold text-slate-900">Selamat Datang di Portal Terpadu</h2>

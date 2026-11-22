@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { AppRole } from '@/types/database';
+import type { TaughtSubjectMenu } from '@/lib/domain/penilaian';
 import { hasRolePermission } from '@/lib/auth/rbac';
 
 export interface PortalTeacherAssignments {
@@ -11,6 +12,7 @@ export interface PortalTeacherAssignments {
   homeroomClassroomIds?: string[];
   taughtClassroomIds?: string[];
   taughtSubjectIds?: string[];
+  taughtSubjects?: TaughtSubjectMenu[];
   guruWaliStudentIds?: string[];
   isHomeroomTeacher: boolean;
   isGuruWali: boolean;

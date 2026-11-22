@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
+  Award,
   BookOpen,
   BookOpenCheck,
   Briefcase,
@@ -31,6 +32,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   Smartphone,
   User,
   UserCheck,
@@ -40,12 +42,14 @@ import {
 } from 'lucide-react';
 import type { AppRole } from '@/types/database';
 import { PERMISSIONS, canAccessPortalPath, hasRolePermission } from '@/lib/auth/rbac';
+import { formatChapterLabel, type TaughtSubjectMenu } from '@/lib/domain/penilaian';
 import { clearPortalSessionCache } from '@/lib/hooks/use-portal-session';
 
 interface TeacherOperationalAssignments {
   teacherId: string;
   dutyCodes: string[];
   dutyNames: string[];
+  taughtSubjects?: TaughtSubjectMenu[];
   isHomeroomTeacher: boolean;
   isGuruWali: boolean;
   isPicketTeacher: boolean;
@@ -491,6 +495,20 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         allowedRoles: PERMISSIONS.JURNAL_ACARA_VIEW,
       },
       {
+        href: '/portal/akademik/kkm',
+        path: '/portal/akademik/kkm',
+        label: 'Pengaturan KKM',
+        icon: <SlidersHorizontal className="w-3.5 h-3.5" />,
+        allowedRoles: PERMISSIONS.KKM_MANAGE,
+      },
+      {
+        href: '/portal/penilaian/monitoring',
+        path: '/portal/penilaian/monitoring',
+        label: 'Monitoring Penilaian',
+        icon: <Award className="w-3.5 h-3.5" />,
+        allowedRoles: PERMISSIONS.PENILAIAN_ADMIN_READ,
+      },
+      {
         id: 'akademik-rekap-absensi',
         label: 'Rekapitulasi Absensi',
         icon: <ClipboardCheck className="w-3.5 h-3.5" />,
@@ -826,6 +844,13 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         icon: <ShieldAlert className="w-3.5 h-3.5" />,
         allowedRoles: ['SISWA'],
       },
+      {
+        href: '/portal/siswa/nilai',
+        path: '/portal/siswa/nilai',
+        label: 'Nilai & Penilaian',
+        icon: <Award className="w-3.5 h-3.5" />,
+        allowedRoles: ['SISWA'],
+      },
     ],
   },
   {
@@ -873,6 +898,13 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         path: '/portal/orang-tua/bk',
         label: 'Catatan BK Anak',
         icon: <ShieldAlert className="w-3.5 h-3.5" />,
+        allowedRoles: ['ORANG_TUA'],
+      },
+      {
+        href: '/portal/orang-tua/nilai',
+        path: '/portal/orang-tua/nilai',
+        label: 'Nilai & Penilaian Anak',
+        icon: <Award className="w-3.5 h-3.5" />,
         allowedRoles: ['ORANG_TUA'],
       },
     ],
@@ -1212,6 +1244,10 @@ const PAGE_TITLES: Record<string, string> = {
   '/portal/orang-tua/spp': 'Tagihan & Pembayaran SPP Anak',
   '/portal/orang-tua/bk': 'Catatan BK Anak',
   '/portal/akademik/kelas-jadwal/piket-kelas': 'Manajemen Jadwal Piket Kelas',
+  '/portal/akademik/kkm': 'Pengaturan Nilai Minimal Ketuntasan (KKM)',
+  '/portal/penilaian/monitoring': 'Monitoring Penilaian Seluruh Mapel',
+  '/portal/siswa/nilai': 'Rekap Nilai & Penilaian Saya',
+  '/portal/orang-tua/nilai': 'Rekap Nilai & Penilaian Anak',
   '/portal/tabungan-saya': 'Tabungan Digital Saya',
   '/portal/akun/profil': 'Profil Akun',
   '/portal/akun/manajemen-pengguna': 'Manajemen Pengguna & Persetujuan Akun',
@@ -1233,13 +1269,25 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    fetch('/api/auth/me')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.user) setUser(data.user);
-      })
-      .catch(() => {})
-      .finally(() => setAuthLoaded(true));
+    const loadMe = () => {
+      fetch('/api/auth/me')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.user) setUser(data.user);
+        })
+        .catch(() => {})
+        .finally(() => setAuthLoaded(true));
+    };
+    loadMe();
+
+    const onChaptersUpdated = () => {
+      clearPortalSessionCache();
+      loadMe();
+    };
+    window.addEventListener('penilaian-chapters-updated', onChaptersUpdated);
+    return () => {
+      window.removeEventListener('penilaian-chapters-updated', onChaptersUpdated);
+    };
   }, []);
 
   async function handleLogout() {
@@ -1326,21 +1374,89 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
     return false;
   }
 
-  const visibleGroups = ACCORDION_GROUPS.map((group) => ({
-    ...group,
-    items: group.items
-      .filter(hasRoleAccess)
-      .map((item) =>
-        item.children
-          ? { ...item, children: item.children.filter(hasRoleAccess) }
-          : item
-      )
-      .filter((item) => !item.children || item.children.length > 0),
-  })).filter((g) => g.items.length > 0);
+  const dynamicPenilaianGroups: AccordionGroup[] = (
+    user?.teacherAssignments?.taughtSubjects || []
+  ).map((sub) => {
+    const formatifChildren: NavItem[] =
+      sub.chapters.length > 0
+        ? sub.chapters.map((ch) => ({
+            href: `/portal/penilaian/${sub.subjectId}/formatif?chapterId=${ch.id}`,
+            path: `/portal/penilaian/${sub.subjectId}/formatif`,
+            label:
+              sub.classrooms.length > 1
+                ? `${formatChapterLabel(ch.chapterNumber, ch.title)} (${ch.gradeLevel})`
+                : formatChapterLabel(ch.chapterNumber, ch.title),
+            icon: <BookOpen className="w-3 h-3" />,
+          }))
+        : [
+            {
+              href: `/portal/penilaian/${sub.subjectId}/formatif`,
+              path: `/portal/penilaian/${sub.subjectId}/formatif`,
+              label: 'Kelola BAB (Formatif)',
+              icon: <BookOpen className="w-3 h-3" />,
+            },
+          ];
+
+    return {
+      id: `penilaian-${sub.subjectId}`,
+      label: `Penilaian ${sub.subjectName}`,
+      icon: <Award className="w-4 h-4" />,
+      items: [
+        {
+          id: `penilaian-${sub.subjectId}-formatif`,
+          label: 'Formatif (Lingkup BAB)',
+          icon: <BookOpen className="w-3.5 h-3.5" />,
+          children: formatifChildren,
+        },
+        {
+          href: `/portal/penilaian/${sub.subjectId}/sumatif`,
+          path: `/portal/penilaian/${sub.subjectId}/sumatif`,
+          label: 'Sumatif (Lingkup Materi)',
+          icon: <ClipboardCheck className="w-3.5 h-3.5" />,
+        },
+        {
+          href: `/portal/penilaian/${sub.subjectId}/sts`,
+          path: `/portal/penilaian/${sub.subjectId}/sts`,
+          label: 'STS (Sumatif Tengah Semester)',
+          icon: <FileCheck2 className="w-3.5 h-3.5" />,
+        },
+        {
+          href: `/portal/penilaian/${sub.subjectId}/sas`,
+          path: `/portal/penilaian/${sub.subjectId}/sas`,
+          label: 'SAS (Sumatif Akhir Semester)',
+          icon: <FileText className="w-3.5 h-3.5" />,
+        },
+        {
+          href: `/portal/penilaian/${sub.subjectId}/praktik`,
+          path: `/portal/penilaian/${sub.subjectId}/praktik`,
+          label: 'Praktik',
+          icon: <Award className="w-3.5 h-3.5" />,
+        },
+      ],
+    };
+  });
+
+  const visibleGroups = [
+    ...ACCORDION_GROUPS.map((group) => ({
+      ...group,
+      items: group.items
+        .filter(hasRoleAccess)
+        .map((item) =>
+          item.children
+            ? { ...item, children: item.children.filter(hasRoleAccess) }
+            : item
+        )
+        .filter((item) => !item.children || item.children.length > 0),
+    })).filter((g) => g.items.length > 0),
+    ...dynamicPenilaianGroups,
+  ];
 
   const currentTab = searchParams.get('tab');
+  const currentChapterId = searchParams.get('chapterId');
   const normalizedPath = pathname.replace(/\/$/, '') || '/portal';
-  const pageTitle = PAGE_TITLES[normalizedPath] || 'Portal Terpadu';
+  const pageTitle =
+    PAGE_TITLES[normalizedPath] ||
+    (normalizedPath.startsWith('/portal/penilaian/') ? 'Penilaian Mata Pelajaran' : 'Portal Terpadu');
 
   const SidebarContent = (
     <div className="flex flex-col h-full">
@@ -1439,7 +1555,12 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
                             {isSubOpen && (
                               <div className="mt-1 ml-2.5 pl-2.5 border-l border-slate-200/80 space-y-0.5">
                                 {item.children.map((subItem) => {
-                                  const isSubActive = pathname === subItem.path;
+                                  const subHrefChapter = subItem.href?.includes('chapterId=')
+                                    ? subItem.href.split('chapterId=')[1]
+                                    : null;
+                                  const isSubActive = subHrefChapter
+                                    ? pathname === subItem.path && currentChapterId === subHrefChapter
+                                    : pathname === subItem.path;
                                   return (
                                     <Link
                                       key={subItem.href}

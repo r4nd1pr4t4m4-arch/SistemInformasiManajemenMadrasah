@@ -1,6 +1,7 @@
 import { createSupabaseServerClient, isSupabaseServerConfigured } from '@/lib/supabase/server';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { mapDutyCodeToRole } from '@/lib/auth/rbac';
+import type { TaughtSubjectMenu } from '@/lib/domain/penilaian';
 import type { AppRole } from '@/types/database';
 
 export interface TeacherOperationalAssignments {
@@ -10,6 +11,7 @@ export interface TeacherOperationalAssignments {
   homeroomClassroomIds: string[];
   taughtClassroomIds: string[];
   taughtSubjectIds: string[];
+  taughtSubjects: TaughtSubjectMenu[];
   guruWaliStudentIds: string[];
   isHomeroomTeacher: boolean;
   isGuruWali: boolean;
@@ -71,6 +73,26 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
 
     if (teacherRow?.id) {
       const teacherId = teacherRow.id as string;
+      const { data: activeYearRow } = await db
+        .from('academic_years')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      const activeYearId = (activeYearRow?.id as string | undefined) ?? null;
+
+      let schedulesQuery = db
+        .from('schedules')
+        .select(
+          'classroom_id, subject_id, academic_year_id, classroom:classrooms(id, name, grade_level), subject:subjects(id, code, name)'
+        )
+        .eq('teacher_id', teacherId);
+
+      if (activeYearId) {
+        schedulesQuery = schedulesQuery.eq('academic_year_id', activeYearId);
+      }
+
       const [
         { data: dutyRows },
         { data: homeroomRows },
@@ -87,7 +109,7 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
           .eq('teacher_id', teacherId)
           .eq('is_active', true),
         db.from('classrooms').select('id').eq('homeroom_teacher_id', teacherId),
-        db.from('schedules').select('classroom_id, subject_id').eq('teacher_id', teacherId),
+        schedulesQuery,
         db.from('guru_wali_assignments').select('id, student_id').eq('teacher_id', teacherId),
         db.from('picket_schedules').select('id').eq('teacher_id', teacherId).limit(1),
         db
@@ -141,6 +163,80 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
       const isExamSupervisor = (examSupRows || []).length > 0;
       const isExamCommittee = (examComRows || []).length > 0;
 
+      // Build taughtSubjects grouped by subject_id for active academic year
+      const subjectMap = new Map<
+        string,
+        {
+          subjectId: string;
+          subjectCode: string;
+          subjectName: string;
+          classroomsMap: Map<string, { id: string; name: string; gradeLevel: string }>;
+        }
+      >();
+
+      for (const row of scheduleRows || []) {
+        const sub = Array.isArray(row.subject) ? row.subject[0] : row.subject;
+        const cls = Array.isArray(row.classroom) ? row.classroom[0] : row.classroom;
+        if (!sub?.id || !cls?.id) continue;
+
+        let entry = subjectMap.get(sub.id as string);
+        if (!entry) {
+          entry = {
+            subjectId: sub.id as string,
+            subjectCode: String(sub.code || ''),
+            subjectName: String(sub.name || ''),
+            classroomsMap: new Map(),
+          };
+          subjectMap.set(sub.id as string, entry);
+        }
+        entry.classroomsMap.set(cls.id as string, {
+          id: cls.id as string,
+          name: String(cls.name || ''),
+          gradeLevel: String(cls.grade_level || ''),
+        });
+      }
+
+      const taughtSubjects: TaughtSubjectMenu[] = [];
+      if (subjectMap.size > 0 && activeYearId) {
+        const subjectIds = Array.from(subjectMap.keys());
+        const { data: chapterRows } = await db
+          .from('assessment_chapters')
+          .select('id, subject_id, grade_level, chapter_number, title, sort_order')
+          .eq('academic_year_id', activeYearId)
+          .in('subject_id', subjectIds)
+          .order('sort_order', { ascending: true })
+          .order('chapter_number', { ascending: true });
+
+        for (const entry of subjectMap.values()) {
+          const classrooms = Array.from(entry.classroomsMap.values()).sort((a, b) =>
+            a.name.localeCompare(b.name)
+          );
+          const gradeLevels = new Set(classrooms.map((c) => c.gradeLevel));
+          const chapters = (chapterRows || [])
+            .filter(
+              (ch) =>
+                ch.subject_id === entry.subjectId &&
+                gradeLevels.has(String(ch.grade_level || ''))
+            )
+            .map((ch) => ({
+              id: ch.id as string,
+              gradeLevel: String(ch.grade_level || ''),
+              chapterNumber: Number(ch.chapter_number),
+              title: (ch.title as string | null) ?? null,
+              sortOrder: Number(ch.sort_order),
+            }));
+
+          taughtSubjects.push({
+            subjectId: entry.subjectId,
+            subjectCode: entry.subjectCode,
+            subjectName: entry.subjectName,
+            classrooms,
+            chapters,
+          });
+        }
+        taughtSubjects.sort((a, b) => a.subjectName.localeCompare(b.subjectName));
+      }
+
       teacherAssignments = {
         teacherId,
         dutyCodes,
@@ -148,6 +244,7 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
         homeroomClassroomIds,
         taughtClassroomIds,
         taughtSubjectIds,
+        taughtSubjects,
         guruWaliStudentIds,
         isHomeroomTeacher,
         isGuruWali,

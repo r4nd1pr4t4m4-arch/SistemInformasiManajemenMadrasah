@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
+import { mapDutyCodeToRole } from '@/lib/auth/rbac';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getWibTodayDateString } from '@/lib/domain/jtm-late-penalty';
 import type { AppRole } from '@/types/database';
@@ -134,13 +135,14 @@ export async function GET() {
     additionalDuties = (dutyRows || []).map((d) => {
       const dt = Array.isArray(d.duty_type) ? d.duty_type[0] : d.duty_type;
       const code = String(dt?.code || '');
-      const mappedRole = DUTY_CODE_TO_ROLE[code];
+      const name = String(dt?.name || code);
+      const mappedRole = DUTY_CODE_TO_ROLE[code] || mapDutyCodeToRole(code) || mapDutyCodeToRole(name);
       if (mappedRole) effectiveRolesSet.add(mappedRole);
       return {
         id: d.id,
         decree_number: d.decree_number,
         code,
-        name: String(dt?.name || code),
+        name,
         receives_allowance: Boolean(dt?.receives_allowance),
         monthly_allowance: Number(dt?.monthly_allowance ?? 0),
       };
@@ -175,15 +177,36 @@ export async function GET() {
     Boolean(teacherRow) ||
     hasRole(['GURU', 'WALI_KELAS', 'GURU_WALI', 'GURU_BK', 'WAKA_KURIKULUM', 'WAKA_KESISWAAN']);
 
-  const isFinanceRole = hasRole([
+  const isPrivilegedFinanceBaseRole = hasAnyRole(session, [
     'SUPERADMIN',
     'OPERATOR',
     'KEPALA_LEMBAGA',
     'BENDAHARA',
-    'BENDAHARA_KOMITE',
-    'PENGELOLA_TABUNGAN',
     'KEPALA_TU',
   ]);
+  const isGuruOnlyDashboard = hasAnyRole(session, ['GURU']) && !isPrivilegedFinanceBaseRole;
+  const hasBendaharaKomiteDuty = additionalDuties.some(
+    (d) =>
+      mapDutyCodeToRole(d.code) === 'BENDAHARA_KOMITE' ||
+      mapDutyCodeToRole(d.name) === 'BENDAHARA_KOMITE'
+  );
+  const hasPengelolaTabunganDuty = additionalDuties.some(
+    (d) =>
+      mapDutyCodeToRole(d.code) === 'PENGELOLA_TABUNGAN' ||
+      mapDutyCodeToRole(d.name) === 'PENGELOLA_TABUNGAN'
+  );
+
+  const isFinanceRole = isGuruOnlyDashboard
+    ? hasBendaharaKomiteDuty || hasPengelolaTabunganDuty
+    : hasRole([
+        'SUPERADMIN',
+        'OPERATOR',
+        'KEPALA_LEMBAGA',
+        'BENDAHARA',
+        'BENDAHARA_KOMITE',
+        'PENGELOLA_TABUNGAN',
+        'KEPALA_TU',
+      ]);
 
   const isBkRole = hasRole([
     'SUPERADMIN',
@@ -475,27 +498,33 @@ export async function GET() {
   // --- C. Finance Summary (SPP, Tabungan, Honorarium) ---
   let financeSummary: Record<string, unknown> | null = null;
   if (isFinanceRole) {
-    const canSeeSpp = hasRole([
-      'SUPERADMIN',
-      'OPERATOR',
-      'KEPALA_LEMBAGA',
-      'BENDAHARA',
-      'BENDAHARA_KOMITE',
-    ]);
-    const canSeeTabungan = hasRole([
-      'SUPERADMIN',
-      'OPERATOR',
-      'KEPALA_LEMBAGA',
-      'PENGELOLA_TABUNGAN',
-      'BENDAHARA',
-    ]);
-    const canSeeHonorarium = hasRole([
-      'SUPERADMIN',
-      'OPERATOR',
-      'KEPALA_LEMBAGA',
-      'BENDAHARA',
-      'KEPALA_TU',
-    ]);
+    const canSeeSpp = isGuruOnlyDashboard
+      ? hasBendaharaKomiteDuty
+      : hasRole([
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'BENDAHARA',
+          'BENDAHARA_KOMITE',
+        ]);
+    const canSeeTabungan = isGuruOnlyDashboard
+      ? hasPengelolaTabunganDuty
+      : hasRole([
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'PENGELOLA_TABUNGAN',
+          'BENDAHARA',
+        ]);
+    const canSeeHonorarium = isGuruOnlyDashboard
+      ? false
+      : hasRole([
+          'SUPERADMIN',
+          'OPERATOR',
+          'KEPALA_LEMBAGA',
+          'BENDAHARA',
+          'KEPALA_TU',
+        ]);
 
     const [
       billsRes,
