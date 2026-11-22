@@ -33,9 +33,33 @@ function syncGlobalWebsiteUrl(url?: string | null) {
   (globalThis as Record<string, unknown>).__simmsWebsiteUrl = normalized.replace(/\/$/, '');
 }
 
+function syncBrowserFavicon(logoUrl?: string | null) {
+  if (typeof document === 'undefined') return;
+  const href = logoUrl?.trim() || '/favicon.ico';
+  const rels = ['icon', 'shortcut icon', 'apple-touch-icon'];
+  for (const rel of rels) {
+    let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = rel;
+      document.head.appendChild(link);
+    }
+    if (link.href !== href && link.getAttribute('href') !== href) {
+      link.setAttribute('href', href);
+    }
+  }
+}
+
 export function invalidateInstitutionSettingsCache() {
   cachedSettings = null;
   inflightPromise = null;
+}
+
+export function notifyInstitutionSettingsUpdated() {
+  invalidateInstitutionSettingsCache();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('institution-settings-updated'));
+  }
 }
 
 export async function fetchInstitutionSettings(): Promise<InstitutionSettings> {
@@ -69,13 +93,25 @@ export function useInstitutionSettings(): InstitutionSettings {
 
   useEffect(() => {
     let mounted = true;
-    fetchInstitutionSettings().then((data) => {
-      if (mounted) {
+    const load = () => {
+      fetchInstitutionSettings().then((data) => {
+        if (!mounted) return;
         setSchool(data);
-      }
-    });
+        if (data.logo_url !== undefined) {
+          syncBrowserFavicon(data.logo_url);
+        }
+      });
+    };
+    load();
+
+    const onUpdated = () => {
+      invalidateInstitutionSettingsCache();
+      load();
+    };
+    window.addEventListener('institution-settings-updated', onUpdated);
     return () => {
       mounted = false;
+      window.removeEventListener('institution-settings-updated', onUpdated);
     };
   }, []);
 

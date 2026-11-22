@@ -12,6 +12,7 @@ const SettingsUpdateSchema = z.object({
   npsn: z.string().optional().nullable(),
   nsm: z.string().optional().nullable(),
   accreditation: z.string().optional().nullable(),
+  logo_url: z.string().optional().nullable(),
   student_org_label: z.string().min(2),
   head_title_label: z.string().min(2),
   headmaster_name: z.string().optional().nullable(),

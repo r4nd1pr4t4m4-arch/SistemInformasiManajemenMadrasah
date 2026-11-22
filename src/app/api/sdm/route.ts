@@ -18,6 +18,19 @@ const GtkCreateSchema = z.object({
   address: z.string().optional().nullable(),
   education_level: z.string().optional().nullable(),
   major: z.string().optional().nullable(),
+  last_campus: z.string().optional().nullable(),
+  graduation_year: z.coerce.number().int().min(1950).max(2100).optional().nullable(),
+  thesis_title: z.string().optional().nullable(),
+  thesis_abstract: z.string().optional().nullable(),
+  thesis_keywords: z.union([z.array(z.string()), z.string()]).optional().nullable(),
+  thesis_article_url: z
+    .string()
+    .trim()
+    .refine((val) => !val || /^https?:\/\//i.test(val), {
+      message: 'URL artikel ilmiah harus diawali http:// atau https://',
+    })
+    .optional()
+    .nullable(),
   employment_status: z.string().optional().nullable(),
   join_date: z.string().optional().nullable(),
   profile_id: z.string().uuid().optional().nullable(),
@@ -107,6 +120,23 @@ function emptyToNull<T extends Record<string, unknown>>(obj: T): T {
     result[key] = val === '' ? null : val;
   }
   return result as T;
+}
+
+function normalizeThesisKeywords(value: string | string[] | null | undefined): string[] {
+  const rawList = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const item of rawList) {
+    const cleaned = item.trim().replace(/^#+/, '').trim();
+    if (!cleaned || seen.has(cleaned.toLowerCase())) continue;
+    seen.add(cleaned.toLowerCase());
+    normalized.push(cleaned);
+  }
+  return normalized;
 }
 
 async function fetchActiveAccounts(supabase: ReturnType<typeof createSupabaseAdminClient>) {
@@ -263,9 +293,13 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      const insertPayload = {
+        ...parsed.data,
+        thesis_keywords: normalizeThesisKeywords(parsed.data.thesis_keywords),
+      };
       const { data, error } = await supabase
         .from('teachers_staff')
-        .insert(parsed.data)
+        .insert(insertPayload)
         .select('*')
         .single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -381,10 +415,17 @@ export async function PATCH(request: NextRequest) {
           { status: 400 }
         );
       }
-      const { id, ...rest } = parsed.data;
+      const { id, thesis_keywords, ...rest } = parsed.data;
+      const updatePayload: Record<string, unknown> = {
+        ...rest,
+        updated_at: new Date().toISOString(),
+      };
+      if (thesis_keywords !== undefined) {
+        updatePayload.thesis_keywords = normalizeThesisKeywords(thesis_keywords);
+      }
       const { data, error } = await supabase
         .from('teachers_staff')
-        .update({ ...rest, updated_at: new Date().toISOString() })
+        .update(updatePayload)
         .eq('id', id)
         .select('*')
         .single();

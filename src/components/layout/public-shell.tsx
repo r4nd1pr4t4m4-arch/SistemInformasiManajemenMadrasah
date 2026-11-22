@@ -131,9 +131,17 @@ export function PublicNavbar() {
       <header ref={headerRef} className="sticky top-0 z-40 glass-nav border-b border-slate-200/70">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 sm:gap-4 relative z-40">
           <Link href="/" className="flex items-center gap-3 min-w-0 group">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0 group-hover:scale-105 transition">
-              {(school.short_name || school.name || 'S').slice(0, 1).toUpperCase()}
-            </div>
+            {school.logo_url ? (
+              <img
+                src={school.logo_url}
+                alt={school.name || 'Logo Lembaga'}
+                className="w-9 h-9 rounded-xl object-contain bg-white border border-slate-200/80 p-0.5 shadow-sm shrink-0 group-hover:scale-105 transition"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0 group-hover:scale-105 transition">
+                {(school.short_name || school.name || 'S').slice(0, 1).toUpperCase()}
+              </div>
+            )}
             <div className="min-w-0">
               {isLoadingBrand ? (
                 <div className="space-y-1.5">
@@ -289,9 +297,17 @@ export function PublicFooter() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 text-xs text-slate-600">
         <div className="space-y-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
-              <Building2 className="w-4 h-4" />
-            </div>
+            {school.logo_url ? (
+              <img
+                src={school.logo_url}
+                alt={school.name || 'Logo Lembaga'}
+                className="w-8 h-8 rounded-xl object-contain bg-white border border-slate-200/80 p-0.5 shadow-xs shrink-0"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Building2 className="w-4 h-4" />
+              </div>
+            )}
             <p className="font-bold text-slate-900 text-sm leading-tight">
               {school.name || school.short_name || 'SIMMS'}
             </p>

@@ -55,7 +55,9 @@ export async function getPublicDirectoryData() {
     const [{ data: teachers }, { data: achievements }] = await Promise.all([
       supabase
         .from('teachers_staff')
-        .select('id, full_name, staff_type, employment_status, education_level, major, photo_url')
+        .select(
+          'id, full_name, staff_type, nip, nuptk, employment_status, education_level, major, last_campus, graduation_year, thesis_title, thesis_abstract, thesis_keywords, thesis_article_url, photo_url'
+        )
         .eq('is_active', true)
         .eq('show_in_public_directory', true)
         .order('full_name'),
@@ -66,8 +68,66 @@ export async function getPublicDirectoryData() {
         .limit(20),
     ]);
 
+    const teacherRows = teachers || [];
+    const teacherIds = teacherRows.map((t) => t.id);
+
+    const dutiesMap = new Map<string, string[]>();
+    const subjectsMap = new Map<string, string[]>();
+    const groupsMap = new Map<string, string[]>();
+
+    if (teacherIds.length > 0) {
+      const [{ data: duties }, { data: schedules }, { data: homerooms }] = await Promise.all([
+        supabase
+          .from('teacher_additional_duties')
+          .select('teacher_id, duty_type:additional_duty_types(name)')
+          .in('teacher_id', teacherIds)
+          .eq('is_active', true),
+        supabase
+          .from('schedules')
+          .select('teacher_id, subject:subjects(name, subject_group)')
+          .in('teacher_id', teacherIds),
+        supabase
+          .from('classrooms')
+          .select('homeroom_teacher_id, name')
+          .in('homeroom_teacher_id', teacherIds),
+      ]);
+
+      const pushUnique = (map: Map<string, string[]>, key: string, val: string | null | undefined) => {
+        const cleaned = (val || '').trim();
+        if (!cleaned) return;
+        const arr = map.get(key) || [];
+        if (!arr.includes(cleaned)) {
+          arr.push(cleaned);
+          map.set(key, arr);
+        }
+      };
+
+      for (const row of duties || []) {
+        const dutyType = Array.isArray(row.duty_type) ? row.duty_type[0] : row.duty_type;
+        pushUnique(dutiesMap, row.teacher_id, dutyType?.name);
+      }
+      for (const row of homerooms || []) {
+        if (row.homeroom_teacher_id && row.name) {
+          pushUnique(dutiesMap, row.homeroom_teacher_id, `Wali Kelas ${row.name}`);
+        }
+      }
+      for (const row of schedules || []) {
+        const subj = Array.isArray(row.subject) ? row.subject[0] : row.subject;
+        pushUnique(subjectsMap, row.teacher_id, subj?.name);
+        pushUnique(groupsMap, row.teacher_id, subj?.subject_group);
+      }
+    }
+
+    const enrichedTeachers = teacherRows.map((t) => ({
+      ...t,
+      thesis_keywords: Array.isArray(t.thesis_keywords) ? t.thesis_keywords : [],
+      additional_duties: dutiesMap.get(t.id) || [],
+      subjects: subjectsMap.get(t.id) || [],
+      subject_groups: groupsMap.get(t.id) || [],
+    }));
+
     return {
-      teachers: teachers || [],
+      teachers: enrichedTeachers,
       achievements: achievements || [],
     };
   } catch {

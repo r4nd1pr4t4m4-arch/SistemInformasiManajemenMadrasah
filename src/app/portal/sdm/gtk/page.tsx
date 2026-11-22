@@ -46,6 +46,12 @@ type GtkItem = {
   address: string | null;
   education_level: string | null;
   major: string | null;
+  last_campus: string | null;
+  graduation_year: number | null;
+  thesis_title: string | null;
+  thesis_abstract: string | null;
+  thesis_keywords: string[] | null;
+  thesis_article_url: string | null;
   employment_status: string | null;
   join_date: string | null;
   is_active: boolean;
@@ -67,6 +73,12 @@ const EMPTY_FORM = {
   address: '',
   education_level: 'S1',
   major: '',
+  last_campus: '',
+  graduation_year: '',
+  thesis_title: '',
+  thesis_abstract: '',
+  thesis_keywords: '',
+  thesis_article_url: '',
   employment_status: 'GTY',
   join_date: '',
   profile_id: '',
@@ -223,6 +235,12 @@ export default function ManajemenGtkPage() {
       address: item.address || '',
       education_level: item.education_level || '',
       major: item.major || '',
+      last_campus: item.last_campus || '',
+      graduation_year: item.graduation_year ? String(item.graduation_year) : '',
+      thesis_title: item.thesis_title || '',
+      thesis_abstract: item.thesis_abstract || '',
+      thesis_keywords: Array.isArray(item.thesis_keywords) ? item.thesis_keywords.join(', ') : '',
+      thesis_article_url: item.thesis_article_url || '',
       employment_status: item.employment_status || 'GTY',
       join_date: item.join_date || '',
       profile_id: item.profile_id || '',
@@ -241,6 +259,22 @@ export default function ManajemenGtkPage() {
       setModalError('Nama lengkap minimal 2 karakter.');
       return;
     }
+
+    const gradYearTrimmed = form.graduation_year.trim();
+    let parsedGradYear: number | null = null;
+    if (gradYearTrimmed) {
+      const yr = Number(gradYearTrimmed);
+      if (!Number.isInteger(yr) || yr < 1950 || yr > 2100) {
+        setModalError('Tahun lulus harus berupa tahun valid antara 1950 hingga 2100.');
+        return;
+      }
+      parsedGradYear = yr;
+    }
+
+    const parsedKeywords = form.thesis_keywords
+      .split(',')
+      .map((kw) => kw.trim().replace(/^#+/, '').trim())
+      .filter(Boolean);
 
     setSaving(true);
     setModalError(null);
@@ -263,6 +297,12 @@ export default function ManajemenGtkPage() {
           address: form.address.trim(),
           education_level: form.education_level.trim(),
           major: form.major.trim(),
+          last_campus: form.last_campus.trim(),
+          graduation_year: parsedGradYear,
+          thesis_title: form.thesis_title.trim(),
+          thesis_abstract: form.thesis_abstract.trim(),
+          thesis_keywords: parsedKeywords,
+          thesis_article_url: form.thesis_article_url.trim(),
         }),
       });
       const data = await res.json();
@@ -1047,6 +1087,122 @@ export default function ManajemenGtkPage() {
                   onChange={(e) => setForm({ ...form, major: e.target.value })}
                   className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                 />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="gtk-last-campus"
+                  className="block text-xs font-semibold text-slate-600 mb-1"
+                >
+                  Nama Kampus Terakhir
+                </label>
+                <input
+                  id="gtk-last-campus"
+                  type="text"
+                  value={form.last_campus}
+                  onChange={(e) => setForm({ ...form, last_campus: e.target.value })}
+                  placeholder="Contoh: Universitas Negeri Malang"
+                  className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="gtk-graduation-year"
+                  className="block text-xs font-semibold text-slate-600 mb-1"
+                >
+                  Tahun Lulus
+                </label>
+                <input
+                  id="gtk-graduation-year"
+                  type="number"
+                  min={1950}
+                  max={2100}
+                  value={form.graduation_year}
+                  onChange={(e) => setForm({ ...form, graduation_year: e.target.value })}
+                  placeholder="Contoh: 2012"
+                  className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="sm:col-span-2 pt-2 border-t border-slate-100">
+                <p className="text-xs font-bold text-slate-700">
+                  Karya Ilmiah / Skripsi (Sinkron ke Direktori Publik GTK)
+                </p>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="gtk-thesis-title"
+                  className="block text-xs font-semibold text-slate-600 mb-1"
+                >
+                  Judul Skripsi / Karya Ilmiah
+                </label>
+                <input
+                  id="gtk-thesis-title"
+                  type="text"
+                  value={form.thesis_title}
+                  onChange={(e) => setForm({ ...form, thesis_title: e.target.value })}
+                  placeholder="Contoh: Pengembangan Media Simulasi Interaktif Berbasis Inkuiri Terbimbing..."
+                  className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="gtk-thesis-abstract"
+                  className="block text-xs font-semibold text-slate-600 mb-1"
+                >
+                  Abstrak Skripsi
+                </label>
+                <textarea
+                  id="gtk-thesis-abstract"
+                  rows={4}
+                  value={form.thesis_abstract}
+                  onChange={(e) => setForm({ ...form, thesis_abstract: e.target.value })}
+                  placeholder="Ringkasan abstrak penelitian atau skripsi..."
+                  className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="gtk-thesis-keywords"
+                  className="block text-xs font-semibold text-slate-600 mb-1"
+                >
+                  Kata Kunci Abstrak
+                </label>
+                <input
+                  id="gtk-thesis-keywords"
+                  type="text"
+                  value={form.thesis_keywords}
+                  onChange={(e) => setForm({ ...form, thesis_keywords: e.target.value })}
+                  placeholder="Pisahkan dengan koma, contoh: Simulasi Interaktif, Inkuiri Terbimbing, Fisika SMA"
+                  className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Setiap kata kunci akan ditampilkan sebagai tag #KataKunci pada modal abstrak di halaman Direktori.
+                </p>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="gtk-thesis-article-url"
+                  className="block text-xs font-semibold text-slate-600 mb-1"
+                >
+                  Tautan Artikel Ilmiah / Skripsi (URL)
+                </label>
+                <input
+                  id="gtk-thesis-article-url"
+                  type="url"
+                  value={form.thesis_article_url}
+                  onChange={(e) => setForm({ ...form, thesis_article_url: e.target.value })}
+                  placeholder="https://repository.kampus.ac.id/..."
+                  className="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Opsional. Jika diisi, tombol &ldquo;Buka Artikel Ilmiah&rdquo; pada modal abstrak di halaman Direktori akan membuka tautan ini.
+                </p>
               </div>
 
               <div>

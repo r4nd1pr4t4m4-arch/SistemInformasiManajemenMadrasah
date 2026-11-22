@@ -49,6 +49,7 @@ import {
   type TaughtSubjectMenu,
 } from '@/lib/domain/penilaian';
 import { clearPortalSessionCache } from '@/lib/hooks/use-portal-session';
+import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 
 interface TeacherOperationalAssignments {
   teacherId: string;
@@ -1263,6 +1264,7 @@ const PAGE_TITLES: Record<string, string> = {
 function PortalShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const school = useInstitutionSettings();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
@@ -1537,11 +1539,21 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full">
       <div className="px-4 py-4 border-b border-slate-200/70 flex items-center justify-between gap-2">
         <Link href="/portal" onClick={() => setSidebarOpen(false)} className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold shadow-sm shrink-0">
-            <Building2 className="w-5 h-5" />
-          </div>
+          {school.logo_url ? (
+            <img
+              src={school.logo_url}
+              alt={school.name || 'Logo Lembaga'}
+              className="w-9 h-9 rounded-xl object-contain bg-white border border-slate-200/80 p-0.5 shadow-sm shrink-0"
+            />
+          ) : (
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold shadow-sm shrink-0">
+              <Building2 className="w-5 h-5" />
+            </div>
+          )}
           <div className="min-w-0">
-            <p className="font-bold text-slate-900 text-sm leading-tight truncate">SIMMS Portal</p>
+            <p className="font-bold text-slate-900 text-sm leading-tight truncate">
+              {school.short_name || school.name || 'SIMMS Portal'}
+            </p>
             <p className="text-[11px] text-slate-500 truncate">Sistem Informasi Terpadu</p>
           </div>
         </Link>

@@ -6,6 +6,7 @@ import {
   AlertCircle,
   Building2,
   CheckCircle2,
+  ImageUp,
   Loader2,
   Newspaper,
   Plus,
@@ -17,7 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import type { InstitutionSettings, InstitutionType } from '@/types/database';
-import { invalidateInstitutionSettingsCache } from '@/lib/hooks/use-institution-settings';
+import { notifyInstitutionSettingsUpdated } from '@/lib/hooks/use-institution-settings';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 
@@ -44,11 +45,13 @@ export default function CmsProfilPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [settings, setSettings] = useState<InstitutionSettings | null>(null);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastBannerRef = useRef<HTMLDivElement | null>(null);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -97,6 +100,124 @@ export default function CmsProfilPage() {
     });
   }
 
+  function buildSettingsPayload(override?: Partial<InstitutionSettings>) {
+    if (!settings) return null;
+    const merged = { ...settings, ...override };
+    return {
+      institution_type: merged.institution_type,
+      name: (merged.name || '').trim(),
+      short_name: merged.short_name?.trim() || null,
+      npsn: merged.npsn?.trim() || null,
+      nsm: merged.nsm?.trim() || null,
+      accreditation: merged.accreditation?.trim() || null,
+      logo_url: merged.logo_url?.trim() || null,
+      student_org_label: merged.student_org_label,
+      head_title_label: merged.head_title_label,
+      headmaster_name: merged.headmaster_name?.trim() || null,
+      headmaster_greeting: merged.headmaster_greeting,
+      history: merged.history,
+      vision: merged.vision,
+      mission: (merged.mission || []).map((m) => m.trim()).filter(Boolean),
+      address: merged.address,
+      phone: merged.phone?.trim() || null,
+      email: merged.email?.trim() || null,
+      geofence_enabled: merged.geofence_enabled ?? true,
+      geofence_lat:
+        merged.geofence_lat !== null && merged.geofence_lat !== undefined
+          ? Number(merged.geofence_lat)
+          : null,
+      geofence_lng:
+        merged.geofence_lng !== null && merged.geofence_lng !== undefined
+          ? Number(merged.geofence_lng)
+          : null,
+      geofence_radius_meters: Number(merged.geofence_radius_meters),
+      social_links: merged.social_links || {},
+    };
+  }
+
+  async function persistSettings(payload: Record<string, unknown>, successMsg: string) {
+    const res = await fetch('/api/cms/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (data?.settings) setSettings(data.settings);
+      notifyInstitutionSettingsUpdated();
+      showToast('success', successMsg);
+    } else {
+      showToast('error', data?.error || 'Gagal menyimpan pengaturan.');
+    }
+  }
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !settings || !canManage) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    const allowedTypes = [
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'image/svg+xml',
+      'image/x-icon',
+      'image/vnd.microsoft.icon',
+    ];
+    const allowedExts = ['png', 'jpg', 'jpeg', 'webp', 'svg', 'ico'];
+    if (!allowedTypes.includes(file.type) && !allowedExts.includes(ext)) {
+      showToast('error', 'Format logo harus PNG, JPG, WEBP, SVG, atau ICO.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('error', 'Ukuran file logo maksimal 2 MB.');
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/cms/logo', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || 'Gagal mengunggah logo lembaga.');
+      }
+
+      if (data?.settings) {
+        setSettings(data.settings);
+      } else if (data?.logo_url) {
+        setSettings((prev) => (prev ? { ...prev, logo_url: data.logo_url } : prev));
+      }
+      notifyInstitutionSettingsUpdated();
+      showToast('success', 'Logo madrasah/sekolah berhasil diunggah dan disinkronkan.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Gagal mengunggah logo.');
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
+  async function handleRemoveLogo() {
+    if (!settings || !canManage || !settings.logo_url) return;
+    setUploadingLogo(true);
+    try {
+      const payload = buildSettingsPayload({ logo_url: null });
+      if (payload) {
+        await persistSettings(payload, 'Logo lembaga dihapus dan dikembalikan ke default.');
+      }
+    } catch {
+      showToast('error', 'Gagal menghapus logo lembaga.');
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
     if (!settings || !canManage) return;
@@ -133,40 +254,9 @@ export default function CmsProfilPage() {
 
     setSaving(true);
     try {
-      const res = await fetch('/api/cms/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          institution_type: settings.institution_type,
-          name: trimmedName,
-          short_name: settings.short_name?.trim() || null,
-          npsn: settings.npsn?.trim() || null,
-          nsm: settings.nsm?.trim() || null,
-          accreditation: settings.accreditation?.trim() || null,
-          student_org_label: settings.student_org_label,
-          head_title_label: settings.head_title_label,
-          headmaster_name: settings.headmaster_name?.trim() || null,
-          headmaster_greeting: settings.headmaster_greeting,
-          history: settings.history,
-          vision: settings.vision,
-          mission: (settings.mission || []).map((m) => m.trim()).filter(Boolean),
-          address: settings.address,
-          phone: settings.phone?.trim() || null,
-          email: settings.email?.trim() || null,
-          geofence_enabled: settings.geofence_enabled ?? true,
-          geofence_lat: lat,
-          geofence_lng: lng,
-          geofence_radius_meters: radius,
-          social_links: settings.social_links || {},
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        if (data?.settings) setSettings(data.settings);
-        invalidateInstitutionSettingsCache();
-        showToast('success', 'Pengaturan lembaga berhasil disimpan.');
-      } else {
-        showToast('error', data?.error || 'Gagal menyimpan pengaturan.');
+      const payload = buildSettingsPayload();
+      if (payload) {
+        await persistSettings(payload, 'Pengaturan lembaga berhasil disimpan.');
       }
     } catch {
       showToast('error', 'Terjadi kesalahan koneksi saat menyimpan pengaturan.');
@@ -276,6 +366,68 @@ export default function CmsProfilPage() {
           </div>
 
           <fieldset disabled={!canManage || saving} className="space-y-5">
+            {/* Logo Madrasah / Sekolah Upload & Preview */}
+            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                  {settings.logo_url ? (
+                    <img
+                      src={settings.logo_url}
+                      alt={settings.name || 'Logo Lembaga'}
+                      className="w-full h-full object-contain p-1.5"
+                    />
+                  ) : (
+                    <Building2 className="w-7 h-7 text-slate-400" />
+                  )}
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <p className="text-xs sm:text-sm font-bold text-slate-900">
+                    Logo Madrasah / Sekolah &amp; Favicon
+                  </p>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Logo ini otomatis disinkronkan ke Navbar, Footer, Sidebar Portal, Kartu Digital,
+                    dan Favicon browser. Format PNG/JPG/WEBP/SVG (maks. 2 MB).
+                  </p>
+                </div>
+              </div>
+
+              {canManage && (
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon"
+                    onChange={handleLogoUpload}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    disabled={uploadingLogo}
+                    onClick={() => logoInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-50"
+                  >
+                    {uploadingLogo ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <ImageUp className="w-3.5 h-3.5" />
+                    )}
+                    <span>{uploadingLogo ? 'Mengunggah...' : 'Upload Logo'}</span>
+                  </button>
+                  {settings.logo_url && (
+                    <button
+                      type="button"
+                      disabled={uploadingLogo}
+                      onClick={handleRemoveLogo}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="min-w-0">
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">

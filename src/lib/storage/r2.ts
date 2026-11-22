@@ -10,7 +10,8 @@ export type StorageFolder =
   | 'ebooks'
   | 'letters'
   | 'avatars'
-  | 'student-documents';
+  | 'student-documents'
+  | 'institution-logos';
 
 async function getR2Client(): Promise<S3Client> {
   const accountId = process.env.R2_ACCOUNT_ID;

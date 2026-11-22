@@ -11,6 +11,7 @@ const PresignSchema = z.object({
     'letters',
     'avatars',
     'student-documents',
+    'institution-logos',
   ]),
   fileName: z.string().min(1).max(200),
   contentType: z.string().min(1).max(120),
