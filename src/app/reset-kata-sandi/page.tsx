@@ -15,6 +15,7 @@ import {
 import { createSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { validatePasswordStrength } from '@/lib/auth/password-policy';
 import { PasswordInput } from '@/components/auth/password-strength-input';
+import { SmartCaptchaMount, useSmartCaptcha } from '@/components/security/smart-captcha';
 
 interface MfaFactor {
   id: string;
@@ -43,6 +44,7 @@ export default function ResetKataSandiPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
+  const captcha = useSmartCaptcha(true);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
@@ -123,13 +125,17 @@ export default function ResetKataSandiPage() {
 
     setSendingOtp(true);
     try {
+      const captchaPayload = await captcha.executeCaptcha();
       const res = await fetch('/api/auth/reset-password/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: trimmedEmail }),
+        body: JSON.stringify({ email: trimmedEmail, captcha: captchaPayload }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.turnstileUnavailable) {
+          captcha.forceLocalFallback();
+        }
         setFeedback({ type: 'error', text: data.error || 'Gagal mengirim kode OTP.' });
         return;
       }
@@ -517,6 +523,7 @@ export default function ResetKataSandiPage() {
           </form>
         </div>
       </div>
+      <SmartCaptchaMount containerRef={captcha.containerRef} />
     </div>
   );
 }

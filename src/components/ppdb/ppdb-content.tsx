@@ -32,6 +32,7 @@ import {
   type RegistrationCardData,
 } from '@/components/ppdb/registration-card';
 import { IndonesianAddressFields } from '@/components/ppdb/address-fields';
+import { SmartCaptchaMount, useSmartCaptcha } from '@/components/security/smart-captcha';
 
 interface ActivePeriod {
   name: string;
@@ -89,6 +90,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export function PpdbContent() {
+  const captcha = useSmartCaptcha(true);
   const [activeTab, setActiveTab] = useState<'daftar' | 'cek'>('daftar');
   const [loadingPeriod, setLoadingPeriod] = useState(true);
   const [periodError, setPeriodError] = useState<string | null>(null);
@@ -326,7 +328,8 @@ export function PpdbContent() {
         }
       }
 
-      setSubmitProgress('Menyimpan data pendaftaran...');
+      setSubmitProgress('Memverifikasi keamanan & menyimpan data pendaftaran...');
+      const captchaPayload = await captcha.executeCaptcha();
       const res = await fetch('/api/ppdb', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -338,11 +341,15 @@ export function PpdbContent() {
           parentName: trimmedParentName,
           pathway: activePathwayDef.code,
           documents: uploadedDocs,
+          captcha: captchaPayload,
         }),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.turnstileUnavailable) {
+          captcha.forceLocalFallback();
+        }
         showFormError(data.error || 'Gagal menyimpan pendaftaran PPDB.');
       } else {
         setUploadWarnings(failedDocLabels);
@@ -1090,6 +1097,7 @@ export function PpdbContent() {
           </div>
         )}
       </div>
+      <SmartCaptchaMount containerRef={captcha.containerRef} />
     </>
   );
 }

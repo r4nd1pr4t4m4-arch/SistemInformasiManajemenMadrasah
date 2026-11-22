@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { formatRupiah } from '@/lib/domain/honorarium';
 import { extractVerificationParams } from '@/lib/verification/document-verify';
+import { parseCaptchaHeader, verifyCaptchaToken } from '@/lib/security/captcha-server';
 
 export async function GET(request: NextRequest) {
   const rawRef = request.nextUrl.searchParams.get('ref') || '';
@@ -14,6 +15,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { valid: false, error: 'Masukkan nomor referensi atau scan QR Code dokumen.' },
       { status: 400 }
+    );
+  }
+
+  const captchaPayload = parseCaptchaHeader(request);
+  const captchaResult = await verifyCaptchaToken(captchaPayload, request);
+  if (!captchaResult.success) {
+    return NextResponse.json(
+      {
+        valid: false,
+        error: captchaResult.error || 'Verifikasi keamanan (CAPTCHA) gagal.',
+        turnstileUnavailable: Boolean(captchaResult.turnstileUnavailable),
+      },
+      { status: 403 }
     );
   }
 

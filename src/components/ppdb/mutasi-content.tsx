@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { IndonesianAddressFields } from '@/components/ppdb/address-fields';
 import { PpdbRegistrationCard, RegistrationCardData } from '@/components/ppdb/registration-card';
+import { SmartCaptchaMount, useSmartCaptcha } from '@/components/security/smart-captcha';
 
 interface ActivePeriod {
   name: string;
@@ -192,6 +193,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export function MutasiContent() {
+  const captcha = useSmartCaptcha(true);
   const [activeTab, setActiveTab] = useState<'daftar' | 'cek'>('daftar');
   const [activePeriod, setActivePeriod] = useState<ActivePeriod | null>(null);
   const [gradeLevels, setGradeLevels] = useState<string[]>(['VII', 'VIII', 'IX']);
@@ -427,6 +429,7 @@ export function MutasiContent() {
 
     setSubmitting(true);
     try {
+      const captchaPayload = await captcha.executeCaptcha();
       const res = await fetch('/api/ppdb', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -449,10 +452,14 @@ export function MutasiContent() {
             fileUrl: d.fileData,
             fileName: d.fileName,
           })),
+          captcha: captchaPayload,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.turnstileUnavailable) {
+          captcha.forceLocalFallback();
+        }
         showFormError(data.error || 'Gagal mengirim pengajuan mutasi masuk.');
         return;
       }
@@ -1127,6 +1134,7 @@ export function MutasiContent() {
           </div>
         </div>
       )}
+      <SmartCaptchaMount containerRef={captcha.containerRef} />
     </>
   );
 }

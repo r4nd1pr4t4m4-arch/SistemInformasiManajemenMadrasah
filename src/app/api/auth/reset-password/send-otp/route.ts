@@ -9,11 +9,14 @@ import {
   sendInstitutionalEmail,
 } from '@/lib/email/mailer';
 import { buildPasswordOtpEmail } from '@/lib/email/templates';
+import { verifyCaptchaToken } from '@/lib/security/captcha-server';
+import type { CaptchaPayload } from '@/lib/security/captcha-types';
 
 export const RESET_OTP_COOKIE_NAME = 'simms_reset_otp';
 
 const SendResetOtpSchema = z.object({
   email: z.string().email(),
+  captcha: z.custom<CaptchaPayload>().optional(),
 });
 
 export async function POST(request: Request) {
@@ -29,6 +32,17 @@ export async function POST(request: Request) {
     const parsed = SendResetOtpSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Alamat email tidak valid.' }, { status: 400 });
+    }
+
+    const captchaResult = await verifyCaptchaToken(parsed.data.captcha, request);
+    if (!captchaResult.success) {
+      return NextResponse.json(
+        {
+          error: captchaResult.error || 'Verifikasi keamanan (CAPTCHA) gagal.',
+          turnstileUnavailable: Boolean(captchaResult.turnstileUnavailable),
+        },
+        { status: 403 }
+      );
     }
 
     const email = parsed.data.email.trim().toLowerCase();

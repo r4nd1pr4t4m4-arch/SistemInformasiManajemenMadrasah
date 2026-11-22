@@ -19,6 +19,11 @@ import {
 } from 'lucide-react';
 import { PublicShell } from '@/components/layout/public-shell';
 import { extractVerificationParams } from '@/lib/verification/document-verify';
+import {
+  encodeCaptchaHeader,
+  SmartCaptchaMount,
+  useSmartCaptcha,
+} from '@/components/security/smart-captcha';
 
 interface VerificationResult {
   valid: boolean;
@@ -61,6 +66,11 @@ function VerifikasiContent() {
   const cameraSessionRef = useRef(0);
   const verifyAbortRef = useRef<AbortController | null>(null);
   const resultCardRef = useRef<HTMLDivElement | null>(null);
+  const {
+    containerRef: captchaContainerRef,
+    executeCaptcha,
+    forceLocalFallback,
+  } = useSmartCaptcha(true);
 
   const runVerification = useCallback(async (rawValue: string, explicitType?: string) => {
     const extracted = extractVerificationParams(rawValue);
@@ -80,20 +90,29 @@ function VerifikasiContent() {
     setLoading(true);
     setScanError(null);
     try {
+      const captchaPayload = await executeCaptcha();
       const qs = new URLSearchParams({ ref: extracted.ref });
       const finalType = explicitType || extracted.type;
       if (finalType) qs.set('type', finalType);
       const res = await fetch(`/api/public/verifikasi?${qs.toString()}`, {
         cache: 'no-store',
         signal: controller.signal,
+        headers: {
+          'x-captcha-payload': encodeCaptchaHeader(captchaPayload),
+        },
       });
-      const json = (await res.json().catch(() => null)) as VerificationResult | null;
+      const json = (await res.json().catch(() => null)) as
+        | (VerificationResult & { turnstileUnavailable?: boolean })
+        | null;
       if (!json) {
         setResult({
           valid: false,
           error: 'Respons server verifikasi tidak valid. Silakan coba lagi.',
         });
         return;
+      }
+      if (json.turnstileUnavailable) {
+        forceLocalFallback();
       }
       setResult(json);
       requestAnimationFrame(() => {
@@ -110,7 +129,7 @@ function VerifikasiContent() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [executeCaptcha, forceLocalFallback]);
 
   useEffect(() => {
     const extracted = extractVerificationParams(initialRef);
@@ -121,12 +140,18 @@ function VerifikasiContent() {
     const finalType = initialType || extracted.type;
     if (finalType) qs.set('type', finalType);
 
-    fetch(`/api/public/verifikasi?${qs.toString()}`, {
-      cache: 'no-store',
-      signal: controller.signal,
-    })
+    executeCaptcha()
+      .then((captchaPayload) =>
+        fetch(`/api/public/verifikasi?${qs.toString()}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: {
+            'x-captcha-payload': encodeCaptchaHeader(captchaPayload),
+          },
+        })
+      )
       .then((res) => res.json().catch(() => null))
-      .then((json: VerificationResult | null) => {
+      .then((json: (VerificationResult & { turnstileUnavailable?: boolean }) | null) => {
         setInputRef(extracted.ref);
         if (!json) {
           setResult({
@@ -134,6 +159,9 @@ function VerifikasiContent() {
             error: 'Respons server verifikasi tidak valid. Silakan coba lagi.',
           });
           return;
+        }
+        if (json.turnstileUnavailable) {
+          forceLocalFallback();
         }
         setResult(json);
       })
@@ -149,7 +177,7 @@ function VerifikasiContent() {
       });
 
     return () => controller.abort();
-  }, [initialRef, initialType]);
+  }, [initialRef, initialType, executeCaptcha, forceLocalFallback]);
 
   const stopCamera = useCallback(() => {
     cameraSessionRef.current += 1;
@@ -513,6 +541,7 @@ function VerifikasiContent() {
           )}
         </div>
       )}
+      <SmartCaptchaMount containerRef={captchaContainerRef} />
     </div>
   );
 }

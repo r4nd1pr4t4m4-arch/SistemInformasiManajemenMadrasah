@@ -16,9 +16,10 @@ import {
   User,
   UserPlus,
 } from 'lucide-react';
-import { createSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { validatePasswordStrength } from '@/lib/auth/password-policy';
 import { PasswordInput } from '@/components/auth/password-strength-input';
+import { SmartCaptchaMount, useSmartCaptcha } from '@/components/security/smart-captcha';
 
 interface StatusMessage {
   type: 'error' | 'success';
@@ -51,23 +52,6 @@ function getSafeRedirectPath(rawNext: string | null): string {
     return rawNext;
   }
   return '/portal';
-}
-
-function mapSupabaseAuthError(rawMessage: string): string {
-  const lower = rawMessage.toLowerCase();
-  if (lower.includes('invalid login credentials')) {
-    return 'Email atau kata sandi salah. Silakan periksa kembali.';
-  }
-  if (lower.includes('email not confirmed')) {
-    return 'Email akun Anda belum terkonfirmasi.';
-  }
-  if (lower.includes('too many requests') || lower.includes('rate limit')) {
-    return 'Terlalu banyak percobaan masuk. Silakan tunggu beberapa saat lalu coba lagi.';
-  }
-  if (lower.includes('network') || lower.includes('fetch')) {
-    return 'Gagal terhubung ke server autentikasi. Periksa koneksi internet Anda.';
-  }
-  return rawMessage;
 }
 
 function LoginCardSkeleton() {
@@ -107,6 +91,24 @@ function LoginCardContent() {
   } | null>(null);
   const [message, setMessage] = useState<StatusMessage | null>(null);
   const [urlStatusDismissed, setUrlStatusDismissed] = useState(false);
+  const [loginCaptchaRequired, setLoginCaptchaRequired] = useState(false);
+
+  const captcha = useSmartCaptcha(mode === 'register' || loginCaptchaRequired);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/auth/login', { cache: 'no-store' })
+      .then((res) => res.json().catch(() => null))
+      .then((data: { requireCaptcha?: boolean } | null) => {
+        if (active && data?.requireCaptcha) {
+          setLoginCaptchaRequired(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const statusParam = searchParams.get('account_status') || '';
   const urlStatusText = ACCOUNT_STATUS_MESSAGES[statusParam] || null;
@@ -160,13 +162,21 @@ function LoginCardContent() {
 
     setOtpSending(true);
     try {
+      const captchaPayload = await captcha.executeCaptcha();
       const res = await fetch('/api/auth/register/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: trimmedEmail, fullName: fullName.trim() }),
+        body: JSON.stringify({
+          email: trimmedEmail,
+          fullName: fullName.trim(),
+          captcha: captchaPayload,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.turnstileUnavailable) {
+          captcha.forceLocalFallback();
+        }
         if (res.status === 409 || data.code === 'EMAIL_ALREADY_REGISTERED') {
           setDuplicateEmailModal({
             email: data.email || trimmedEmail,
@@ -284,78 +294,30 @@ function LoginCardContent() {
 
     setLoading(true);
     try {
-      const supabase = createSupabaseBrowserClient();
-
       if (mode === 'login') {
-        const { data: authData, error } = await supabase.auth.signInWithPassword({
-          email: trimmedEmail,
-          password,
+        const captchaPayload = loginCaptchaRequired ? await captcha.executeCaptcha() : undefined;
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: trimmedEmail,
+            password,
+            ...(captchaPayload ? { captcha: captchaPayload } : {}),
+          }),
         });
-        if (error) {
-          setMessage({ type: 'error', text: mapSupabaseAuthError(error.message) });
-        } else if (authData.user) {
-          const { data: profile, error: profileErr } = await supabase
-            .from('profiles')
-            .select('is_active, account_status, rejection_reason')
-            .eq('id', authData.user.id)
-            .maybeSingle();
-
-          const fallbackProfile = profileErr
-            ? (
-                await supabase
-                  .from('profiles')
-                  .select('is_active')
-                  .eq('id', authData.user.id)
-                  .maybeSingle()
-              ).data
-            : profile;
-
-          const rawAccountStatus = (profile as { account_status?: string } | null)?.account_status;
-          const rawRejectionReason = (profile as { rejection_reason?: string | null } | null)
-            ?.rejection_reason;
-          const isPermanentRejected =
-            rawAccountStatus === 'DITOLAK_PERMANEN' ||
-            (rawAccountStatus === 'DITOLAK' &&
-              Boolean(rawRejectionReason?.startsWith('[TOLAK_PERMANEN]')));
-          const accountStatus = isPermanentRejected ? 'DITOLAK_PERMANEN' : rawAccountStatus;
-          const rejectionReason = rawRejectionReason
-            ? rawRejectionReason.replace(/^\[TOLAK_PERMANEN\]\s*/, '')
-            : null;
-          const isAllowed =
-            Boolean(fallbackProfile?.is_active) && (!accountStatus || accountStatus === 'AKTIF');
-
-          if (!isAllowed) {
-            await supabase.auth.signOut();
-            if (accountStatus === 'DITOLAK_PERMANEN') {
-              setMessage({
-                type: 'error',
-                text: rejectionReason
-                  ? `Pendaftaran akun Anda ditolak secara permanen oleh Admin. Alasan: ${rejectionReason}. Alamat email ini tidak dapat digunakan untuk mendaftar ulang.`
-                  : 'Pendaftaran akun Anda ditolak secara permanen oleh Admin dan alamat email ini tidak dapat digunakan untuk mendaftar ulang.',
-              });
-            } else if (accountStatus === 'DITOLAK') {
-              setMessage({
-                type: 'error',
-                text: rejectionReason
-                  ? `Pendaftaran akun Anda ditolak oleh Admin. Alasan: ${rejectionReason}. Anda dapat mendaftar ulang menggunakan email yang sama pada tab "Daftar Akun".`
-                  : 'Pendaftaran akun Anda ditolak oleh Admin. Anda dapat mendaftar ulang menggunakan email yang sama pada tab "Daftar Akun".',
-              });
-            } else if (accountStatus === 'NONAKTIF') {
-              setMessage({
-                type: 'error',
-                text: 'Akun Anda sedang dinonaktifkan oleh Admin. Silakan hubungi operator lembaga.',
-              });
-            } else {
-              setMessage({
-                type: 'error',
-                text: 'Akun Anda belum aktif dan sedang menunggu persetujuan Admin. Anda akan menerima email setelah akun disetujui.',
-              });
-            }
-          } else {
-            const safeNext = getSafeRedirectPath(searchParams.get('next'));
-            window.location.assign(safeNext);
-            return;
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (data.requireCaptcha) {
+            setLoginCaptchaRequired(true);
           }
+          if (data.turnstileUnavailable) {
+            captcha.forceLocalFallback();
+          }
+          setMessage({ type: 'error', text: data.error || 'Gagal masuk. Silakan coba lagi.' });
+        } else {
+          const safeNext = getSafeRedirectPath(searchParams.get('next'));
+          window.location.assign(safeNext);
+          return;
         }
       } else {
         const res = await fetch('/api/auth/register/confirm', {
@@ -761,6 +723,7 @@ function LoginCardContent() {
           </div>
         </div>
       )}
+      <SmartCaptchaMount containerRef={captcha.containerRef} />
     </>
   );
 }

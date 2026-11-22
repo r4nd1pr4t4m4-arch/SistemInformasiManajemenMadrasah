@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { verifyCaptchaToken } from '@/lib/security/captcha-server';
+import type { CaptchaPayload } from '@/lib/security/captcha-types';
 
 const InquirySchema = z.object({
   senderName: z.string().min(2),
@@ -9,6 +11,7 @@ const InquirySchema = z.object({
   category: z.enum(['ASPIRASI', 'PENGADUAN', 'INFORMASI']).default('ASPIRASI'),
   subject: z.string().min(3),
   message: z.string().min(5),
+  captcha: z.custom<CaptchaPayload>().optional(),
 });
 
 export async function POST(request: Request) {
@@ -27,6 +30,17 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Mohon lengkapi form pengaduan/aspirasi dengan benar.' },
         { status: 400 }
+      );
+    }
+
+    const captchaResult = await verifyCaptchaToken(parsed.data.captcha, request);
+    if (!captchaResult.success) {
+      return NextResponse.json(
+        {
+          error: captchaResult.error || 'Verifikasi keamanan (CAPTCHA) gagal.',
+          turnstileUnavailable: Boolean(captchaResult.turnstileUnavailable),
+        },
+        { status: 403 }
       );
     }
 

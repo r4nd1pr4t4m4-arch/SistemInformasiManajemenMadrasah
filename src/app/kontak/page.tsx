@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { PublicShell } from '@/components/layout/public-shell';
 import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
+import { SmartCaptchaMount, useSmartCaptcha } from '@/components/security/smart-captcha';
 
 interface FaqItem {
   id: string;
@@ -39,6 +40,7 @@ function isSafeHttpUrl(url: string | null | undefined): boolean {
 
 export default function KontakPage() {
   const school = useInstitutionSettings();
+  const captcha = useSmartCaptcha(true);
   const [faqs, setFaqs] = useState<FaqItem[]>([]);
   const [loadingFaqs, setLoadingFaqs] = useState(true);
   const [faqError, setFaqError] = useState<string | null>(null);
@@ -116,6 +118,7 @@ export default function KontakPage() {
 
     setSending(true);
     try {
+      const captchaPayload = await captcha.executeCaptcha();
       const res = await fetch('/api/inquiries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -126,10 +129,14 @@ export default function KontakPage() {
           category: form.category,
           subject: trimmedSubject,
           message: trimmedMessage,
+          captcha: captchaPayload,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.turnstileUnavailable) {
+          captcha.forceLocalFallback();
+        }
         setError(data.error || 'Gagal mengirim pesan.');
       } else {
         setSent(true);
@@ -460,6 +467,7 @@ export default function KontakPage() {
           </div>
         </div>
       </div>
+      <SmartCaptchaMount containerRef={captcha.containerRef} />
     </PublicShell>
   );
 }

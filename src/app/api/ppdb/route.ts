@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { DEFAULT_PATHWAY_QUOTAS } from '@/lib/ppdb/pathways';
+import { verifyCaptchaToken } from '@/lib/security/captcha-server';
+import type { CaptchaPayload } from '@/lib/security/captcha-types';
 
 const PpdbDocumentInput = z.object({
   documentType: z.enum([
@@ -31,6 +33,7 @@ const PpdbRegisterSchema = z.object({
   targetGrade: z.string().optional().default(''),
   mutationReason: z.string().optional().default(''),
   documents: z.array(PpdbDocumentInput).optional().default([]),
+  captcha: z.custom<CaptchaPayload>().optional(),
 });
 
 export async function GET(request: Request) {
@@ -118,6 +121,17 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Data formulir PPDB belum lengkap atau tidak valid.', details: parsed.error.flatten() },
         { status: 400 }
+      );
+    }
+
+    const captchaResult = await verifyCaptchaToken(parsed.data.captcha, request);
+    if (!captchaResult.success) {
+      return NextResponse.json(
+        {
+          error: captchaResult.error || 'Verifikasi keamanan (CAPTCHA) gagal.',
+          turnstileUnavailable: Boolean(captchaResult.turnstileUnavailable),
+        },
+        { status: 403 }
       );
     }
 

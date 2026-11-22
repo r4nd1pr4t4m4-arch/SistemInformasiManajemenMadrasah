@@ -9,12 +9,15 @@ import {
   sendInstitutionalEmail,
 } from '@/lib/email/mailer';
 import { buildRegistrationOtpEmail } from '@/lib/email/templates';
+import { verifyCaptchaToken } from '@/lib/security/captcha-server';
+import type { CaptchaPayload } from '@/lib/security/captcha-types';
 
 export const REGISTER_OTP_COOKIE = 'simms_register_otp';
 
 const SendRegisterOtpSchema = z.object({
   email: z.string().email('Format alamat email tidak valid.'),
   fullName: z.string().optional(),
+  captcha: z.custom<CaptchaPayload>().optional(),
 });
 
 export async function POST(request: Request) {
@@ -39,6 +42,17 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: parsed.error.issues[0]?.message || 'Alamat email tidak valid.' },
         { status: 400 }
+      );
+    }
+
+    const captchaResult = await verifyCaptchaToken(parsed.data.captcha, request);
+    if (!captchaResult.success) {
+      return NextResponse.json(
+        {
+          error: captchaResult.error || 'Verifikasi keamanan (CAPTCHA) gagal.',
+          turnstileUnavailable: Boolean(captchaResult.turnstileUnavailable),
+        },
+        { status: 403 }
       );
     }
 
