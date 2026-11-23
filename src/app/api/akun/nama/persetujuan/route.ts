@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { syncProfileContactToEntities } from '@/lib/sdm/sync';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const ReviewSchema = z.object({
   id: z.string().uuid(),
@@ -22,7 +23,7 @@ export async function GET() {
     .order('created_at', { ascending: false })
     .limit(100);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   return NextResponse.json({ requests: data || [] });
 }
 
@@ -66,14 +67,14 @@ export async function PATCH(request: Request) {
       })
       .eq('id', req.id)
       .eq('status', 'MENUNGGU');
-    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    if (updErr) return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
 
     if (nextStatus === 'DISETUJUI') {
       const { error: profErr } = await supabase
         .from('profiles')
         .update({ full_name: req.new_full_name, updated_at: nowIso })
         .eq('id', req.profile_id);
-      if (profErr) return NextResponse.json({ error: profErr.message }, { status: 500 });
+      if (profErr) return NextResponse.json({ error: sanitizeApiError(profErr) }, { status: 500 });
 
       // Sinkronkan nama baru ke GTK, Siswa, dan Orang Tua/Wali yang tertaut
       await syncProfileContactToEntities(supabase, req.profile_id, {

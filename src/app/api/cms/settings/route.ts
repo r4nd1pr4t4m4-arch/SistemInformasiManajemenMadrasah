@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getInstitutionSettings } from '@/lib/data/public-queries';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const SettingsUpdateSchema = z.object({
   institution_type: z.enum(['MADRASAH', 'SEKOLAH']),
@@ -79,7 +80,7 @@ export async function PATCH(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ settings: data });
     }
 
@@ -90,7 +91,7 @@ export async function PATCH(request: Request) {
       .select('*')
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     return NextResponse.json({ settings: data });
   } catch {
     return NextResponse.json(

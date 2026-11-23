@@ -5,6 +5,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { DEFAULT_PATHWAY_QUOTAS } from '@/lib/ppdb/pathways';
 import { verifyCaptchaToken } from '@/lib/security/captcha-server';
 import type { CaptchaPayload } from '@/lib/security/captcha-types';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const PpdbDocumentInput = z.object({
   documentType: z.enum([
@@ -93,7 +94,7 @@ export async function GET(request: Request) {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   }
 
   if (!data) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import {
   Calendar,
   ExternalLink,
@@ -232,14 +233,15 @@ export function GaleriGrid({ gallery }: { gallery: PublicGalleryItem[] }) {
                     aria-label={`Lihat pratinjau ${item.title}`}
                   >
                     {showPreview ? (
-                      <img
+                      <Image
                         src={previewUrl!}
                         alt={item.title}
-                        loading="lazy"
+                        fill
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                         onError={() =>
                           setBrokenImages((prev) => ({ ...prev, [item.id]: true }))
                         }
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                        className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200/70 text-slate-400">
@@ -379,14 +381,18 @@ export function GaleriGrid({ gallery }: { gallery: PublicGalleryItem[] }) {
                   !brokenImages[activeItem.id]
                 ) {
                   return (
-                    <img
-                      src={activeItem.media_url}
-                      alt={activeItem.title}
-                      onError={() =>
-                        setBrokenImages((prev) => ({ ...prev, [activeItem.id]: true }))
-                      }
-                      className="max-h-[60vh] w-auto object-contain"
-                    />
+                    <div className="relative w-full h-[60vh]">
+                      <Image
+                        src={activeItem.media_url}
+                        alt={activeItem.title}
+                        fill
+                        sizes="(max-width: 768px) 100vw, 768px"
+                        onError={() =>
+                          setBrokenImages((prev) => ({ ...prev, [activeItem.id]: true }))
+                        }
+                        className="object-contain"
+                      />
+                    </div>
                   );
                 }
 

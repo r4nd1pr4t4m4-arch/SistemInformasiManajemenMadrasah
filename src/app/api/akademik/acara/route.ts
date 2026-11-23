@@ -4,6 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 import { calculateLateJtm } from '@/lib/domain/jtm-late-penalty';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const CreateEventSchema = z.object({
   action: z.literal('CREATE_EVENT'),
@@ -244,7 +245,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ event: data });
     }
 
@@ -284,7 +285,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ event: data });
     }
 
@@ -386,7 +387,7 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        return NextResponse.json({ error: confErr.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(confErr) }, { status: 500 });
       }
 
       return NextResponse.json({ confirmation });
@@ -572,7 +573,7 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       }
       return NextResponse.json({ ceremony: data });
     }
@@ -661,7 +662,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      if (updErr) return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
       return NextResponse.json({ ceremony: updated });
     }
 
@@ -725,7 +726,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      if (updErr) return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
       return NextResponse.json({ ceremony: updated });
     }
 

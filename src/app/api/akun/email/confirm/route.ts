@@ -8,6 +8,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { syncProfileContactToEntities } from '@/lib/sdm/sync';
 import { EMAIL_CHANGE_OTP_COOKIE } from '../send-otp/route';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const ConfirmEmailChangeSchema = z.object({
   newEmail: z.string().email('Format alamat email baru tidak valid.'),
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
       userId: session.userId,
     });
     if (factorErr) {
-      return NextResponse.json({ error: factorErr.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeApiError(factorErr) }, { status: 500 });
     }
 
     const verifiedTotp = (factorRes?.factors || []).find(
@@ -126,7 +127,7 @@ export async function POST(request: Request) {
       email_confirm: true,
     });
     if (updateAuthErr) {
-      return NextResponse.json({ error: updateAuthErr.message }, { status: 400 });
+      return NextResponse.json({ error: sanitizeApiError(updateAuthErr) }, { status: 400 });
     }
 
     await admin

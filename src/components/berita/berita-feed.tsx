@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import {
   ArrowRight,
   Calendar,
@@ -211,15 +212,16 @@ export function BeritaFeed({ posts }: { posts: PostItem[] }) {
                 >
                   <div className="flex-1 flex flex-col min-w-0">
                     {showCover && (
-                      <div className="aspect-video w-full bg-slate-100 overflow-hidden">
-                        <img
+                      <div className="relative aspect-video w-full bg-slate-100 overflow-hidden">
+                        <Image
                           src={post.cover_image_url!}
                           alt={post.title}
-                          loading="lazy"
+                          fill
+                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                           onError={() =>
                             setBrokenImages((prev) => ({ ...prev, [post.id]: true }))
                           }
-                          className="w-full h-full object-cover transition-transform duration-300 hover:scale-[1.03]"
+                          className="object-cover transition-transform duration-300 hover:scale-[1.03]"
                         />
                       </div>
                     )}
@@ -299,14 +301,16 @@ export function BeritaFeed({ posts }: { posts: PostItem[] }) {
             className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150"
           >
             {activePost.cover_image_url && !brokenImages[activePost.id] && (
-              <div className="aspect-video w-full bg-slate-100 overflow-hidden">
-                <img
+              <div className="relative aspect-video w-full bg-slate-100 overflow-hidden">
+                <Image
                   src={activePost.cover_image_url}
                   alt={activePost.title}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 672px"
                   onError={() =>
                     setBrokenImages((prev) => ({ ...prev, [activePost.id]: true }))
                   }
-                  className="w-full h-full object-cover"
+                  className="object-cover"
                 />
               </div>
             )}

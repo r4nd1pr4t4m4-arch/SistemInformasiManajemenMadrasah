@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
+import { useFocusTrap } from '@/lib/hooks/use-focus-trap';
 import {
   EmptyState,
   ErrorState,
@@ -140,6 +141,9 @@ export function AkademikModal({
   title: string;
   children: React.ReactNode;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, open);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -161,7 +165,10 @@ export function AkademikModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200">
+      <div
+        ref={dialogRef}
+        className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
+      >
         <div className="flex items-start justify-between gap-3">
           <h3 className="text-base font-bold text-slate-900 leading-snug">{title}</h3>
           <button

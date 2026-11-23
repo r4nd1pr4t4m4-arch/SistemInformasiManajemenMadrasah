@@ -5,6 +5,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { syncProfileContactToEntities } from '@/lib/sdm/sync';
 import { phoneSchema } from '@/lib/validation/identity';
 import { getNameChangeStatus } from '@/lib/akun/name-change';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const AVATAR_COOLDOWN_DAYS = 45;
 const AVATAR_COOLDOWN_MS = AVATAR_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
@@ -151,7 +152,7 @@ export async function PATCH(request: Request) {
       .select('id, full_name, email, phone, avatar_url, primary_role')
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
 
     await syncProfileContactToEntities(supabase, session.userId, {
       phone: data.phone,

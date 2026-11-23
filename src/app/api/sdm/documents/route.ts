@@ -10,6 +10,7 @@ import {
   syncPersonalSdmDocAcrossRoles,
   syncStudentDocToGuardians,
 } from '@/lib/sdm/sync';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 async function resolveOwnerProfileIdOfSdmEntity(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
@@ -203,7 +204,7 @@ export async function POST(request: NextRequest) {
             .eq('id', existingDoc.id)
             .select('*')
             .single();
-          if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+          if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
           await syncStudentDocToGuardians(supabase, {
             studentId: entityId,
             documentType,
@@ -225,7 +226,7 @@ export async function POST(request: NextRequest) {
         .insert(payload)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       await syncStudentDocToGuardians(supabase, {
         studentId: entityId,
         documentType,
@@ -275,7 +276,7 @@ export async function POST(request: NextRequest) {
           .eq('id', existingSdm.id)
           .select('*')
           .single();
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
         savedDoc = data;
       } else {
         const { data, error } = await supabase
@@ -283,7 +284,7 @@ export async function POST(request: NextRequest) {
           .insert(sdmPayload)
           .select('*')
           .single();
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
         savedDoc = data;
       }
     } else {
@@ -305,7 +306,7 @@ export async function POST(request: NextRequest) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       savedDoc = data;
     }
 
@@ -385,7 +386,7 @@ export async function PATCH(request: NextRequest) {
       .select('*')
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     return NextResponse.json({ document: data });
   } catch {
     return NextResponse.json({ error: 'Gagal memperbarui verifikasi dokumen.' }, { status: 500 });
@@ -449,7 +450,7 @@ export async function DELETE(request: NextRequest) {
   const target = targetRow as Record<string, unknown> | null;
 
   const { error } = await supabase.from(table).delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
 
   // Hapus salinan dokumen bersama (KTP / KK) milik profile_id yang sama
   if (

@@ -4,6 +4,7 @@ import { getCurrentUserWithRoles } from '@/lib/auth/session';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { NAME_CHANGE_COOLDOWN_DAYS } from '@/lib/validation/identity';
 import { getNameChangeStatus } from '@/lib/akun/name-change';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const SubmitSchema = z.object({
   new_full_name: z
@@ -90,7 +91,7 @@ export async function POST(request: Request) {
       .select('*')
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     return NextResponse.json({ request: data }, { status: 201 });
   } catch {
     return NextResponse.json({ error: 'Gagal mengirim pengajuan perubahan nama.' }, { status: 500 });
@@ -111,6 +112,6 @@ export async function DELETE() {
     .delete()
     .eq('profile_id', session.userId)
     .eq('status', 'MENUNGGU');
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

@@ -4,6 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 import { normalizeThesisKeywords, thesisArticleUrlSchema } from '@/lib/validation/identity';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const GtkCreateSchema = z.object({
   full_name: z.string().min(2),
@@ -279,7 +280,7 @@ export async function POST(request: NextRequest) {
         .insert(insertPayload)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ item: data }, { status: 201 });
     }
 
@@ -296,7 +297,7 @@ export async function POST(request: NextRequest) {
         .insert(parsed.data)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ item: data }, { status: 201 });
     }
 
@@ -313,7 +314,7 @@ export async function POST(request: NextRequest) {
         .insert(parsed.data)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ item: data }, { status: 201 });
     }
 
@@ -330,7 +331,7 @@ export async function POST(request: NextRequest) {
         .insert(parsed.data)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ item: data }, { status: 201 });
     }
 
@@ -353,7 +354,7 @@ export async function POST(request: NextRequest) {
         .eq('id', studentId)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ item: data });
     }
 
@@ -406,7 +407,7 @@ export async function PATCH(request: NextRequest) {
         .eq('id', id)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ item: data });
     }
 
@@ -425,7 +426,7 @@ export async function PATCH(request: NextRequest) {
         .eq('id', id)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ item: data });
     }
 
@@ -444,7 +445,7 @@ export async function PATCH(request: NextRequest) {
         .eq('id', id)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ item: data });
     }
 
@@ -463,7 +464,7 @@ export async function PATCH(request: NextRequest) {
         .eq('id', id)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ item: data });
     }
 
@@ -510,6 +511,6 @@ export async function DELETE(request: NextRequest) {
 
   const supabase = createSupabaseAdminClient();
   const { error } = await supabase.from(table).delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

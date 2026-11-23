@@ -5,6 +5,7 @@ import { verifyGeofence } from '@/lib/domain/geofence';
 import { calculateLateJtm, getWibTodayDateString } from '@/lib/domain/jtm-late-penalty';
 import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const StudentAttendanceSchema = z.object({
   action: z.literal('STUDENT_ATTENDANCE'),
@@ -435,7 +436,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ attendance: data });
     }
 
@@ -505,7 +506,7 @@ export async function POST(request: Request) {
       }));
 
       const { error: insErr } = await supabase.from('student_attendances').insert(rowsToInsert);
-      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+      if (insErr) return NextResponse.json({ error: sanitizeApiError(insErr) }, { status: 500 });
 
       return NextResponse.json({ ok: true, savedCount: rowsToInsert.length });
     }
@@ -580,7 +581,7 @@ export async function POST(request: Request) {
       }));
 
       const { error: insErr } = await supabase.from('student_attendances').insert(rowsToInsert);
-      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+      if (insErr) return NextResponse.json({ error: sanitizeApiError(insErr) }, { status: 500 });
 
       const presentCount = records.filter((r) => r.status === 'HADIR').length;
       const absentList = records.filter((r) => r.status !== 'HADIR');
@@ -748,7 +749,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ attendance: data, geofence: geoResult });
     }
 
@@ -1153,7 +1154,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      if (updErr) return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
 
       // Alokasi selisih JTM jika ada penyesuaian JTM (approved_jtm < expectedJtm)
       let allocatedDiffJtm = 0;
@@ -1801,7 +1802,7 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        return NextResponse.json({ error: confErr.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(confErr) }, { status: 500 });
       }
 
       let allocatedDiffJtm = 0;
@@ -1912,7 +1913,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ delegation: data });
     }
 

@@ -1,10 +1,12 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { InstitutionLogo } from '@/components/ui/institution-logo';
 import { LoadingState, PermissionDeniedState } from '@/components/ui/state-views';
+import { useFocusTrap } from '@/lib/hooks/use-focus-trap';
 import {
   Award,
   BookOpen,
@@ -1273,6 +1275,8 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [menuSearch, setMenuSearch] = useState('');
+  const logoutDialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(logoutDialogRef, logoutModalOpen);
 
   // Track user manual accordion toggles; active route groups auto-open unless manually collapsed
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -1804,6 +1808,12 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
 
       {/* Main Column */}
       <div className="flex-1 flex flex-col min-w-0">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:rounded-xl focus:bg-emerald-700 focus:text-white focus:text-xs focus:font-semibold focus:shadow-lg"
+        >
+          Lewati ke konten utama
+        </a>
         {/* Top Portal Navbar */}
         <header className="sticky top-0 z-30 glass-nav h-16 px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -1833,9 +1843,12 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
                 className="flex items-center gap-2.5 bg-white/85 hover:bg-white border border-slate-200/80 rounded-xl p-1.5 sm:px-3 sm:py-1.5 transition"
               >
                 {user.avatarUrl ? (
-                  <img
+                  <Image
                     src={user.avatarUrl}
                     alt={user.fullName}
+                    width={28}
+                    height={28}
+                    unoptimized={user.avatarUrl.startsWith('/api/')}
                     className="w-7 h-7 rounded-full object-cover border border-emerald-200"
                   />
                 ) : (
@@ -1866,7 +1879,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 sm:p-6">
+        <main id="main-content" className="flex-1 p-4 sm:p-6">
           {!authLoaded ? (
             <LoadingState
               variant="page"
@@ -1911,6 +1924,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
           }}
         >
           <div
+            ref={logoutDialogRef}
             onClick={(e) => e.stopPropagation()}
             className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto"
           >

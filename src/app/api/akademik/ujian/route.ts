@@ -4,6 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 import { calculateLateJtm } from '@/lib/domain/jtm-late-penalty';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 async function getActiveAcademicYearId(
   supabase: ReturnType<typeof createSupabaseAdminClient>
@@ -365,7 +366,7 @@ export async function POST(request: Request) {
         .insert({ ...payload, academic_year_id: academicYearId, is_active: true })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ period: data });
     }
 
@@ -381,7 +382,7 @@ export async function POST(request: Request) {
         .insert(payload)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ room: data });
     }
 
@@ -416,7 +417,7 @@ export async function POST(request: Request) {
         .from('exam_room_students')
         .upsert(rows, { onConflict: 'exam_period_id,student_id' })
         .select('*');
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ examRoomStudents: data || [], count: rows.length });
     }
 
@@ -441,7 +442,7 @@ export async function POST(request: Request) {
           .eq('student_id', parsed.data.student_id);
       }
       const { error } = await delQuery;
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ ok: true });
     }
 
@@ -457,7 +458,7 @@ export async function POST(request: Request) {
         .insert({ ...payload, exam_room_id: parsed.data.exam_room_id || null })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ supervisor: data });
     }
 
@@ -473,7 +474,7 @@ export async function POST(request: Request) {
         .insert(payload)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ committee: data });
     }
 
@@ -533,7 +534,7 @@ export async function POST(request: Request) {
         })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ studentAttendance: data });
     }
 
@@ -603,7 +604,7 @@ export async function POST(request: Request) {
       const { error: insErr } = await supabase
         .from('exam_student_attendances')
         .insert(rowsToInsert);
-      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+      if (insErr) return NextResponse.json({ error: sanitizeApiError(insErr) }, { status: 500 });
 
       return NextResponse.json({ ok: true, savedCount: rowsToInsert.length });
     }
@@ -797,7 +798,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      if (updErr) return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
       return NextResponse.json({ supervisor: updated });
     }
 
@@ -844,7 +845,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      if (updErr) return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
       return NextResponse.json({ committee: updated });
     }
 
@@ -1013,7 +1014,7 @@ export async function POST(request: Request) {
           .select('*')
           .single();
 
-        if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+        if (updErr) return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
         return NextResponse.json({ attendance: updated });
       }
 
@@ -1036,7 +1037,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+      if (insErr) return NextResponse.json({ error: sanitizeApiError(insErr) }, { status: 500 });
       return NextResponse.json({ attendance: inserted });
     }
 

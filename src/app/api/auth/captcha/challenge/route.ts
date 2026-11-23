@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createLocalCaptchaChallenge, isCaptchaBypassed } from '@/lib/security/captcha-server';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 export async function GET(request: Request) {
   if (isCaptchaBypassed(request)) {
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
     );
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Gagal membuat tantangan CAPTCHA.' },
+      { error: sanitizeApiError(err, 'Gagal membuat tantangan CAPTCHA.') },
       { status: 500 }
     );
   }

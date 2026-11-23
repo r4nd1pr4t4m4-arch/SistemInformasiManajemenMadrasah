@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const ReviewSchema = z.object({
   id: z.string().uuid(),
@@ -23,7 +24,7 @@ export async function GET() {
     .order('created_at', { ascending: false })
     .limit(100);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   return NextResponse.json({ requests: data || [] });
 }
 
@@ -68,14 +69,14 @@ export async function PATCH(request: Request) {
       .eq('id', req.id)
       .eq('status', 'MENUNGGU');
 
-    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    if (updErr) return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
 
     if (nextStatus === 'DISETUJUI') {
       const { error: profErr } = await supabase
         .from('profiles')
         .update({ avatar_url: req.new_avatar_url, updated_at: nowIso })
         .eq('id', req.profile_id);
-      if (profErr) return NextResponse.json({ error: profErr.message }, { status: 500 });
+      if (profErr) return NextResponse.json({ error: sanitizeApiError(profErr) }, { status: 500 });
 
       // Sinkronkan ke data siswa dan GTK (photo_url) jika tertaut
       await Promise.all([

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSignedOtpToken, verifySignedOtpToken } from '@/lib/auth/otp-token';
 import { REGISTER_OTP_COOKIE } from '@/app/api/auth/register/send-otp/route';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 export const REGISTER_VERIFIED_COOKIE = 'simms_register_verified';
 
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
     return response;
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Gagal memverifikasi OTP.' },
+      { error: sanitizeApiError(err, 'Gagal memverifikasi OTP.') },
       { status: 500 }
     );
   }

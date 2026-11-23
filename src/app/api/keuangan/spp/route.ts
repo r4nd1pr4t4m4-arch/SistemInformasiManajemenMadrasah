@@ -6,6 +6,8 @@ import {
   calculateSiblingGroupBilling,
   isSiblingDiscountCategory,
 } from '@/lib/domain/sibling-discount';
+import { sanitizeApiError } from '@/lib/security/api-error';
+import { recordAuditLog } from '@/lib/security/audit-log';
 
 const CreateFeeTypeSchema = z.object({
   action: z.literal('CREATE_FEE_TYPE'),
@@ -191,7 +193,7 @@ export async function POST(request: Request) {
         .insert(payload)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ feeType: data });
     }
 
@@ -237,7 +239,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ bill: data, siblingApplied: isExempt });
     }
 
@@ -315,8 +317,25 @@ export async function POST(request: Request) {
           .update({ paid_amount: bill.paid_amount, status: bill.status })
           .eq('id', bill.id)
           .eq('paid_amount', newPaid);
-        return NextResponse.json({ error: payErr.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(payErr) }, { status: 500 });
       }
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_SPP',
+        action: 'RECORD_SPP_PAYMENT',
+        entityType: 'student_bill',
+        entityId: bill.id,
+        summary: `Pencatatan pembayaran SPP Rp${parsed.data.amount_paid.toLocaleString('id-ID')} (${receiptNumber})`,
+        metadata: {
+          billId: bill.id,
+          receiptNumber,
+          amountPaid: parsed.data.amount_paid,
+          paymentMethod: parsed.data.payment_method,
+          newStatus,
+        },
+      });
 
       return NextResponse.json({ payment, status: newStatus });
     }
@@ -363,7 +382,7 @@ export async function POST(request: Request) {
             updated_at: new Date().toISOString(),
           })
           .eq('id', groupId);
-        if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+        if (updErr) return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
 
         await supabase.from('sibling_group_members').delete().eq('group_id', groupId);
       }
@@ -379,7 +398,7 @@ export async function POST(request: Request) {
       }));
 
       const { error: memErr } = await supabase.from('sibling_group_members').insert(memberRows);
-      if (memErr) return NextResponse.json({ error: memErr.message }, { status: 500 });
+      if (memErr) return NextResponse.json({ error: sanitizeApiError(memErr) }, { status: 500 });
 
       return NextResponse.json({ ok: true, group_id: groupId, billingSummary: summary });
     }
@@ -390,7 +409,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'ID kelompok saudara tidak valid.' }, { status: 400 });
       }
       const { error } = await supabase.from('sibling_groups').delete().eq('id', groupId);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ ok: true });
     }
 
@@ -487,7 +506,7 @@ export async function POST(request: Request) {
       }
 
       const { error: insErr } = await supabase.from('student_bills').insert(toInsert);
-      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+      if (insErr) return NextResponse.json({ error: sanitizeApiError(insErr) }, { status: 500 });
 
       return NextResponse.json({
         ok: true,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -1206,25 +1207,31 @@ export default function ManajemenPenggunaPage() {
 
                   <div className="flex items-center gap-4 bg-slate-50 rounded-xl p-3 border border-slate-100">
                     <div className="text-center space-y-1">
-                      <p className="text-[10px] text-slate-400 font-semibold">Foto Lama</p>
+                      <p className="text-[11px] text-slate-500 font-semibold">Foto Lama</p>
                       {req.old_avatar_url ? (
-                        <img
+                        <Image
                           src={req.old_avatar_url}
                           alt="Foto lama"
+                          width={64}
+                          height={64}
+                          unoptimized={req.old_avatar_url.startsWith('/api/')}
                           className="w-16 h-16 rounded-xl object-cover border border-slate-200"
                         />
                       ) : (
-                        <div className="w-16 h-16 rounded-xl bg-slate-200 text-slate-500 text-[10px] flex items-center justify-center">
+                        <div className="w-16 h-16 rounded-xl bg-slate-200 text-slate-600 text-[11px] flex items-center justify-center">
                           Kosong
                         </div>
                       )}
                     </div>
-                    <span className="text-slate-400 font-bold">→</span>
+                    <span className="text-slate-500 font-bold">→</span>
                     <div className="text-center space-y-1">
-                      <p className="text-[10px] text-emerald-700 font-semibold">Foto Baru</p>
-                      <img
+                      <p className="text-[11px] text-emerald-700 font-semibold">Foto Baru</p>
+                      <Image
                         src={req.new_avatar_url}
                         alt="Foto baru"
+                        width={64}
+                        height={64}
+                        unoptimized={req.new_avatar_url.startsWith('/api/')}
                         className="w-16 h-16 rounded-xl object-cover border-2 border-emerald-400 shadow-xs"
                       />
                     </div>

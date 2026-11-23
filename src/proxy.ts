@@ -1,9 +1,15 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { canAccessPortalPath, mapDutyCodeToRole } from '@/lib/auth/rbac';
+import {
+  ROLE_CACHE_COOKIE,
+  ROLE_CACHE_TTL_SECONDS,
+  signRoleCacheCookie,
+  verifyRoleCacheCookie,
+} from '@/lib/auth/role-cache';
 import type { AppRole } from '@/types/database';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -70,7 +76,32 @@ export async function middleware(request: NextRequest) {
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = '/login';
       loginUrl.searchParams.set('next', request.nextUrl.pathname);
-      return NextResponse.redirect(loginUrl);
+      const redirectRes = NextResponse.redirect(loginUrl);
+      redirectRes.cookies.delete(ROLE_CACHE_COOKIE);
+      return redirectRes;
+    }
+
+    // Cek signed role-cache cookie (TTL 2 menit) untuk menghindari 8-11 query DB pada setiap klik menu
+    const cached = await verifyRoleCacheCookie(
+      request.cookies.get(ROLE_CACHE_COOKIE)?.value,
+      user.id
+    );
+
+    if (cached) {
+      if (
+        !canAccessPortalPath(request.nextUrl.pathname, cached.roles, {
+          isPicketTeacher: cached.isPicketTeacher,
+          isExamSupervisor: cached.isExamSupervisor,
+          isExamCommittee: cached.isExamCommittee,
+          taughtSubjectIds: cached.taughtSubjectIds,
+        })
+      ) {
+        const portalUrl = request.nextUrl.clone();
+        portalUrl.pathname = '/portal';
+        portalUrl.search = '';
+        return NextResponse.redirect(portalUrl);
+      }
+      return response;
     }
 
     const { data: profile, error: profileError } = await supabase
@@ -98,7 +129,9 @@ export async function middleware(request: NextRequest) {
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = '/login';
       loginUrl.searchParams.set('account_status', accountStatus || 'PENDING');
-      return NextResponse.redirect(loginUrl);
+      const redirectRes = NextResponse.redirect(loginUrl);
+      redirectRes.cookies.delete(ROLE_CACHE_COOKIE);
+      return redirectRes;
     }
 
     const [{ data: extraRoles }, { data: teacherRow }, { data: guardianRows }] = await Promise.all([
@@ -180,6 +213,14 @@ export async function middleware(request: NextRequest) {
     }
 
     const userRoles = Array.from(roleSet);
+    const signedCookie = await signRoleCacheCookie({
+      uid: user.id,
+      roles: userRoles,
+      isPicketTeacher,
+      isExamSupervisor,
+      isExamCommittee,
+      taughtSubjectIds,
+    });
 
     if (
       !canAccessPortalPath(request.nextUrl.pathname, userRoles, {
@@ -192,7 +233,27 @@ export async function middleware(request: NextRequest) {
       const portalUrl = request.nextUrl.clone();
       portalUrl.pathname = '/portal';
       portalUrl.search = '';
-      return NextResponse.redirect(portalUrl);
+      const redirectRes = NextResponse.redirect(portalUrl);
+      if (signedCookie) {
+        redirectRes.cookies.set(ROLE_CACHE_COOKIE, signedCookie, {
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+          path: '/',
+          maxAge: ROLE_CACHE_TTL_SECONDS,
+        });
+      }
+      return redirectRes;
+    }
+
+    if (signedCookie) {
+      response.cookies.set(ROLE_CACHE_COOKIE, signedCookie, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+        maxAge: ROLE_CACHE_TTL_SECONDS,
+      });
     }
   }
 

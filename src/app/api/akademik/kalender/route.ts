@@ -5,6 +5,7 @@ import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 import { processPaidHolidayJtm } from '@/lib/domain/paid-holiday-jtm';
 import { getWibTodayDateString } from '@/lib/domain/jtm-late-penalty';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const CreateCalendarSchema = z.object({
   action: z.literal('CREATE_CALENDAR_EVENT'),
@@ -122,7 +123,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ event: data });
     }
 
@@ -136,7 +137,7 @@ export async function POST(request: Request) {
         .delete()
         .eq('id', parsed.data.event_id);
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ ok: true });
     }
 

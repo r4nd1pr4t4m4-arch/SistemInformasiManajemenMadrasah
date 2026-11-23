@@ -7,6 +7,8 @@ import {
   DEFAULT_WITHDRAWAL_FEE_TIERS,
   type SavingsFeeTier,
 } from '@/lib/domain/tabungan-fee';
+import { sanitizeApiError } from '@/lib/security/api-error';
+import { recordAuditLog } from '@/lib/security/audit-log';
 
 const OpenAccountSchema = z.object({
   action: z.literal('OPEN_ACCOUNT'),
@@ -231,7 +233,7 @@ export async function POST(request: Request) {
 
       const { data: account, error: accErr } = await supabase
         .from('savings_accounts')
-        .select('id, balance, is_active')
+        .select('id, account_number, balance, is_active')
         .eq('id', parsed.data.account_id)
         .single();
 
@@ -324,8 +326,28 @@ export async function POST(request: Request) {
           .update({ balance: account.balance, updated_at: new Date().toISOString() })
           .eq('id', account.id)
           .eq('balance', newBalance);
-        return NextResponse.json({ error: trxErr.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(trxErr) }, { status: 500 });
       }
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_TABUNGAN',
+        action: `SAVINGS_${parsed.data.transaction_type}`,
+        entityType: 'savings_account',
+        entityId: account.id,
+        summary: `${parsed.data.transaction_type} Rp${parsed.data.amount.toLocaleString('id-ID')} pada rekening ${account.account_number}`,
+        metadata: {
+          accountNumber: account.account_number,
+          transactionType: parsed.data.transaction_type,
+          amount: parsed.data.amount,
+          feeAmount,
+          netAmount,
+          balanceBefore: account.balance,
+          balanceAfter: newBalance,
+          referenceNumber: trx?.reference_number ?? null,
+        },
+      });
 
       return NextResponse.json({
         transaction: trx,
@@ -372,7 +394,7 @@ export async function POST(request: Request) {
         .order('tier_order', { ascending: true });
 
       if (upErr) {
-        return NextResponse.json({ error: upErr.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(upErr) }, { status: 500 });
       }
 
       return NextResponse.json({ feeTiers: updatedTiers });
@@ -400,7 +422,7 @@ export async function POST(request: Request) {
         .order('tier_order', { ascending: true });
 
       if (resetErr) {
-        return NextResponse.json({ error: resetErr.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(resetErr) }, { status: 500 });
       }
 
       return NextResponse.json({ feeTiers: resetTiers });

@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
+import { useFocusTrap } from '@/lib/hooks/use-focus-trap';
 import {
   AlertCircle,
   AlertTriangle,
@@ -613,6 +614,9 @@ export function SessionExpiredModal({
   loginHref,
   onDismiss,
 }: SessionExpiredModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, open);
+
   if (!open) return null;
 
   return (
@@ -623,7 +627,10 @@ export function SessionExpiredModal({
       aria-describedby="session-expired-desc"
       className="fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-xs flex items-center justify-center p-4"
     >
-      <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-5">
+      <div
+        ref={dialogRef}
+        className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-5"
+      >
         <div className="flex items-start gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0">
             <Clock className="w-6 h-6" />

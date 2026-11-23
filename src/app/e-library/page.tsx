@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   BookOpen,
@@ -354,14 +355,15 @@ export default function PublicELibraryPage() {
                         <div className="absolute inset-y-0 left-0 w-2 bg-gradient-to-r from-black/35 to-transparent z-10 pointer-events-none" />
 
                         {showCoverImage ? (
-                          <img
+                          <Image
                             src={book.cover_url as string}
                             alt={`Sampul ${book.title}`}
-                            loading="lazy"
+                            fill
+                            sizes="(max-width: 640px) 96px, 128px"
                             onError={() =>
                               setBrokenCovers((prev) => ({ ...prev, [book.id]: true }))
                             }
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            className="object-cover group-hover:scale-105 transition-transform duration-300"
                           />
                         ) : (
                           <div className="w-full h-full p-2.5 sm:p-3 flex flex-col justify-between text-white">

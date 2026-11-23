@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getCurrentUserWithRoles } from '@/lib/auth/session';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const AVATAR_COOLDOWN_DAYS = 45;
 const AVATAR_COOLDOWN_MS = AVATAR_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
@@ -109,7 +110,7 @@ export async function POST(request: Request) {
       .single();
 
     if (insErr) {
-      return NextResponse.json({ error: insErr.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeApiError(insErr) }, { status: 500 });
     }
 
     return NextResponse.json({

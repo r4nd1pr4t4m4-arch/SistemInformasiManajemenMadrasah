@@ -15,6 +15,7 @@ import {
   normalizeThesisKeywords,
   thesisArticleUrlSchema,
 } from '@/lib/validation/identity';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const UpdateSelfGtkSchema = z.object({
   scope: z.literal('gtk'),
@@ -331,7 +332,7 @@ export async function PATCH(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
 
       await syncSharedBiodataAcrossSelfEntities(
         supabase,
@@ -391,7 +392,7 @@ export async function PATCH(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
 
       await syncGuardianToStudent(supabase, {
         student_id: data.student_id,
@@ -423,7 +424,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Scope pembaruan tidak dikenal.' }, { status: 400 });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Gagal memperbarui biodata.' },
+      { error: sanitizeApiError(err, 'Gagal memperbarui biodata.') },
       { status: 500 }
     );
   }

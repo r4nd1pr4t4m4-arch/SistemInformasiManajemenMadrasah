@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { AlertTriangle, Loader2, Trash2, X } from 'lucide-react';
+import { useFocusTrap } from '@/lib/hooks/use-focus-trap';
 
 export interface PenilaianConfirmModalProps {
   open: boolean;
@@ -28,6 +29,9 @@ export function PenilaianConfirmModal({
   onConfirm,
   onCancel,
 }: PenilaianConfirmModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, open);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -51,6 +55,7 @@ export function PenilaianConfirmModal({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="penilaian-confirm-title"

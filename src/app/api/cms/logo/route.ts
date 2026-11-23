@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getR2ObjectBuffer, isR2Configured, uploadBufferToR2 } from '@/lib/storage/r2';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
@@ -212,7 +213,7 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     }
 
     return NextResponse.json({ logo_url: logoUrl, settings: data });

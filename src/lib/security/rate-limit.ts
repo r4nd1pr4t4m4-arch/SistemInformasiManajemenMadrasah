@@ -69,6 +69,36 @@ export async function incrementRateLimit(
   }
 ): Promise<RateLimitState> {
   const now = Date.now();
+
+  if (isSupabaseAdminConfigured()) {
+    try {
+      const supabase = createSupabaseAdminClient();
+      // Utamakan Postgres RPC atomic (anti race-condition pada serangan brute-force paralel)
+      const { data: rpcData, error: rpcError } = await supabase.rpc(
+        'increment_security_rate_limit',
+        {
+          p_key: key,
+          p_ttl_seconds: opts.ttlSeconds,
+          p_lockout_threshold: opts.lockoutThreshold ?? null,
+          p_lockout_duration_ms: opts.lockoutDurationMs ?? null,
+        }
+      );
+
+      if (!rpcError && rpcData) {
+        const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+        if (row && typeof row.count === 'number') {
+          const lockedMs = row.locked_until ? new Date(row.locked_until).getTime() : null;
+          return {
+            count: row.count,
+            lockedUntil: lockedMs && !Number.isNaN(lockedMs) ? lockedMs : null,
+          };
+        }
+      }
+    } catch {
+      // Lanjut ke fallback upsert jika RPC 0039 belum dimigrasi
+    }
+  }
+
   const current = await getRateLimitState(key);
   const nextCount = current.count + 1;
   const shouldLock =

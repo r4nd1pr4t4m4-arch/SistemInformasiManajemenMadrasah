@@ -14,6 +14,7 @@ import {
   sendInstitutionalEmail,
 } from '@/lib/email/mailer';
 import { buildPasswordChangedEmail } from '@/lib/email/templates';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const ChangePasswordSchema = z.object({
   method: z.enum(['otp', 'mfa']).default('otp'),
@@ -113,7 +114,7 @@ export async function POST(request: Request) {
     });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     }
 
     if (isGmailSmtpConfigured()) {

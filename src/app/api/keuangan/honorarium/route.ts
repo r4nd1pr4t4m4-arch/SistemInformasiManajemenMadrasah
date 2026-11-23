@@ -8,6 +8,8 @@ import {
 import { roundSavingsFee } from '@/lib/domain/tabungan-fee';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { mapDutyCodeToRole } from '@/lib/auth/rbac';
+import { sanitizeApiError } from '@/lib/security/api-error';
+import { recordAuditLog } from '@/lib/security/audit-log';
 
 const UpdateRateSchema = z.object({
   action: z.literal('UPDATE_RATE'),
@@ -207,7 +209,7 @@ export async function PATCH(request: Request) {
         })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ setting: data });
     }
 
@@ -223,7 +225,7 @@ export async function PATCH(request: Request) {
         .eq('id', parsed.data.teacher_id)
         .select('id, full_name, home_distance_km')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ teacher: data });
     }
 
@@ -243,7 +245,7 @@ export async function PATCH(request: Request) {
         })),
         { onConflict: 'day_of_week' }
       );
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ ok: true });
     }
 
@@ -284,7 +286,7 @@ export async function PATCH(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ dutyType: data });
     }
 
@@ -302,7 +304,20 @@ export async function PATCH(request: Request) {
         .eq('id', parsed.data.honorarium_id)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_HONORARIUM',
+        action: 'UPDATE_HONORARIUM_STATUS',
+        entityType: 'teacher_honorarium',
+        entityId: parsed.data.honorarium_id,
+        summary: `Status honorarium diubah menjadi ${parsed.data.status}`,
+        metadata: {
+          honorariumId: parsed.data.honorarium_id,
+          status: parsed.data.status,
+        },
+      });
       return NextResponse.json({ honorarium: data });
     }
 
@@ -389,7 +404,7 @@ export async function POST(request: Request) {
             { status: 409 }
           );
         }
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       }
 
       // Sinkronkan peran otomatis ke user_roles jika guru sudah tertaut ke akun (profile_id)
@@ -810,7 +825,7 @@ export async function DELETE(request: Request) {
       .in('id', targetIds);
 
     if (fetchErr) {
-      return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeApiError(fetchErr) }, { status: 500 });
     }
     if (!existingRows || existingRows.length === 0) {
       return NextResponse.json(
@@ -826,7 +841,7 @@ export async function DELETE(request: Request) {
       .in('id', foundIds);
 
     if (deleteErr) {
-      return NextResponse.json({ error: deleteErr.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeApiError(deleteErr) }, { status: 500 });
     }
 
     // Sinkronkan penghapusan peran di user_roles untuk semua guru yang terdampak

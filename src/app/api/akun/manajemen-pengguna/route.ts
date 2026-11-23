@@ -5,6 +5,8 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { formatWibDateTime, isGmailSmtpConfigured, sendInstitutionalEmail } from '@/lib/email/mailer';
 import { buildAccountStatusEmail } from '@/lib/email/templates';
 import type { AppRole } from '@/types/database';
+import { sanitizeApiError } from '@/lib/security/api-error';
+import { recordAuditLog } from '@/lib/security/audit-log';
 
 const APP_ROLES: [AppRole, ...AppRole[]] = [
   'SUPERADMIN',
@@ -74,7 +76,7 @@ export async function GET() {
   ]);
 
   if (profilesError) {
-    return NextResponse.json({ error: profilesError.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeApiError(profilesError) }, { status: 500 });
   }
 
   const rolesMap = new Map<string, AppRole[]>();
@@ -270,7 +272,7 @@ export async function PATCH(request: Request) {
         .upsert({ user_id: userId, role: primaryRole }, { onConflict: 'user_id,role' });
       if (roleUpsertErr) {
         return NextResponse.json(
-          { error: roleUpsertErr.message || 'Gagal memperbarui peran pengguna.' },
+          { error: sanitizeApiError(roleUpsertErr, 'Gagal memperbarui peran pengguna.') },
           { status: 500 }
         );
       }
@@ -350,6 +352,29 @@ export async function PATCH(request: Request) {
       }
     }
 
+    await recordAuditLog({
+      session: guard.session,
+      request,
+      module: 'USER_MANAGEMENT',
+      action,
+      entityType: 'profile',
+      entityId: userId,
+      summary: `${action} pada akun ${targetUser.full_name} (${targetUser.email || userId})`,
+      metadata: {
+        before: {
+          primary_role: targetUser.primary_role,
+          account_status: targetUser.account_status,
+          is_active: targetUser.is_active,
+        },
+        after: {
+          primary_role: updatedUser.primary_role,
+          account_status: updatedUser.account_status,
+          is_active: updatedUser.is_active,
+        },
+        rejectionReason: rejectionReason?.trim() || null,
+      },
+    });
+
     return NextResponse.json({
       user: updatedUser,
       emailSent,
@@ -357,7 +382,7 @@ export async function PATCH(request: Request) {
     });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Gagal memproses permintaan.' },
+      { error: sanitizeApiError(err, 'Gagal memproses permintaan.') },
       { status: 500 }
     );
   }

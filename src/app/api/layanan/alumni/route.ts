@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const AlumniSchema = z.object({
   full_name: z.string().min(2),
@@ -38,7 +39,7 @@ export async function GET() {
     .order('graduation_year', { ascending: false })
     .limit(100);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
 
   const session = guard.session;
   const isStaffAlumniViewer = hasAnyRole(session, [
@@ -87,7 +88,7 @@ export async function POST(request: Request) {
       .select('*')
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     return NextResponse.json({ alumni: data });
   } catch {
     return NextResponse.json({ error: 'Gagal menyimpan data alumni.' }, { status: 500 });

@@ -11,6 +11,7 @@ import {
 import { buildRegistrationOtpEmail } from '@/lib/email/templates';
 import { verifyCaptchaToken } from '@/lib/security/captcha-server';
 import type { CaptchaPayload } from '@/lib/security/captcha-types';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 export const REGISTER_OTP_COOKIE = 'simms_register_otp';
 
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
     return response;
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Gagal mengirim kode OTP.' },
+      { error: sanitizeApiError(err, 'Gagal mengirim kode OTP.') },
       { status: 500 }
     );
   }

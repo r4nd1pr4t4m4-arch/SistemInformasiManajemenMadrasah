@@ -4,6 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 import { mapDutyCodeToRole } from '@/lib/auth/rbac';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 async function getOrCreateActiveAcademicYear(
   supabase: ReturnType<typeof createSupabaseAdminClient>
@@ -351,7 +352,7 @@ export async function POST(request: Request) {
         })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ classroom: data });
     }
 
@@ -371,7 +372,7 @@ export async function POST(request: Request) {
         .eq('id', parsed.data.id)
         .select('*, homeroom_teacher:teachers_staff(id, full_name)')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ classroom: data });
     }
 
@@ -389,7 +390,7 @@ export async function POST(request: Request) {
         })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ subject: data });
     }
 
@@ -408,7 +409,7 @@ export async function POST(request: Request) {
         .eq('id', parsed.data.id)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ subject: data });
     }
 
@@ -421,7 +422,7 @@ export async function POST(request: Request) {
         .from('schedules')
         .select('id', { count: 'exact', head: true })
         .eq('subject_id', parsed.data.id);
-      if (checkError) return NextResponse.json({ error: checkError.message }, { status: 500 });
+      if (checkError) return NextResponse.json({ error: sanitizeApiError(checkError) }, { status: 500 });
       if ((scheduleCount || 0) > 0) {
         return NextResponse.json(
           {
@@ -431,7 +432,7 @@ export async function POST(request: Request) {
         );
       }
       const { error } = await supabase.from('subjects').delete().eq('id', parsed.data.id);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ ok: true });
     }
 
@@ -453,7 +454,7 @@ export async function POST(request: Request) {
         .insert({ ...payload, academic_year_id: academicYearId })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ schedule: data });
     }
 
@@ -487,7 +488,7 @@ export async function POST(request: Request) {
         .eq('id', id)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ schedule: data });
     }
 
@@ -575,7 +576,7 @@ export async function POST(request: Request) {
         .insert({ ...payload, academic_year_id: academicYearId })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ picket: data });
     }
 
@@ -596,7 +597,7 @@ export async function POST(request: Request) {
         )
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ enrollment: data });
     }
 
@@ -615,7 +616,7 @@ export async function POST(request: Request) {
         .from('student_enrollments')
         .upsert(rows, { onConflict: 'student_id,academic_year_id' })
         .select('*');
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ enrollments: data || [], count: rows.length });
     }
 
@@ -633,14 +634,14 @@ export async function POST(request: Request) {
           .eq('academic_year_id', academicYearId);
       }
       const { error } = await query;
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ error: 'Aksi tidak dikenal.' }, { status: 400 });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Gagal memproses kelas/jadwal.' },
+      { error: sanitizeApiError(err, 'Gagal memproses kelas/jadwal.') },
       { status: 500 }
     );
   }

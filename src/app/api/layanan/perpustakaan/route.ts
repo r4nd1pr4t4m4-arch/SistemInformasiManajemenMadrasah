@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const AddBookSchema = z.object({
   action: z.literal('ADD_BOOK'),
@@ -240,7 +241,7 @@ export async function POST(request: Request) {
         })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ book: data });
     }
 
@@ -265,7 +266,7 @@ export async function POST(request: Request) {
         })
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ member: data });
     }
 
@@ -317,7 +318,7 @@ export async function POST(request: Request) {
           .from('library_books')
           .update({ available_copies: book.available_copies })
           .eq('id', book.id);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       }
 
       return NextResponse.json({ loan });
@@ -388,7 +389,7 @@ export async function POST(request: Request) {
         .from('library_books')
         .update({ is_premium: parsed.data.is_premium })
         .eq('id', parsed.data.book_id);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ success: true });
     }
 
@@ -420,7 +421,7 @@ export async function POST(request: Request) {
         .select('*')
         .single();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ grant: data });
     }
 
@@ -435,7 +436,7 @@ export async function POST(request: Request) {
         .from('ebook_access_grants')
         .update({ is_revoked: true })
         .eq('id', parsed.data.grant_id);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ success: true });
     }
 

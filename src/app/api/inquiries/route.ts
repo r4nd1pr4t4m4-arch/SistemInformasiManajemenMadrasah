@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { verifyCaptchaToken } from '@/lib/security/captcha-server';
 import type { CaptchaPayload } from '@/lib/security/captcha-types';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const InquirySchema = z.object({
   senderName: z.string().min(2),
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
     });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     }
 
     return NextResponse.json({ message: 'Pesan Anda berhasil dikirim.' });

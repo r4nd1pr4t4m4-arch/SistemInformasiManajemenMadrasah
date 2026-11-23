@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const CreateBkSchema = z.object({
   student_id: z.string().uuid(),
@@ -31,7 +32,7 @@ export async function GET() {
     .order('incident_date', { ascending: false })
     .limit(100);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
 
   const isGlobalBkViewer = hasAnyRole(guard.session, [
     'SUPERADMIN',
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
       .select('*')
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     return NextResponse.json({ record: data });
   } catch {
     return NextResponse.json({ error: 'Gagal menyimpan catatan BK.' }, { status: 500 });

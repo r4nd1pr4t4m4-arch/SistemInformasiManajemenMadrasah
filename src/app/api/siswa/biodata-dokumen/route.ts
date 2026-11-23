@@ -11,6 +11,7 @@ import {
   syncStudentToGuardians,
 } from '@/lib/sdm/sync';
 import { nikSchema, kkSchema, phoneSchema } from '@/lib/validation/identity';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const STAFF_ROLES: AppRole[] = [
   'SUPERADMIN',
@@ -289,7 +290,7 @@ export async function PATCH(request: NextRequest) {
         .eq('id', existing.id)
         .select('*')
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
 
       await Promise.all([
         isStaff && data.full_name
@@ -327,7 +328,7 @@ export async function PATCH(request: NextRequest) {
       .select('*')
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     return NextResponse.json({ student: data });
   } catch {
     return NextResponse.json({ error: 'Gagal menyimpan biodata siswa.' }, { status: 500 });
@@ -393,7 +394,7 @@ export async function POST(request: NextRequest) {
           .eq('id', existingDoc.id)
           .select('*')
           .single();
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
         await syncStudentDocToGuardians(supabase, {
           studentId: student.id,
           documentType: parsed.data.document_type,
@@ -415,7 +416,7 @@ export async function POST(request: NextRequest) {
       .insert(payload)
       .select('*')
       .single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     await syncStudentDocToGuardians(supabase, {
       studentId: student.id,
       documentType: parsed.data.document_type,
@@ -467,10 +468,10 @@ export async function DELETE(request: NextRequest) {
       .delete()
       .eq('id', id)
       .eq('student_id', student.id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   } else {
     const { error } = await supabase.from('student_documents').delete().eq('id', id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   }
 
   if (targetDoc?.object_key) {

@@ -4,6 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 
 import { DEFAULT_PATHWAY_QUOTAS } from '@/lib/ppdb/pathways';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const PathwayQuotasSchema = z.object({
   DOMISILI: z.number().min(0),
@@ -46,7 +47,7 @@ export async function GET() {
     .select('*')
     .order('open_date', { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   return NextResponse.json({ periods: data || [] });
 }
 
@@ -107,7 +108,7 @@ export async function POST(request: Request) {
       error = retry.error;
     }
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     return NextResponse.json({ period: data });
   } catch {
     return NextResponse.json({ error: 'Gagal membuat periode PPDB.' }, { status: 500 });
@@ -142,7 +143,7 @@ export async function PATCH(request: Request) {
       .select('*')
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     return NextResponse.json({ period: data });
   } catch {
     return NextResponse.json({ error: 'Gagal memperbarui periode PPDB.' }, { status: 500 });
@@ -165,6 +166,6 @@ export async function DELETE(request: Request) {
 
   const supabase = createSupabaseAdminClient();
   const { error } = await supabase.from('ppdb_periods').delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   return NextResponse.json({ deleted: true });
 }

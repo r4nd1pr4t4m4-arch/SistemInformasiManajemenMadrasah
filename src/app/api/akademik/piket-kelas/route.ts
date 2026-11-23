@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const AddPicketSchema = z.object({
   action: z.literal('ADD'),
@@ -291,7 +292,7 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       }
       return NextResponse.json({ picket: data });
     }
@@ -321,7 +322,7 @@ export async function POST(request: NextRequest) {
         .eq('id', parsed.data.id);
 
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       }
       return NextResponse.json({ success: true });
     }
@@ -329,7 +330,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Aksi tidak dikenali.' }, { status: 400 });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Terjadi kesalahan server.' },
+      { error: sanitizeApiError(err, 'Terjadi kesalahan server.') },
       { status: 500 }
     );
   }

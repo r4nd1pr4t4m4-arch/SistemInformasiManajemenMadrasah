@@ -5,6 +5,7 @@ import { verifySignedOtpToken } from '@/lib/auth/otp-token';
 import { validatePasswordStrength } from '@/lib/auth/password-policy';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { REGISTER_VERIFIED_COOKIE } from '@/app/api/auth/register/verify-otp/route';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const ConfirmRegisterSchema = z.object({
   fullName: z.string().trim().min(2, 'Nama lengkap minimal 2 karakter.'),
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
 
       if (updateAuthErr) {
         return NextResponse.json(
-          { error: updateAuthErr.message || 'Gagal memperbarui kredensial pendaftaran ulang.' },
+          { error: sanitizeApiError(updateAuthErr, 'Gagal memperbarui kredensial pendaftaran ulang.') },
           { status: 400 }
         );
       }
@@ -164,7 +165,7 @@ export async function POST(request: Request) {
     return response;
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Gagal menyelesaikan pendaftaran akun.' },
+      { error: sanitizeApiError(err, 'Gagal menyelesaikan pendaftaran akun.') },
       { status: 500 }
     );
   }

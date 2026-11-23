@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const UpdateStatusSchema = z.object({
   id: z.string().uuid(),
@@ -223,7 +224,7 @@ export async function GET() {
     .order('created_at', { ascending: false })
     .limit(200);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   return NextResponse.json({ registrations: data || [] });
 }
 
@@ -254,7 +255,7 @@ export async function PATCH(request: Request) {
       .select('*')
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     return NextResponse.json({ registration: data });
   } catch {
     return NextResponse.json({ error: 'Gagal memperbarui status PPDB.' }, { status: 500 });
@@ -293,7 +294,7 @@ export async function POST(request: Request) {
       .select('*, ppdb_documents(id, document_type, file_url, file_name, is_verified)')
       .in('id', targetIds);
 
-    if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+    if (fetchErr) return NextResponse.json({ error: sanitizeApiError(fetchErr) }, { status: 500 });
 
     const rows = (regs || []) as PpdbRegistrationRow[];
     const lulusRows = rows.filter((r) => r.status === 'LULUS');

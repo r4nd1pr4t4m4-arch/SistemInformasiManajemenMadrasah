@@ -5,6 +5,7 @@ import { getCurrentUserWithRoles } from '@/lib/auth/session';
 import { OTP_COOKIE_NAME, verifySignedOtpToken } from '@/lib/auth/otp-token';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const ResetMfaSchema = z.object({
   currentPassword: z.string().min(1),
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
       userId: session.userId,
     });
     if (listErr) {
-      return NextResponse.json({ error: listErr.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeApiError(listErr) }, { status: 500 });
     }
 
     const factors = factorList?.factors || [];

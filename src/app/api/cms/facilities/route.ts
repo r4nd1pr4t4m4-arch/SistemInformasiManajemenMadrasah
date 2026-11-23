@@ -3,6 +3,7 @@ import { connection } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { sanitizeApiError } from '@/lib/security/api-error';
 
 const FacilitySchema = z.object({
   name: z.string().min(2, 'Nama sarana/prasarana minimal 2 karakter.'),
@@ -29,7 +30,7 @@ export async function GET() {
     .order('created_at', { ascending: false });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   }
 
   return NextResponse.json({ facilities: data || [] });
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     }
 
     return NextResponse.json({ facility: data });
@@ -116,7 +117,7 @@ export async function PATCH(request: Request) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
     }
 
     return NextResponse.json({ facility: data });
@@ -142,7 +143,7 @@ export async function DELETE(request: Request) {
   const supabase = createSupabaseAdminClient();
   const { error } = await supabase.from('facilities').delete().eq('id', id);
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   }
 
   return NextResponse.json({ deleted: true });

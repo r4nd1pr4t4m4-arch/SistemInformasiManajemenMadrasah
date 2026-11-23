@@ -496,8 +496,16 @@ export function PublicFooter() {
 export function PublicShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col simms-ambient">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:rounded-xl focus:bg-emerald-700 focus:text-white focus:text-xs focus:font-semibold focus:shadow-lg"
+      >
+        Lewati ke konten utama
+      </a>
       <PublicNavbar />
-      <main className="flex-1">{children}</main>
+      <main id="main-content" className="flex-1">
+        {children}
+      </main>
       <PublicFooter />
     </div>
   );
