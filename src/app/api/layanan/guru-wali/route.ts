@@ -4,6 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { notifyStudentFamilyEvent } from '@/lib/notifications/event-hooks';
 
 async function getActiveAcademicYearId(
   supabase: ReturnType<typeof createSupabaseAdminClient>
@@ -289,6 +290,22 @@ export async function POST(request: Request) {
         .select('*')
         .single();
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      const { data: assignTarget } = await supabase
+        .from('guru_wali_assignments')
+        .select('student_id')
+        .eq('id', parsed.data.assignment_id)
+        .maybeSingle();
+      if (assignTarget?.student_id) {
+        await notifyStudentFamilyEvent({
+          studentId: assignTarget.student_id,
+          categoryKey: 'GURU_WALI_HAFALAN',
+          title: 'Catatan Baru Guru Wali & Hafalan',
+          body: `Guru Wali menambahkan catatan bimbingan/hafalan untuk {studentName}.`,
+          url: '/portal/orang-tua',
+          dedupeKey: `gw-log-${data.id}`,
+          createdBy: guard.session.userId,
+        });
+      }
       return NextResponse.json({ log: data });
     }
 

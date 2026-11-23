@@ -4,6 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { notifyStudentFamilyEvent } from '@/lib/notifications/event-hooks';
 
 const CreateBkSchema = z.object({
   student_id: z.string().uuid(),
@@ -91,6 +92,17 @@ export async function POST(request: Request) {
       .single();
 
     if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+    if (!parsed.data.is_confidential) {
+      await notifyStudentFamilyEvent({
+        studentId: parsed.data.student_id,
+        categoryKey: 'LAYANAN_BK',
+        title: `Catatan BK (${parsed.data.record_type})`,
+        body: `Catatan baru untuk {studentName}: ${parsed.data.title}`,
+        url: '/portal/orang-tua',
+        dedupeKey: `bk-${data.id}`,
+        createdBy: guard.session.userId,
+      });
+    }
     return NextResponse.json({ record: data });
   } catch {
     return NextResponse.json({ error: 'Gagal menyimpan catatan BK.' }, { status: 500 });

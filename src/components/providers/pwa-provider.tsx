@@ -17,6 +17,7 @@ import {
   flushOfflineQueue,
   OFFLINE_QUEUE_EVENT,
 } from '@/lib/pwa/offline-sync';
+import { PUSH_RECEIVED_EVENT } from '@/lib/pwa/push-client';
 
 export type PwaPlatform =
   | 'android-chrome'
@@ -204,6 +205,14 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
             },
           })
         );
+      } else if (data.type === 'PUSH_RECEIVED') {
+        window.dispatchEvent(
+          new CustomEvent(PUSH_RECEIVED_EVENT, {
+            detail: data,
+          })
+        );
+      } else if (data.type === 'PUSH_NAVIGATE' && typeof data.url === 'string') {
+        router.push(data.url);
       }
     };
 

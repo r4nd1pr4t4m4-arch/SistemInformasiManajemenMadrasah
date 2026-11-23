@@ -6,6 +6,7 @@ import { DEFAULT_PATHWAY_QUOTAS } from '@/lib/ppdb/pathways';
 import { verifyCaptchaToken } from '@/lib/security/captcha-server';
 import type { CaptchaPayload } from '@/lib/security/captcha-types';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { notifyPpdbNewRegistration } from '@/lib/notifications/event-hooks';
 
 const PpdbDocumentInput = z.object({
   documentType: z.enum([
@@ -216,6 +217,12 @@ export async function POST(request: Request) {
       }));
       await supabase.from('ppdb_documents').insert(docsPayload);
     }
+
+    await notifyPpdbNewRegistration({
+      registrationId: inserted.id,
+      applicantName: parsed.data.fullName,
+      registrationNumber: inserted.registration_number,
+    });
 
     return NextResponse.json({
       registrationNumber: inserted.registration_number,

@@ -6,6 +6,7 @@ import { calculateLateJtm, getWibTodayDateString } from '@/lib/domain/jtm-late-p
 import { requireApiRoles, ROLE_GROUPS } from '@/lib/auth/api-guard';
 import { hasAnyRole } from '@/lib/auth/session';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { notifyStudentFamilyEvent } from '@/lib/notifications/event-hooks';
 
 const StudentAttendanceSchema = z.object({
   action: z.literal('STUDENT_ATTENDANCE'),
@@ -437,6 +438,18 @@ export async function POST(request: Request) {
         .single();
 
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      if (status !== 'HADIR') {
+        const effDate = attendance_date || picketAtt.attendance_date;
+        await notifyStudentFamilyEvent({
+          studentId: student_id,
+          categoryKey: 'PRESENSI_SISWA',
+          title: `Informasi Presensi Siswa (${status})`,
+          body: `{studentName} tercatat ${status} pada tanggal ${effDate}.${notes ? ` Keterangan: ${notes}` : ''}`,
+          url: '/portal/orang-tua/absensi',
+          dedupeKey: `att-${student_id}-${effDate}-${status}`,
+          createdBy: guard.session.userId,
+        });
+      }
       return NextResponse.json({ attendance: data });
     }
 
@@ -507,6 +520,19 @@ export async function POST(request: Request) {
 
       const { error: insErr } = await supabase.from('student_attendances').insert(rowsToInsert);
       if (insErr) return NextResponse.json({ error: sanitizeApiError(insErr) }, { status: 500 });
+
+      const nonPresentRows = rowsToInsert.filter((r) => r.status !== 'HADIR');
+      for (const item of nonPresentRows) {
+        await notifyStudentFamilyEvent({
+          studentId: item.student_id,
+          categoryKey: 'PRESENSI_SISWA',
+          title: `Informasi Presensi Siswa (${item.status})`,
+          body: `{studentName} tercatat ${item.status} pada tanggal ${targetDate}.${item.notes ? ` Keterangan: ${item.notes}` : ''}`,
+          url: '/portal/orang-tua/absensi',
+          dedupeKey: `att-${item.student_id}-${targetDate}-${item.status}`,
+          createdBy: guard.session.userId,
+        });
+      }
 
       return NextResponse.json({ ok: true, savedCount: rowsToInsert.length });
     }

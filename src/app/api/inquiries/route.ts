@@ -4,6 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { verifyCaptchaToken } from '@/lib/security/captcha-server';
 import type { CaptchaPayload } from '@/lib/security/captcha-types';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { notifyNewInquiry } from '@/lib/notifications/event-hooks';
 
 const InquirySchema = z.object({
   senderName: z.string().min(2),
@@ -46,18 +47,30 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseAdminClient();
-    const { error } = await supabase.from('inquiries').insert({
-      sender_name: parsed.data.senderName,
-      sender_email: parsed.data.senderEmail || null,
-      sender_phone: parsed.data.senderPhone || null,
-      category: parsed.data.category,
-      subject: parsed.data.subject,
-      message: parsed.data.message,
-      status: 'BARU',
-    });
+    const { data: insertedInquiry, error } = await supabase
+      .from('inquiries')
+      .insert({
+        sender_name: parsed.data.senderName,
+        sender_email: parsed.data.senderEmail || null,
+        sender_phone: parsed.data.senderPhone || null,
+        category: parsed.data.category,
+        subject: parsed.data.subject,
+        message: parsed.data.message,
+        status: 'BARU',
+      })
+      .select('id')
+      .single();
 
     if (error) {
       return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+    }
+
+    if (insertedInquiry?.id) {
+      await notifyNewInquiry({
+        inquiryId: insertedInquiry.id,
+        senderName: parsed.data.senderName,
+        subject: parsed.data.subject,
+      });
     }
 
     return NextResponse.json({ message: 'Pesan Anda berhasil dikirim.' });

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "r2:cors": "node scripts/configure-r2-cors.mjs"
+    "r2:cors": "node scripts/configure-r2-cors.mjs",
+    "push:vapid": "node scripts/generate-vapid.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1169.0",
@@ -26,6 +27,7 @@
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "web-push": "^4.0.0",
     "xlsx": "^0.18.5",
     "zod": "^4.6.7"
   },
@@ -35,6 +37,7 @@
     "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "tailwindcss": "4.3.3",

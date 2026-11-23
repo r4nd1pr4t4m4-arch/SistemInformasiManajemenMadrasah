@@ -8,6 +8,7 @@ import {
 } from '@/lib/domain/sibling-discount';
 import { sanitizeApiError } from '@/lib/security/api-error';
 import { recordAuditLog } from '@/lib/security/audit-log';
+import { notifyStudentFamilyEvent } from '@/lib/notifications/event-hooks';
 
 const CreateFeeTypeSchema = z.object({
   action: z.literal('CREATE_FEE_TYPE'),
@@ -240,6 +241,17 @@ export async function POST(request: Request) {
         .single();
 
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      if (!isExempt && finalAmount > 0) {
+        await notifyStudentFamilyEvent({
+          studentId: parsed.data.student_id,
+          categoryKey: 'KEUANGAN_SPP',
+          title: 'Tagihan SPP Baru Diterbitkan',
+          body: `Tagihan baru untuk {studentName} sebesar Rp${finalAmount.toLocaleString('id-ID')} telah diterbitkan.`,
+          url: '/portal/orang-tua',
+          dedupeKey: `spp-bill-${data.id}`,
+          createdBy: guard.session.userId,
+        });
+      }
       return NextResponse.json({ bill: data, siblingApplied: isExempt });
     }
 
@@ -251,7 +263,7 @@ export async function POST(request: Request) {
 
       const { data: bill, error: billErr } = await supabase
         .from('student_bills')
-        .select('id, amount, paid_amount, status')
+        .select('id, student_id, amount, paid_amount, status')
         .eq('id', parsed.data.bill_id)
         .single();
 
@@ -318,6 +330,18 @@ export async function POST(request: Request) {
           .eq('id', bill.id)
           .eq('paid_amount', newPaid);
         return NextResponse.json({ error: sanitizeApiError(payErr) }, { status: 500 });
+      }
+
+      if (bill.student_id) {
+        await notifyStudentFamilyEvent({
+          studentId: bill.student_id,
+          categoryKey: 'KEUANGAN_SPP',
+          title: newStatus === 'LUNAS' ? 'Pembayaran SPP Lunas' : 'Pembayaran SPP Diterima',
+          body: `Pembayaran SPP untuk {studentName} sebesar Rp${parsed.data.amount_paid.toLocaleString('id-ID')} (${receiptNumber}) telah tercatat (${newStatus}).`,
+          url: '/portal/orang-tua',
+          dedupeKey: `spp-pay-${receiptNumber}`,
+          createdBy: guard.session.userId,
+        });
       }
 
       await recordAuditLog({

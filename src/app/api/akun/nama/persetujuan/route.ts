@@ -4,6 +4,7 @@ import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { syncProfileContactToEntities } from '@/lib/sdm/sync';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { notifyUserDirect } from '@/lib/notifications/event-hooks';
 
 const ReviewSchema = z.object({
   id: z.string().uuid(),
@@ -81,6 +82,19 @@ export async function PATCH(request: Request) {
         full_name: req.new_full_name,
       });
     }
+
+    await notifyUserDirect({
+      userId: req.profile_id,
+      categoryKey: 'KEAMANAN_AKUN',
+      title: `Pengajuan Ganti Nama ${nextStatus === 'DISETUJUI' ? 'Disetujui' : 'Ditolak'}`,
+      body:
+        nextStatus === 'DISETUJUI'
+          ? `Perubahan nama akun Anda menjadi "${req.new_full_name}" telah disetujui.`
+          : `Pengajuan ganti nama Anda ditolak.${parsed.data.review_notes ? ` Catatan: ${parsed.data.review_notes}` : ''}`,
+      url: '/portal/akun/profil',
+      dedupeKey: `name-req-${req.id}-${nextStatus}`,
+      createdBy: guard.session.userId,
+    });
 
     return NextResponse.json({ ok: true, status: nextStatus });
   } catch {

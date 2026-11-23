@@ -4,6 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { notifyCmsPostPublished } from '@/lib/notifications/event-hooks';
 
 const CreatePostSchema = z.object({
   title: z.string().min(4),
@@ -81,6 +82,15 @@ export async function POST(request: Request) {
       .single();
 
     if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+    if (data && data.status === 'PUBLISHED') {
+      await notifyCmsPostPublished({
+        postId: data.id,
+        title: data.title,
+        slug: data.slug,
+        category: data.category,
+        createdBy: guard.session.userId,
+      });
+    }
     return NextResponse.json({ post: data });
   } catch {
     return NextResponse.json({ error: 'Gagal menyimpan artikel.' }, { status: 500 });

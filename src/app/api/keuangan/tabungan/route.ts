@@ -9,6 +9,7 @@ import {
 } from '@/lib/domain/tabungan-fee';
 import { sanitizeApiError } from '@/lib/security/api-error';
 import { recordAuditLog } from '@/lib/security/audit-log';
+import { notifyStudentFamilyEvent, notifyUserDirect } from '@/lib/notifications/event-hooks';
 
 const OpenAccountSchema = z.object({
   action: z.literal('OPEN_ACCOUNT'),
@@ -233,7 +234,7 @@ export async function POST(request: Request) {
 
       const { data: account, error: accErr } = await supabase
         .from('savings_accounts')
-        .select('id, account_number, balance, is_active')
+        .select('id, account_number, student_id, teacher_id, balance, is_active')
         .eq('id', parsed.data.account_id)
         .single();
 
@@ -327,6 +328,36 @@ export async function POST(request: Request) {
           .eq('id', account.id)
           .eq('balance', newBalance);
         return NextResponse.json({ error: sanitizeApiError(trxErr) }, { status: 500 });
+      }
+
+      const trxLabel = parsed.data.transaction_type === 'SETOR' ? 'Setoran' : 'Penarikan';
+      if (account.student_id) {
+        await notifyStudentFamilyEvent({
+          studentId: account.student_id,
+          categoryKey: 'TABUNGAN',
+          title: `${trxLabel} Tabungan Berhasil`,
+          body: `${trxLabel} tabungan {studentName} sebesar Rp${parsed.data.amount.toLocaleString('id-ID')} tercatat. Saldo kini Rp${newBalance.toLocaleString('id-ID')}.`,
+          url: '/portal/tabungan-saya',
+          dedupeKey: `tabungan-${trx.id}`,
+          createdBy: guard.session.userId,
+        });
+      } else if (account.teacher_id) {
+        const { data: teacherRow } = await supabase
+          .from('teachers_staff')
+          .select('profile_id')
+          .eq('id', account.teacher_id)
+          .maybeSingle();
+        if (teacherRow?.profile_id) {
+          await notifyUserDirect({
+            userId: teacherRow.profile_id,
+            categoryKey: 'TABUNGAN',
+            title: `${trxLabel} Tabungan Berhasil`,
+            body: `${trxLabel} tabungan sebesar Rp${parsed.data.amount.toLocaleString('id-ID')} tercatat. Saldo kini Rp${newBalance.toLocaleString('id-ID')}.`,
+            url: '/portal/tabungan-saya',
+            dedupeKey: `tabungan-${trx.id}`,
+            createdBy: guard.session.userId,
+          });
+        }
       }
 
       await recordAuditLog({

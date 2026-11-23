@@ -683,6 +683,21 @@ export const PERMISSIONS = {
     'ORANG_TUA',
     'SUPERADMIN',
   ] as AppRole[],
+  NOTIFIKASI_DASHBOARD: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_HUMAS',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'WAKA_SARPRAS',
+    'KEPALA_TU',
+    'BENDAHARA',
+    'BENDAHARA_KOMITE',
+    'PENGELOLA_TABUNGAN',
+    'GURU_BK',
+    'PUSTAKAWAN',
+  ] as AppRole[],
 };
 
 export function hasRolePermission(
@@ -817,6 +832,7 @@ const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
   '/portal/cms/manajemen-ppdb': PERMISSIONS.CMS_PPDB_VIEW,
   '/portal/cms/sarana-prasarana': PERMISSIONS.CMS_SARPRAS_VIEW,
   '/portal/akun/manajemen-pengguna': PERMISSIONS.USER_MANAGEMENT_VIEW,
+  '/portal/notifikasi/kelola': PERMISSIONS.NOTIFIKASI_DASHBOARD,
 };
 
 const PREFIX_ROUTE_RULES: Array<[string, AppRole[]]> = [
@@ -888,7 +904,8 @@ export function canAccessPortalPath(
     normalized === '/portal/akun' ||
     normalized === '/portal/akun/profil' ||
     normalized === '/portal/akun/kata-sandi' ||
-    normalized === '/portal/akun/mfa'
+    normalized === '/portal/akun/mfa' ||
+    normalized === '/portal/akun/notifikasi'
   ) {
     return true;
   }

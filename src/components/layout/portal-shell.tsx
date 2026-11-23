@@ -14,6 +14,7 @@ import { PortalMobileNav } from '@/components/layout/portal-mobile-nav';
 import { useFocusTrap } from '@/lib/hooks/use-focus-trap';
 import {
   Award,
+  Bell,
   BookOpen,
   BookOpenCheck,
   Briefcase,
@@ -66,6 +67,9 @@ import {
   clearOfflineQueue,
   clearServiceWorkerAuthCaches,
 } from '@/lib/pwa/offline-sync';
+import { deactivateCurrentDevicePush } from '@/lib/pwa/push-client';
+import { NotificationBell } from '@/components/notifications/notification-bell';
+import { PushOptInBanner } from '@/components/notifications/push-opt-in-banner';
 
 const MANDATORY_MOBILE_PWA_ROLES: AppRole[] = [
   'GURU',
@@ -1158,6 +1162,19 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         ],
       },
       {
+        href: '/portal/akun/notifikasi',
+        path: '/portal/akun/notifikasi',
+        label: 'Notifikasi & Preferensi',
+        icon: <Bell className="w-3.5 h-3.5" />,
+      },
+      {
+        href: '/portal/notifikasi/kelola',
+        path: '/portal/notifikasi/kelola',
+        label: 'Broadcast & Analitik Push',
+        icon: <Bell className="w-3.5 h-3.5" />,
+        allowedRoles: PERMISSIONS.NOTIFIKASI_DASHBOARD,
+      },
+      {
         href: '/portal/akun/manajemen-pengguna',
         path: '/portal/akun/manajemen-pengguna',
         label: 'Manajemen Pengguna',
@@ -1289,6 +1306,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/portal/orang-tua/nilai': 'Rekap Nilai & Penilaian Anak',
   '/portal/tabungan-saya': 'Tabungan Digital Saya',
   '/portal/akun/profil': 'Profil Akun',
+  '/portal/akun/notifikasi': 'Pusat Notifikasi & Preferensi',
+  '/portal/notifikasi/kelola': 'Broadcast, Antrean & Analitik Web Push',
   '/portal/akun/manajemen-pengguna': 'Manajemen Pengguna & Persetujuan Akun',
   '/portal/akun/kata-sandi': 'Ganti Kata Sandi',
   '/portal/akun/mfa': 'Manajemen MFA',
@@ -1374,6 +1393,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
       await Promise.all([
         clearOfflineQueue(),
         clearServiceWorkerAuthCaches(),
+        deactivateCurrentDevicePush('LOGOUT'),
       ]);
       await fetch('/api/auth/logout', { method: 'POST' });
     } finally {
@@ -1979,6 +1999,14 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
               </kbd>
             </button>
             {user && (
+              <NotificationBell
+                canManageDashboard={hasRolePermission(
+                  userRoles,
+                  PERMISSIONS.NOTIFIKASI_DASHBOARD
+                )}
+              />
+            )}
+            {user && (
               <Link
                 href="/portal/akun/profil"
                 aria-label="Profil Akun"
@@ -2033,7 +2061,10 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
               <PermissionDeniedState currentRoles={userRoles} />
             </div>
           ) : (
-            children
+            <>
+              <PushOptInBanner audienceType="USER" />
+              {children}
+            </>
           )}
         </main>
 

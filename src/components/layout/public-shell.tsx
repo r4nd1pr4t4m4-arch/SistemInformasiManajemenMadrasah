@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 import { InstitutionLogo } from '@/components/ui/institution-logo';
+import { PushOptInBanner } from '@/components/notifications/push-opt-in-banner';
 
 const PUBLIC_NAV_LINKS = [
   { href: '/', label: 'Beranda', desc: 'Halaman utama website resmi lembaga' },
@@ -503,6 +504,7 @@ export function PublicShell({ children }: { children: React.ReactNode }) {
         Lewati ke konten utama
       </a>
       <PublicNavbar />
+      <PushOptInBanner audienceType="PUBLIC" compact />
       <main id="main-content" className="flex-1">
         {children}
       </main>

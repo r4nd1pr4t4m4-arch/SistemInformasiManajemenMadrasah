@@ -1,5 +1,5 @@
-/* SIMMS Native Service Worker — Offline-First & Background Sync */
-const SW_VERSION = 'simms-pwa-v2';
+/* SIMMS Native Service Worker — Offline-First, Background Sync & Web Push */
+const SW_VERSION = 'simms-pwa-v3';
 const STATIC_CACHE = `simms-static-${SW_VERSION}`;
 const PAGES_CACHE = `simms-pages-${SW_VERSION}`;
 const PUBLIC_API_CACHE = `simms-public-api-${SW_VERSION}`;
@@ -31,6 +31,9 @@ const PUBLIC_API_PREFIXES = [
 const NEVER_CACHE_PREFIXES = [
   '/api/auth/',
   '/api/storage/presign',
+  '/api/push/',
+  '/api/notifikasi',
+  '/api/admin/notifikasi',
   '/manifest.webmanifest',
 ];
 
@@ -296,4 +299,134 @@ self.addEventListener('sync', (event) => {
   if (event.tag === BG_SYNC_TAG) {
     event.waitUntil(processSyncQueue());
   }
+});
+
+// ============================================================================
+// Native Web Push Notification + Delivery & Click Tracking
+// ============================================================================
+async function sendPushTrackingBeacon(deliveryId, token, eventType) {
+  if (!deliveryId || !token) return;
+  try {
+    await fetch('/api/push/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deliveryId, token, event: eventType }),
+      keepalive: true,
+    });
+  } catch {
+    // Abaikan jika offline / gagal kirim beacon
+  }
+}
+
+self.addEventListener('push', (event) => {
+  let data = {
+    title: 'SIMMS',
+    body: 'Ada pemberitahuan baru untuk Anda.',
+    url: '/portal',
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/icon-192x192.png',
+    tag: 'simms-notification',
+    deliveryId: '',
+    token: '',
+    categoryKey: '',
+    inAppNotificationId: null,
+  };
+
+  if (event.data) {
+    try {
+      const parsed = event.data.json();
+      if (parsed && typeof parsed === 'object') {
+        data = { ...data, ...parsed };
+      }
+    } catch {
+      const text = event.data.text();
+      if (text) data.body = text;
+    }
+  }
+
+  const options = {
+    body: data.body,
+    icon: data.icon || '/icons/icon-192x192.png',
+    badge: data.badge || '/icons/icon-192x192.png',
+    tag: data.tag || 'simms-notification',
+    renotify: true,
+    data: {
+      url: data.url || '/portal',
+      deliveryId: data.deliveryId || '',
+      token: data.token || '',
+      categoryKey: data.categoryKey || '',
+      inAppNotificationId: data.inAppNotificationId || null,
+    },
+  };
+
+  event.waitUntil(
+    (async () => {
+      await self.registration.showNotification(data.title || 'SIMMS', options);
+      await Promise.allSettled([
+        sendPushTrackingBeacon(data.deliveryId, data.token, 'delivered'),
+        notifyAllClients({
+          type: 'PUSH_RECEIVED',
+          categoryKey: data.categoryKey || '',
+          title: data.title || 'SIMMS',
+          body: data.body || '',
+          url: data.url || '/portal',
+          inAppNotificationId: data.inAppNotificationId || null,
+        }),
+      ]);
+    })()
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const notifData = (event.notification && event.notification.data) || {};
+  const rawUrl = typeof notifData.url === 'string' && notifData.url ? notifData.url : '/portal';
+  const targetUrl = new URL(rawUrl, self.location.origin).href;
+
+  event.waitUntil(
+    (async () => {
+      const trackPromise = sendPushTrackingBeacon(
+        notifData.deliveryId,
+        notifData.token,
+        'clicked'
+      );
+
+      const windowClients = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+
+      let handled = false;
+      for (const client of windowClients) {
+        if (client.url.startsWith(self.location.origin)) {
+          try {
+            await client.focus();
+            if ('navigate' in client && typeof client.navigate === 'function') {
+              await client.navigate(targetUrl);
+            } else {
+              client.postMessage({ type: 'PUSH_NAVIGATE', url: rawUrl });
+            }
+            handled = true;
+            break;
+          } catch {
+            // Lanjut buka window baru
+          }
+        }
+      }
+
+      if (!handled && self.clients.openWindow) {
+        await self.clients.openWindow(targetUrl);
+      }
+
+      await trackPromise;
+    })()
+  );
+});
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    notifyAllClients({
+      type: 'PUSH_SUBSCRIPTION_CHANGED',
+    })
+  );
 });
