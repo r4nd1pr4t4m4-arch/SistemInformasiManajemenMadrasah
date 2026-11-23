@@ -12,11 +12,20 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {
+  NOTIF_BROADCAST_CHANNEL_NAME,
   NOTIF_READ_SYNC_EVENT,
   PUSH_RECEIVED_EVENT,
   notifyNotificationReadSync,
 } from '@/lib/pwa/push-client';
+import {
+  createSupabaseBrowserClient,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client';
 import type { InAppNotificationItem } from '@/lib/notifications/types';
+
+// Cooldown minimal 3 menit saat pengguna berpindah tab (visibilitychange)
+// agar server tidak dihujani request setiap kali user alt-tab
+const VISIBILITY_FETCH_COOLDOWN_MS = 3 * 60 * 1000;
 
 function formatRelativeTime(iso: string): string {
   const date = new Date(iso);
@@ -34,7 +43,13 @@ function formatRelativeTime(iso: string): string {
   });
 }
 
-export function NotificationBell({ canManageDashboard }: { canManageDashboard?: boolean }) {
+export function NotificationBell({
+  userId,
+  canManageDashboard,
+}: {
+  userId?: string;
+  canManageDashboard?: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<InAppNotificationItem[]>([]);
@@ -42,13 +57,21 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
   const [loading, setLoading] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const lastFetchedAtRef = useRef<number>(0);
+  const inflightRef = useRef<boolean>(false);
 
-  const fetchNotifications = useCallback(async (silent = false) => {
+  const fetchNotifications = useCallback(async (silent = false, force = false) => {
+    if (inflightRef.current) return;
+    if (!force && silent && Date.now() - lastFetchedAtRef.current < 1500) {
+      return;
+    }
+    inflightRef.current = true;
     if (!silent) setLoading(true);
     try {
       const res = await fetch('/api/notifikasi?limit=15', { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
+      lastFetchedAtRef.current = Date.now();
       if (Array.isArray(data.items)) {
         setItems(data.items);
       }
@@ -58,43 +81,118 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
     } catch {
       // Abaikan saat offline
     } finally {
+      inflightRef.current = false;
       if (!silent) setLoading(false);
     }
   }, []);
 
+  // 1. Fetch awal + Event Listener (Service Worker Push, Read Sync, Cross-Tab BroadcastChannel, & Cooldown Visibility)
   useEffect(() => {
     const initTimer = window.setTimeout(() => {
-      void fetchNotifications(true);
+      void fetchNotifications(true, true);
     }, 0);
 
-    const handlePushReceived = () => {
-      void fetchNotifications(true);
+    const handlePushOrReadSync = () => {
+      void fetchNotifications(true, true);
     };
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        void fetchNotifications(true);
+      if (
+        document.visibilityState === 'visible' &&
+        Date.now() - lastFetchedAtRef.current >= VISIBILITY_FETCH_COOLDOWN_MS
+      ) {
+        void fetchNotifications(true, false);
       }
     };
 
-    window.addEventListener(PUSH_RECEIVED_EVENT, handlePushReceived);
-    window.addEventListener(NOTIF_READ_SYNC_EVENT, handlePushReceived);
+    window.addEventListener(PUSH_RECEIVED_EVENT, handlePushOrReadSync);
+    window.addEventListener(NOTIF_READ_SYNC_EVENT, handlePushOrReadSync);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void fetchNotifications(true);
+    let bc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        bc = new BroadcastChannel(NOTIF_BROADCAST_CHANNEL_NAME);
+        bc.onmessage = (ev) => {
+          if (
+            ev.data?.type === NOTIF_READ_SYNC_EVENT ||
+            ev.data?.type === PUSH_RECEIVED_EVENT
+          ) {
+            void fetchNotifications(true, true);
+          }
+        };
+      } catch {
+        // abaikan jika BroadcastChannel tidak didukung
       }
-    }, 45000);
+    }
 
     return () => {
       window.clearTimeout(initTimer);
-      window.removeEventListener(PUSH_RECEIVED_EVENT, handlePushReceived);
-      window.removeEventListener(NOTIF_READ_SYNC_EVENT, handlePushReceived);
+      window.removeEventListener(PUSH_RECEIVED_EVENT, handlePushOrReadSync);
+      window.removeEventListener(NOTIF_READ_SYNC_EVENT, handlePushOrReadSync);
       document.removeEventListener('visibilitychange', handleVisibility);
-      window.clearInterval(interval);
+      if (bc) {
+        bc.close();
+      }
     };
   }, [fetchNotifications]);
+
+  // 2. Supabase Realtime Subscription (postgres_changes) pada tabel in_app_notifications
+  //    Menggantikan polling interval 45 detik dengan update instan berbasis WebSocket
+  useEffect(() => {
+    if (!userId || !isSupabaseConfigured()) return;
+
+    let supabase: ReturnType<typeof createSupabaseBrowserClient> | null = null;
+    try {
+      supabase = createSupabaseBrowserClient();
+    } catch {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`in-app-notifs-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'in_app_notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const newItem = payload.new as InAppNotificationItem | undefined;
+          if (!newItem || !newItem.id) {
+            void fetchNotifications(true, true);
+            return;
+          }
+          lastFetchedAtRef.current = Date.now();
+          setItems((prev) => {
+            if (prev.some((it) => it.id === newItem.id)) return prev;
+            return [newItem, ...prev].slice(0, 15);
+          });
+          if (!newItem.is_read) {
+            setUnreadCount((c) => c + 1);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'in_app_notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          void fetchNotifications(true, true);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase?.removeChannel(channel);
+    };
+  }, [userId, fetchNotifications]);
 
   useEffect(() => {
     if (!open) return;
@@ -117,8 +215,8 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
   async function handleToggle() {
     const nextOpen = !open;
     setOpen(nextOpen);
-    if (nextOpen) {
-      await fetchNotifications(false);
+    if (nextOpen && Date.now() - lastFetchedAtRef.current > 10_000) {
+      await fetchNotifications(false, true);
     }
   }
 
@@ -134,6 +232,7 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
       if (res.ok) {
         setUnreadCount(0);
         setItems((prev) => prev.map((it) => ({ ...it, is_read: true })));
+        lastFetchedAtRef.current = Date.now();
         notifyNotificationReadSync();
       }
     } finally {
@@ -148,6 +247,7 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
       setItems((prev) =>
         prev.map((it) => (it.id === item.id ? { ...it, is_read: true } : it))
       );
+      lastFetchedAtRef.current = Date.now();
       void fetch('/api/notifikasi', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -239,23 +339,20 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
                   key={item.id}
                   type="button"
                   onClick={() => handleItemClick(item)}
-                  className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition flex items-start gap-3 ${
-                    !item.is_read ? 'bg-emerald-50/40' : ''
-                  }`}
+                  className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition flex items-start gap-3 ${!item.is_read ? 'bg-emerald-50/40' : ''
+                    }`}
                 >
                   <span
-                    className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
-                      !item.is_read ? 'bg-emerald-600' : 'bg-slate-300'
-                    }`}
+                    className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${!item.is_read ? 'bg-emerald-600' : 'bg-slate-300'
+                      }`}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <p
-                        className={`text-xs leading-snug line-clamp-1 ${
-                          !item.is_read
-                            ? 'font-bold text-slate-900'
-                            : 'font-medium text-slate-700'
-                        }`}
+                        className={`text-xs leading-snug line-clamp-1 ${!item.is_read
+                          ? 'font-bold text-slate-900'
+                          : 'font-medium text-slate-700'
+                          }`}
                       >
                         {item.title}
                       </p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   BookOpen,
@@ -8,18 +8,29 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Download,
   Eye,
+  FileSpreadsheet,
   GraduationCap,
   Loader2,
   RefreshCw,
   Search,
   ShieldAlert,
+  Upload,
   UserCheck,
   UserPlus,
   X,
 } from 'lucide-react';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
+import {
+  downloadStudentTemplateXlsx,
+  downloadTeacherTemplateXlsx,
+  exportStudentsEmisDapodikXlsx,
+  exportTeachersEmisDapodikXlsx,
+  parseStudentImportXlsx,
+  parseTeacherImportXlsx,
+} from '@/lib/domain/emis-dapodik-excel';
 import {
   AkademikEmptyState,
   AkademikErrorBanner,
@@ -91,6 +102,9 @@ export function BukuIndukWorkspace({ section }: { section: BukuIndukSection }) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [importingExcel, setImportingExcel] = useState(false);
+  const studentFileInputRef = useRef<HTMLInputElement | null>(null);
+  const teacherFileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast, showToast, dismissToast } = useAkademikToast();
 
   const [students, setStudents] = useState<StudentRow[]>([]);
@@ -194,6 +208,76 @@ export function BukuIndukWorkspace({ section }: { section: BukuIndukSection }) {
       return false;
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleStudentExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || importingExcel) return;
+
+    setImportingExcel(true);
+    try {
+      const { records, skippedCount } = await parseStudentImportXlsx(file);
+      if (records.length === 0) {
+        showToast(
+          'error',
+          'Tidak ditemukan baris data siswa yang valid di file Excel. Pastikan kolom "Nama Lengkap" terisi.'
+        );
+        return;
+      }
+
+      const ok = await submitEntity(
+        {
+          type: 'BULK_IMPORT_STUDENTS',
+          records,
+        },
+        `${records.length} data siswa (format EMIS/Dapodik) berhasil diimpor ke Buku Induk & E-Library${
+          skippedCount > 0 ? ` (${skippedCount} baris kosong dilewati)` : ''
+        }.`
+      );
+      if (ok) {
+        setStudentPage(1);
+      }
+    } catch {
+      showToast('error', 'Gagal membaca file Excel. Pastikan format file .xlsx atau .csv valid.');
+    } finally {
+      setImportingExcel(false);
+    }
+  }
+
+  async function handleTeacherExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || importingExcel) return;
+
+    setImportingExcel(true);
+    try {
+      const { records, skippedCount } = await parseTeacherImportXlsx(file);
+      if (records.length === 0) {
+        showToast(
+          'error',
+          'Tidak ditemukan baris data GTK yang valid di file Excel. Pastikan kolom "Nama Lengkap & Gelar" terisi.'
+        );
+        return;
+      }
+
+      const ok = await submitEntity(
+        {
+          type: 'BULK_IMPORT_TEACHERS',
+          records,
+        },
+        `${records.length} data GTK (format EMIS/Dapodik) berhasil diimpor ke Buku Induk & E-Library${
+          skippedCount > 0 ? ` (${skippedCount} baris kosong dilewati)` : ''
+        }.`
+      );
+      if (ok) {
+        setTeacherPage(1);
+      }
+    } catch {
+      showToast('error', 'Gagal membaca file Excel. Pastikan format file .xlsx atau .csv valid.');
+    } finally {
+      setImportingExcel(false);
     }
   }
 
@@ -825,6 +909,49 @@ export function BukuIndukWorkspace({ section }: { section: BukuIndukSection }) {
               <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
                   type="button"
+                  disabled={filteredStudents.length === 0}
+                  onClick={() => exportStudentsEmisDapodikXlsx(filteredStudents)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/80 disabled:opacity-40 text-xs font-semibold text-emerald-800 transition"
+                  title="Ekspor data siswa ke format Excel standar EMIS / Dapodik"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Ekspor Excel (EMIS/Dapodik)</span>
+                </button>
+                {canManage && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => downloadStudentTemplateXlsx()}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition"
+                      title="Unduh template Excel impor siswa EMIS / Dapodik"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Template</span>
+                    </button>
+                    <input
+                      ref={studentFileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={(e) => void handleStudentExcelImport(e)}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      disabled={importingExcel || submitting}
+                      onClick={() => studentFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-semibold transition"
+                    >
+                      {importingExcel ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Upload className="w-3.5 h-3.5" />
+                      )}
+                      <span>{importingExcel ? 'Mengimpor...' : 'Impor Excel'}</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
                   disabled={refreshing}
                   onClick={handleRefresh}
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 text-xs font-semibold text-slate-700 transition"
@@ -1331,6 +1458,49 @@ export function BukuIndukWorkspace({ section }: { section: BukuIndukSection }) {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={filteredTeachers.length === 0}
+                  onClick={() => exportTeachersEmisDapodikXlsx(filteredTeachers)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/80 disabled:opacity-40 text-xs font-semibold text-emerald-800 transition"
+                  title="Ekspor data GTK ke format Excel standar EMIS / Dapodik"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Ekspor Excel (EMIS/Dapodik)</span>
+                </button>
+                {canManage && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => downloadTeacherTemplateXlsx()}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition"
+                      title="Unduh template Excel impor GTK EMIS / Dapodik"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Template</span>
+                    </button>
+                    <input
+                      ref={teacherFileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={(e) => void handleTeacherExcelImport(e)}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      disabled={importingExcel || submitting}
+                      onClick={() => teacherFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-semibold transition"
+                    >
+                      {importingExcel ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Upload className="w-3.5 h-3.5" />
+                      )}
+                      <span>{importingExcel ? 'Mengimpor...' : 'Impor Excel'}</span>
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   disabled={refreshing}

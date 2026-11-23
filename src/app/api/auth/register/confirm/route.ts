@@ -72,12 +72,8 @@ export async function POST(request: Request) {
     if (existingProfile) {
       const rawStatus =
         existingProfile.account_status || (existingProfile.is_active ? 'AKTIF' : 'NONAKTIF');
-      const isPermanentRejected =
-        rawStatus === 'DITOLAK_PERMANEN' ||
-        (rawStatus === 'DITOLAK' &&
-          Boolean(existingProfile.rejection_reason?.startsWith('[TOLAK_PERMANEN]')));
 
-      if (isPermanentRejected) {
+      if (rawStatus === 'DITOLAK_PERMANEN') {
         return NextResponse.json(
           {
             error:

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
+import { ALL_APP_ROLES } from '@/lib/auth/rbac';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { formatWibDateTime, isGmailSmtpConfigured, sendInstitutionalEmail } from '@/lib/email/mailer';
 import { buildAccountStatusEmail } from '@/lib/email/templates';
@@ -8,124 +9,231 @@ import type { AppRole } from '@/types/database';
 import { sanitizeApiError } from '@/lib/security/api-error';
 import { recordAuditLog } from '@/lib/security/audit-log';
 
-const APP_ROLES: [AppRole, ...AppRole[]] = [
-  'SUPERADMIN',
-  'OPERATOR',
-  'KEPALA_LEMBAGA',
-  'WAKA_KESISWAAN',
-  'WAKA_KURIKULUM',
-  'WAKA_HUMAS',
-  'WAKA_SARPRAS',
-  'KEPALA_TU',
-  'STAF_TU',
-  'GURU',
-  'WALI_KELAS',
-  'GURU_WALI',
-  'GURU_BK',
-  'BENDAHARA',
-  'BENDAHARA_KOMITE',
-  'PENGELOLA_TABUNGAN',
-  'PEMBINA_OSIM',
-  'PEMBINA_EKSTRAKURIKULER',
-  'PUSTAKAWAN',
-  'SISWA',
-  'ORANG_TUA',
-  'ALUMNI',
-  'UMUM',
-];
-
-const PERMANENT_REJECT_PREFIX = '[TOLAK_PERMANEN] ';
-
 const UpdateUserSchema = z.object({
-  userId: z.string().uuid(),
+  userId: z.string().uuid().optional(),
+  userIds: z.array(z.string().uuid()).min(1).max(100).optional(),
   action: z.enum(['APPROVE', 'REJECT', 'REJECT_PERMANENT', 'DEACTIVATE', 'UPDATE_ROLE']),
-  primaryRole: z.enum(APP_ROLES).optional(),
+  primaryRole: z.enum(ALL_APP_ROLES).optional(),
   rejectionReason: z.string().max(500).optional().nullable(),
   sendEmail: z.boolean().optional().default(true),
 });
 
-export async function GET() {
+function pickFirstRelation<T>(val: T | T[] | null | undefined): T | null {
+  if (!val) return null;
+  return Array.isArray(val) ? val[0] ?? null : val;
+}
+
+export async function GET(request: Request) {
   const guard = await requireApiRoles(PERMISSIONS.USER_MANAGEMENT_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
+
+  const url = new URL(request.url);
+  const page = Math.max(1, Number(url.searchParams.get('page') || 1) || 1);
+  const pageSize = Math.min(
+    Math.max(1, Number(url.searchParams.get('pageSize') || 25) || 25),
+    100
+  );
+  const statusFilter = (url.searchParams.get('status') || 'ALL').trim().toUpperCase();
+  const rawSearch = (url.searchParams.get('q') || '').trim();
+  const cleanSearch = rawSearch.replace(/[%_,()]/g, ' ').trim();
 
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({
       users: [],
       summary: { total: 0, pending: 0, active: 0, inactive: 0, rejected: 0 },
+      pagination: {
+        page: 1,
+        pageSize,
+        totalCount: 0,
+        totalPages: 1,
+      },
       smtpConfigured: false,
     });
   }
 
   const supabase = createSupabaseAdminClient();
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  // Bangun query dengan relational select PostgREST (tanpa full-table scan pada students/teachers/library_members/user_roles)
+  let profilesQuery = supabase
+    .from('profiles')
+    .select(
+      `
+      id,
+      full_name,
+      email,
+      phone,
+      primary_role,
+      is_active,
+      account_status,
+      rejection_reason,
+      reviewed_at,
+      created_at,
+      user_roles(role),
+      students(id, nis, nisn),
+      teachers_staff(id, staff_type, nip),
+      library_members(id, member_code, member_type)
+    `,
+      { count: 'exact' }
+    )
+    .order('created_at', { ascending: false });
+
+  if (statusFilter === 'PENDING') {
+    profilesQuery = profilesQuery.eq('account_status', 'PENDING');
+  } else if (statusFilter === 'AKTIF') {
+    profilesQuery = profilesQuery.eq('account_status', 'AKTIF').eq('is_active', true);
+  } else if (statusFilter === 'NONAKTIF') {
+    profilesQuery = profilesQuery.eq('account_status', 'NONAKTIF');
+  } else if (statusFilter === 'DITOLAK') {
+    profilesQuery = profilesQuery.in('account_status', ['DITOLAK', 'DITOLAK_PERMANEN']);
+  } else if (statusFilter === 'DITOLAK_PERMANEN') {
+    profilesQuery = profilesQuery.eq('account_status', 'DITOLAK_PERMANEN');
+  }
+
+  if (cleanSearch) {
+    const matchingRoles = ALL_APP_ROLES.filter((role) =>
+      role.toLowerCase().includes(cleanSearch.toLowerCase())
+    );
+    const orClauses = [
+      `full_name.ilike.%${cleanSearch}%`,
+      `email.ilike.%${cleanSearch}%`,
+      `phone.ilike.%${cleanSearch}%`,
+    ];
+    if (matchingRoles.length > 0) {
+      orClauses.push(`primary_role.in.(${matchingRoles.join(',')})`);
+    }
+    profilesQuery = profilesQuery.or(orClauses.join(','));
+  }
+
   const [
-    { data: profiles, error: profilesError },
-    { data: roles },
-    { data: students },
-    { data: teachers },
-    { data: libMembers },
+    { data: profiles, count: filteredCount, error: profilesError },
+    summaryRpcRes,
   ] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select('id, full_name, email, phone, primary_role, is_active, account_status, rejection_reason, reviewed_at, created_at')
-      .order('created_at', { ascending: false })
-      .limit(300),
-    supabase.from('user_roles').select('user_id, role'),
-    supabase.from('students').select('id, profile_id, nis, nisn').not('profile_id', 'is', null),
-    supabase.from('teachers_staff').select('id, profile_id, staff_type, nip').not('profile_id', 'is', null),
-    supabase.from('library_members').select('id, profile_id, member_code, member_type').not('profile_id', 'is', null),
+    profilesQuery.range(from, to),
+    supabase.rpc('get_user_management_summary'),
   ]);
 
   if (profilesError) {
     return NextResponse.json({ error: sanitizeApiError(profilesError) }, { status: 500 });
   }
 
-  const rolesMap = new Map<string, AppRole[]>();
-  for (const r of roles || []) {
-    const list = rolesMap.get(r.user_id) || [];
-    list.push(r.role as AppRole);
-    rolesMap.set(r.user_id, list);
+  // Fallback jika migrasi RPC 0043 belum dijalankan di database
+  let summary = {
+    total: 0,
+    pending: 0,
+    active: 0,
+    inactive: 0,
+    rejected: 0,
+  };
+
+  if (
+    !summaryRpcRes.error &&
+    summaryRpcRes.data &&
+    typeof summaryRpcRes.data === 'object'
+  ) {
+    const rpcData = summaryRpcRes.data as Partial<typeof summary>;
+    summary = {
+      total: Number(rpcData.total ?? 0),
+      pending: Number(rpcData.pending ?? 0),
+      active: Number(rpcData.active ?? 0),
+      inactive: Number(rpcData.inactive ?? 0),
+      rejected: Number(rpcData.rejected ?? 0),
+    };
+  } else {
+    const [
+      { count: totalCount },
+      { count: pendingCount },
+      { count: activeCount },
+      { count: inactiveCount },
+      { count: rejectedCount },
+    ] = await Promise.all([
+      supabase.from('profiles').select('id', { count: 'exact', head: true }),
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_status', 'PENDING'),
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_status', 'AKTIF')
+        .eq('is_active', true),
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_status', 'NONAKTIF'),
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .in('account_status', ['DITOLAK', 'DITOLAK_PERMANEN']),
+    ]);
+    summary = {
+      total: totalCount ?? 0,
+      pending: pendingCount ?? 0,
+      active: activeCount ?? 0,
+      inactive: inactiveCount ?? 0,
+      rejected: rejectedCount ?? 0,
+    };
   }
 
-  const studentMap = new Map((students || []).map((s) => [s.profile_id as string, s]));
-  const teacherMap = new Map((teachers || []).map((t) => [t.profile_id as string, t]));
-  const libMap = new Map((libMembers || []).map((l) => [l.profile_id as string, l]));
-
   const users = (profiles || []).map((p) => {
-    const rawReason = p.rejection_reason || null;
-    const isPermByReason = Boolean(rawReason && rawReason.startsWith('[TOLAK_PERMANEN]'));
-    const cleanReason = isPermByReason
-      ? rawReason!.replace(/^\[TOLAK_PERMANEN\]\s*/, '') || null
-      : rawReason;
-    const rawStatus = p.account_status || (p.is_active ? 'AKTIF' : 'NONAKTIF');
-    const status =
-      rawStatus === 'DITOLAK_PERMANEN' || (rawStatus === 'DITOLAK' && isPermByReason)
-        ? 'DITOLAK_PERMANEN'
-        : rawStatus;
+    const cleanReason = p.rejection_reason?.trim() || null;
+    const status = p.account_status || (p.is_active ? 'AKTIF' : 'NONAKTIF');
+
+    const rawUserRoles = Array.isArray(p.user_roles) ? p.user_roles : [];
+    const roleList = rawUserRoles
+      .map((r: { role?: string | null }) => r?.role as AppRole | undefined)
+      .filter((r): r is AppRole => Boolean(r));
+
+    const linkedStudent = pickFirstRelation(
+      p.students as
+        | { id: string; nis: string | null; nisn: string | null }
+        | Array<{ id: string; nis: string | null; nisn: string | null }>
+        | null
+    );
+    const linkedTeacher = pickFirstRelation(
+      p.teachers_staff as
+        | { id: string; staff_type: string; nip: string | null }
+        | Array<{ id: string; staff_type: string; nip: string | null }>
+        | null
+    );
+    const linkedLibrary = pickFirstRelation(
+      p.library_members as
+        | { id: string; member_code: string; member_type: string }
+        | Array<{ id: string; member_code: string; member_type: string }>
+        | null
+    );
 
     return {
-      ...p,
+      id: p.id,
+      full_name: p.full_name,
+      email: p.email,
+      phone: p.phone,
+      primary_role: p.primary_role,
+      is_active: p.is_active,
       account_status: status,
       rejection_reason: cleanReason,
-      roles: rolesMap.get(p.id) || [p.primary_role as AppRole],
-      linked_student: studentMap.get(p.id) || null,
-      linked_teacher: teacherMap.get(p.id) || null,
-      linked_library: libMap.get(p.id) || null,
+      reviewed_at: p.reviewed_at,
+      created_at: p.created_at,
+      roles: roleList.length > 0 ? roleList : [p.primary_role as AppRole],
+      linked_student: linkedStudent,
+      linked_teacher: linkedTeacher,
+      linked_library: linkedLibrary,
     };
   });
 
-  const summary = {
-    total: users.length,
-    pending: users.filter((u) => u.account_status === 'PENDING').length,
-    active: users.filter((u) => u.account_status === 'AKTIF' && u.is_active).length,
-    inactive: users.filter((u) => u.account_status === 'NONAKTIF').length,
-    rejected: users.filter(
-      (u) => u.account_status === 'DITOLAK' || u.account_status === 'DITOLAK_PERMANEN'
-    ).length,
-  };
+  const totalCount = filteredCount ?? users.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return NextResponse.json({
     users,
     summary,
+    pagination: {
+      page,
+      pageSize,
+      totalCount,
+      totalPages,
+    },
     smtpConfigured: isGmailSmtpConfigured(),
   });
 }
@@ -148,7 +256,152 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const { userId, action, primaryRole, rejectionReason, sendEmail } = parsed.data;
+    const { userId, userIds, action, primaryRole, rejectionReason, sendEmail } = parsed.data;
+    const isActorSuperadmin = guard.session.roles.includes('SUPERADMIN');
+
+    if (!isActorSuperadmin && primaryRole === 'SUPERADMIN') {
+      return NextResponse.json(
+        { error: 'Hanya SUPERADMIN yang dapat menetapkan peran SUPERADMIN.' },
+        { status: 403 }
+      );
+    }
+
+    // Mode Aksi Massal (Bulk Actions) ketika userIds dikirimkan
+    if (userIds && userIds.length > 0) {
+      if (action !== 'APPROVE' && action !== 'DEACTIVATE' && action !== 'UPDATE_ROLE') {
+        return NextResponse.json(
+          { error: 'Aksi massal hanya mendukung APPROVE, DEACTIVATE, atau UPDATE_ROLE.' },
+          { status: 400 }
+        );
+      }
+
+      if (action === 'UPDATE_ROLE' && !primaryRole) {
+        return NextResponse.json(
+          { error: 'Peran baru (primaryRole) wajib dipilih untuk aksi ubah peran massal.' },
+          { status: 400 }
+        );
+      }
+
+      const uniqueIds = Array.from(new Set(userIds)).filter((id) => {
+        if ((action === 'DEACTIVATE' || action === 'UPDATE_ROLE') && id === guard.session.userId) {
+          return false;
+        }
+        return true;
+      });
+
+      if (uniqueIds.length === 0) {
+        return NextResponse.json(
+          { error: 'Tidak ada akun valid yang dapat diproses (Anda tidak dapat mengubah peran atau menonaktifkan akun sendiri).' },
+          { status: 400 }
+        );
+      }
+
+      const supabase = createSupabaseAdminClient();
+      const { data: targetUsers, error: fetchBulkErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, primary_role, is_active, account_status')
+        .in('id', uniqueIds);
+
+      if (fetchBulkErr || !targetUsers || targetUsers.length === 0) {
+        return NextResponse.json({ error: 'Pengguna terpilih tidak ditemukan.' }, { status: 404 });
+      }
+
+      const allowedTargets = targetUsers.filter(
+        (u) => isActorSuperadmin || u.primary_role !== 'SUPERADMIN'
+      );
+
+      if (allowedTargets.length === 0) {
+        return NextResponse.json(
+          { error: 'Hanya SUPERADMIN yang dapat mengubah status atau peran akun SUPERADMIN.' },
+          { status: 403 }
+        );
+      }
+
+      const targetIds = allowedTargets.map((u) => u.id);
+      const nowIso = new Date().toISOString();
+      const bulkPayload: Record<string, unknown> = {
+        updated_at: nowIso,
+      };
+
+      if (action === 'APPROVE') {
+        bulkPayload.is_active = true;
+        bulkPayload.account_status = 'AKTIF';
+        bulkPayload.rejection_reason = null;
+        bulkPayload.reviewed_at = nowIso;
+        bulkPayload.reviewed_by = guard.session.userId;
+      } else if (action === 'DEACTIVATE') {
+        bulkPayload.is_active = false;
+        bulkPayload.account_status = 'NONAKTIF';
+        bulkPayload.reviewed_at = nowIso;
+        bulkPayload.reviewed_by = guard.session.userId;
+      }
+
+      if (primaryRole) {
+        bulkPayload.primary_role = primaryRole;
+      }
+
+      const { data: updatedUsers, error: bulkUpdateErr } = await supabase
+        .from('profiles')
+        .update(bulkPayload)
+        .in('id', targetIds)
+        .select('*');
+
+      if (bulkUpdateErr) {
+        return NextResponse.json(
+          { error: sanitizeApiError(bulkUpdateErr, 'Gagal memperbarui akun secara massal.') },
+          { status: 500 }
+        );
+      }
+
+      if (primaryRole) {
+        for (const u of allowedTargets) {
+          if (u.primary_role && u.primary_role !== primaryRole) {
+            await supabase
+              .from('user_roles')
+              .delete()
+              .eq('user_id', u.id)
+              .eq('role', u.primary_role);
+          }
+        }
+        const roleUpserts = targetIds.map((id) => ({ user_id: id, role: primaryRole }));
+        const { error: bulkRoleErr } = await supabase
+          .from('user_roles')
+          .upsert(roleUpserts, { onConflict: 'user_id,role' });
+        if (bulkRoleErr) {
+          return NextResponse.json(
+            { error: sanitizeApiError(bulkRoleErr, 'Gagal memperbarui peran pengguna secara massal.') },
+            { status: 500 }
+          );
+        }
+      }
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'USER_MANAGEMENT',
+        action: `BULK_${action}`,
+        entityType: 'profile',
+        entityId: targetIds[0],
+        summary: `Aksi massal ${action}${primaryRole ? ` (${primaryRole})` : ''} pada ${targetIds.length} akun pengguna`,
+        metadata: {
+          targetUserIds: targetIds,
+          primaryRole: primaryRole || null,
+          updatedCount: targetIds.length,
+        },
+      });
+
+      return NextResponse.json({
+        updatedCount: targetIds.length,
+        users: updatedUsers || [],
+      });
+    }
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'ID pengguna (userId atau userIds) wajib disertakan.' },
+        { status: 400 }
+      );
+    }
 
     if (
       userId === guard.session.userId &&
@@ -160,17 +413,10 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const isActorSuperadmin = guard.session.roles.includes('SUPERADMIN');
     if (userId === guard.session.userId && action === 'UPDATE_ROLE') {
       return NextResponse.json(
         { error: 'Anda tidak dapat mengubah peran akun Anda sendiri.' },
         { status: 400 }
-      );
-    }
-    if (!isActorSuperadmin && primaryRole === 'SUPERADMIN') {
-      return NextResponse.json(
-        { error: 'Hanya SUPERADMIN yang dapat menetapkan peran SUPERADMIN.' },
-        { status: 403 }
       );
     }
 
@@ -212,7 +458,7 @@ export async function PATCH(request: Request) {
     } else if (action === 'REJECT_PERMANENT') {
       updatePayload.is_active = false;
       updatePayload.account_status = 'DITOLAK_PERMANEN';
-      updatePayload.rejection_reason = `${PERMANENT_REJECT_PREFIX}${rejectionReason?.trim() || ''}`.trim();
+      updatePayload.rejection_reason = rejectionReason?.trim() || null;
       updatePayload.reviewed_at = nowIso;
       updatePayload.reviewed_by = guard.session.userId;
     } else if (action === 'DEACTIVATE') {
@@ -226,31 +472,12 @@ export async function PATCH(request: Request) {
       updatePayload.primary_role = primaryRole;
     }
 
-    let { data: updatedUser, error: updateErr } = await supabase
+    const { data: updatedUser, error: updateErr } = await supabase
       .from('profiles')
       .update(updatePayload)
       .eq('id', userId)
       .select('*')
       .single();
-
-    // Fallback jika constraint database belum dimigrasi untuk menerima 'DITOLAK_PERMANEN'
-    if (
-      updateErr &&
-      action === 'REJECT_PERMANENT' &&
-      updateErr.message.includes('account_status')
-    ) {
-      const fallbackRes = await supabase
-        .from('profiles')
-        .update({
-          ...updatePayload,
-          account_status: 'DITOLAK',
-        })
-        .eq('id', userId)
-        .select('*')
-        .single();
-      updatedUser = fallbackRes.data;
-      updateErr = fallbackRes.error;
-    }
 
     if (updateErr || !updatedUser) {
       return NextResponse.json(

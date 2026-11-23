@@ -1,8 +1,17 @@
 import type { NextConfig } from "next";
+import type { RemotePattern } from "next/dist/shared/lib/image-config";
+
+const isDev = process.env.NODE_ENV === "development";
+
+const SCRIPT_SRC = [
+  "script-src 'self' 'unsafe-inline'",
+  ...(isDev ? ["'unsafe-eval'"] : []),
+  "https://challenges.cloudflare.com",
+].join(" ");
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com",
+  SCRIPT_SRC,
   "worker-src 'self' blob:",
   "manifest-src 'self'",
   "style-src 'self' 'unsafe-inline'",
@@ -29,15 +38,55 @@ const SECURITY_HEADERS = [
   { key: "Content-Security-Policy", value: CONTENT_SECURITY_POLICY },
 ];
 
+function extractHostname(rawUrl?: string): string | null {
+  if (!rawUrl) return null;
+  try {
+    const normalized = /^https?:\/\//i.test(rawUrl.trim())
+      ? rawUrl.trim()
+      : `https://${rawUrl.trim()}`;
+    return new URL(normalized).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildAllowedImageRemotePatterns(): RemotePattern[] {
+  const patterns: RemotePattern[] = [
+    { protocol: "https", hostname: "**.supabase.co" },
+    { protocol: "https", hostname: "**.supabase.in" },
+    { protocol: "https", hostname: "**.r2.dev" },
+    { protocol: "https", hostname: "**.r2.cloudflarestorage.com" },
+    { protocol: "https", hostname: "**.googleusercontent.com" },
+    { protocol: "https", hostname: "avatars.githubusercontent.com" },
+    { protocol: "https", hostname: "images.unsplash.com" },
+    { protocol: "http", hostname: "localhost" },
+    { protocol: "http", hostname: "127.0.0.1" },
+  ];
+
+  const envUrls = [
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.R2_PUBLIC_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+  ];
+
+  const seenHostnames = new Set(patterns.map((p) => p.hostname));
+  for (const raw of envUrls) {
+    const host = extractHostname(raw);
+    if (host && !seenHostnames.has(host)) {
+      seenHostnames.add(host);
+      patterns.push({ protocol: "https", hostname: host });
+    }
+  }
+
+  return patterns;
+}
+
 const nextConfig: NextConfig = {
-  distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
+  distDir: isDev ? ".next-cache" : ".next",
   cacheComponents: true,
   partialPrefetching: true,
   images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "**" },
-      { protocol: "http", hostname: "localhost" },
-    ],
+    remotePatterns: buildAllowedImageRemotePatterns(),
   },
   turbopack: {
     rules: {

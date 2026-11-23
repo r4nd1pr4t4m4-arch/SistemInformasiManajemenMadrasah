@@ -1,17 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
   BookOpen,
   Camera,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   FileSignature,
   Loader2,
-  MailCheck,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -22,133 +22,67 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { AppRole } from '@/types/database';
-import { PERMISSIONS } from '@/lib/auth/rbac';
+import { ASSIGNABLE_APP_ROLES, PERMISSIONS } from '@/lib/auth/rbac';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
+import { useApiQuery } from '@/lib/hooks/use-api-query';
+import { useToast } from '@/components/providers/toast-provider';
+import {
+  AvatarChangeApprovalsTab,
+  NameChangeApprovalsTab,
+  type AccountStatus,
+  type AvatarChangeRequest,
+  type ManagedUser,
+  type NameChangeRequest,
+  type UserSummary,
+} from '@/components/portal/akun/user-management-tabs';
 
-type AccountStatus = 'PENDING' | 'AKTIF' | 'NONAKTIF' | 'DITOLAK' | 'DITOLAK_PERMANEN';
+const USER_PAGE_SIZE = 25;
 
-interface AvatarChangeRequest {
-  id: string;
-  profile_id: string;
-  old_avatar_url: string | null;
-  new_avatar_url: string;
-  status: 'MENUNGGU' | 'DISETUJUI' | 'DITOLAK';
-  review_notes: string | null;
-  created_at: string;
-  profile?: {
-    id: string;
-    full_name: string | null;
-    email: string | null;
-    primary_role: string | null;
-  } | null;
+interface UsersApiResponse {
+  users: ManagedUser[];
+  summary: UserSummary;
+  pagination?: {
+    page: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
+  };
+  smtpConfigured: boolean;
 }
-
-interface NameChangeRequest {
-  id: string;
-  profile_id: string;
-  old_full_name: string;
-  new_full_name: string;
-  reason: string | null;
-  status: 'MENUNGGU' | 'DISETUJUI' | 'DITOLAK';
-  reviewed_by: string | null;
-  reviewed_at: string | null;
-  review_notes: string | null;
-  created_at: string;
-  profile?: { id: string; email: string | null; primary_role: string } | null;
-}
-
-interface ManagedUser {
-  id: string;
-  full_name: string;
-  email: string | null;
-  phone: string | null;
-  primary_role: AppRole;
-  is_active: boolean;
-  account_status: AccountStatus;
-  rejection_reason: string | null;
-  reviewed_at: string | null;
-  created_at: string;
-  linked_student: { id: string; nis: string | null; nisn: string | null } | null;
-  linked_teacher: { id: string; staff_type: string; nip: string | null } | null;
-  linked_library: { id: string; member_code: string; member_type: string } | null;
-}
-
-interface Summary {
-  total: number;
-  pending: number;
-  active: number;
-  inactive: number;
-  rejected: number;
-}
-
-const ASSIGNABLE_ROLES: { value: AppRole; label: string }[] = [
-  { value: 'UMUM', label: 'UMUM (Pendaftar Baru / Publik)' },
-  { value: 'GURU', label: 'GURU' },
-  { value: 'WALI_KELAS', label: 'WALI_KELAS' },
-  { value: 'GURU_WALI', label: 'GURU_WALI' },
-  { value: 'GURU_BK', label: 'GURU_BK' },
-  { value: 'SISWA', label: 'SISWA' },
-  { value: 'ORANG_TUA', label: 'ORANG_TUA' },
-  { value: 'ALUMNI', label: 'ALUMNI' },
-  { value: 'PUSTAKAWAN', label: 'PUSTAKAWAN' },
-  { value: 'STAF_TU', label: 'STAF_TU' },
-  { value: 'KEPALA_TU', label: 'KEPALA_TU' },
-  { value: 'BENDAHARA', label: 'BENDAHARA' },
-  { value: 'BENDAHARA_KOMITE', label: 'BENDAHARA_KOMITE' },
-  { value: 'PENGELOLA_TABUNGAN', label: 'PENGELOLA_TABUNGAN' },
-  { value: 'WAKA_KURIKULUM', label: 'WAKA_KURIKULUM' },
-  { value: 'WAKA_KESISWAAN', label: 'WAKA_KESISWAAN' },
-  { value: 'WAKA_HUMAS', label: 'WAKA_HUMAS' },
-  { value: 'WAKA_SARPRAS', label: 'WAKA_SARPRAS' },
-  { value: 'KEPALA_LEMBAGA', label: 'KEPALA_LEMBAGA' },
-  { value: 'OPERATOR', label: 'OPERATOR' },
-  { value: 'SUPERADMIN', label: 'SUPERADMIN' },
-];
 
 export default function ManajemenPenggunaPage() {
   const { hasPermission } = usePortalSession();
   const canManage = hasPermission(PERMISSIONS.USER_MANAGEMENT_MANAGE);
-  const [loading, setLoading] = useState(true);
-  const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [summary, setSummary] = useState<Summary>({
-    total: 0,
-    pending: 0,
-    active: 0,
-    inactive: 0,
-    rejected: 0,
-  });
-  const [smtpConfigured, setSmtpConfigured] = useState(true);
+  const toast = useToast();
+
   const [activeTab, setActiveTab] = useState<'users' | 'name_changes' | 'avatar_changes'>('users');
-  const [nameRequests, setNameRequests] = useState<NameChangeRequest[]>([]);
-  const [avatarRequests, setAvatarRequests] = useState<AvatarChangeRequest[]>([]);
-  const [loadingRequests, setLoadingRequests] = useState(false);
-  const [filterNameStatus, setFilterNameStatus] = useState<'ALL' | 'MENUNGGU' | 'DISETUJUI' | 'DITOLAK'>('ALL');
-  const [rejectNameModalReq, setRejectNameModalReq] = useState<NameChangeRequest | null>(null);
-  const [nameRejectNotes, setNameRejectNotes] = useState('');
-  const [rejectAvatarModalReq, setRejectAvatarModalReq] = useState<AvatarChangeRequest | null>(null);
-  const [avatarRejectNotes, setAvatarRejectNotes] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | AccountStatus>('ALL');
+  const [filterNameStatus, setFilterNameStatus] = useState<
+    'ALL' | 'MENUNGGU' | 'DISETUJUI' | 'DITOLAK'
+  >('ALL');
   const [search, setSearch] = useState('');
-  const [visibleUsersCount, setVisibleUsersCount] = useState(25);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [bulkRole, setBulkRole] = useState<AppRole>('GURU');
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [rejectModalUser, setRejectModalUser] = useState<ManagedUser | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
-  const [toast, setToast] = useState<{ type: 'success' | 'warning' | 'error'; text: string } | null>(
+  const [rejectNameModalReq, setRejectNameModalReq] = useState<NameChangeRequest | null>(null);
+  const [nameRejectNotes, setNameRejectNotes] = useState('');
+  const [rejectAvatarModalReq, setRejectAvatarModalReq] = useState<AvatarChangeRequest | null>(
     null
   );
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const showToast = useCallback((type: 'success' | 'warning' | 'error', text: string) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast({ type, text });
-    toastTimerRef.current = setTimeout(() => setToast(null), 6000);
-  }, []);
+  const [avatarRejectNotes, setAvatarRejectNotes] = useState('');
 
   useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    };
-  }, []);
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -161,61 +95,57 @@ export default function ManajemenPenggunaPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [busyId, rejectModalUser, rejectNameModalReq, rejectAvatarModalReq]);
 
-  const loadUsers = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/akun/manajemen-pengguna', { cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showToast('error', data.error || 'Gagal memuat daftar pengguna.');
-        return;
-      }
-      setUsers(data.users || []);
-      setSummary(
-        data.summary || { total: 0, pending: 0, active: 0, inactive: 0, rejected: 0 }
-      );
-      setSmtpConfigured(Boolean(data.smtpConfigured));
-    } catch {
-      showToast('error', 'Gagal terhubung ke server.');
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+  const usersUrl = useMemo(() => {
+    const qs = new URLSearchParams({
+      page: String(currentPage),
+      pageSize: String(USER_PAGE_SIZE),
+      status: filterStatus,
+    });
+    if (debouncedSearch) qs.set('q', debouncedSearch);
+    return `/api/akun/manajemen-pengguna?${qs.toString()}`;
+  }, [currentPage, filterStatus, debouncedSearch]);
 
-  const loadNameRequests = useCallback(async () => {
-    setLoadingRequests(true);
-    try {
-      const res = await fetch('/api/akun/nama/persetujuan', { cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setNameRequests(data.requests || []);
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoadingRequests(false);
-    }
-  }, []);
+  const {
+    data: usersData,
+    loading,
+    refetch: loadUsers,
+  } = useApiQuery<UsersApiResponse>(usersUrl, {
+    staleTimeMs: 10_000,
+    onError: (msg) => toast.error(msg),
+  });
 
-  const loadAvatarRequests = useCallback(async () => {
-    try {
-      const res = await fetch('/api/akun/avatar/persetujuan', { cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setAvatarRequests(data.requests || []);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
+  const {
+    data: nameReqData,
+    loading: loadingRequests,
+    refetch: loadNameRequests,
+  } = useApiQuery<{ requests: NameChangeRequest[] }>('/api/akun/nama/persetujuan', {
+    staleTimeMs: 15_000,
+  });
 
-  useEffect(() => {
-    const id = setTimeout(() => {
-      void loadUsers();
-      void loadNameRequests();
-      void loadAvatarRequests();
-    }, 0);
-    return () => clearTimeout(id);
+  const { data: avatarReqData, refetch: loadAvatarRequests } = useApiQuery<{
+    requests: AvatarChangeRequest[];
+  }>('/api/akun/avatar/persetujuan', {
+    staleTimeMs: 15_000,
+  });
+
+  const users = usersData?.users || [];
+  const summary: UserSummary = usersData?.summary || {
+    total: 0,
+    pending: 0,
+    active: 0,
+    inactive: 0,
+    rejected: 0,
+  };
+  const totalPages = Math.max(1, Number(usersData?.pagination?.totalPages || 1));
+  const totalFilteredUsers = Number(usersData?.pagination?.totalCount ?? users.length);
+  const smtpConfigured = usersData?.smtpConfigured ?? true;
+  const nameRequests = useMemo(() => nameReqData?.requests || [], [nameReqData]);
+  const avatarRequests = useMemo(() => avatarReqData?.requests || [], [avatarReqData]);
+
+  const handleRefreshAll = useCallback(() => {
+    void loadUsers(false);
+    void loadNameRequests(true);
+    void loadAvatarRequests(true);
   }, [loadUsers, loadNameRequests, loadAvatarRequests]);
 
   async function handleReviewAvatarChange(
@@ -232,20 +162,19 @@ export default function ManajemenPenggunaPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        showToast(
-          'success',
+        toast.success(
           action === 'APPROVE'
             ? 'Foto profil disetujui dan langsung diterapkan ke profil serta kartu pengguna.'
             : 'Pengajuan foto profil ditolak.'
         );
-        await Promise.all([loadAvatarRequests(), loadUsers()]);
+        await Promise.all([loadAvatarRequests(true), loadUsers(true)]);
         setRejectAvatarModalReq(null);
         setAvatarRejectNotes('');
       } else {
-        showToast('error', data.error || 'Gagal memproses persetujuan foto profil.');
+        toast.error(data.error || 'Gagal memproses persetujuan foto profil.');
       }
     } catch {
-      showToast('error', 'Gagal memproses persetujuan foto profil.');
+      toast.error('Gagal memproses persetujuan foto profil.');
     } finally {
       setBusyId(null);
     }
@@ -265,20 +194,19 @@ export default function ManajemenPenggunaPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        showToast(
-          'success',
+        toast.success(
           action === 'APPROVE'
             ? 'Perubahan nama lengkap telah disetujui dan disinkronkan ke seluruh biodata pengguna.'
             : 'Pengajuan perubahan nama ditolak.'
         );
-        await Promise.all([loadNameRequests(), loadUsers()]);
+        await Promise.all([loadNameRequests(true), loadUsers(true)]);
         setRejectNameModalReq(null);
         setNameRejectNotes('');
       } else {
-        showToast('error', data.error || 'Gagal memproses persetujuan perubahan nama.');
+        toast.error(data.error || 'Gagal memproses persetujuan perubahan nama.');
       }
     } catch {
-      showToast('error', 'Gagal memproses persetujuan perubahan nama.');
+      toast.error('Gagal memproses persetujuan perubahan nama.');
     } finally {
       setBusyId(null);
     }
@@ -305,15 +233,14 @@ export default function ManajemenPenggunaPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        showToast('error', data.error || 'Gagal memperbarui akun.');
+        toast.error(data.error || 'Gagal memperbarui akun.');
         return;
       }
 
       if (data.emailWarning) {
-        showToast('warning', data.emailWarning);
+        toast.warning(data.emailWarning);
       } else if (data.emailSent) {
-        showToast(
-          'success',
+        toast.success(
           params.action === 'APPROVE'
             ? 'Akun diaktifkan & email notifikasi persetujuan telah dikirim.'
             : params.action === 'REJECT'
@@ -323,39 +250,74 @@ export default function ManajemenPenggunaPage() {
                 : 'Akun dinonaktifkan & email pemberitahuan telah dikirim.'
         );
       } else {
-        showToast('success', 'Data pengguna berhasil diperbarui.');
+        toast.success('Data pengguna berhasil diperbarui.');
       }
 
       setRejectModalUser(null);
       setRejectionReason('');
-      await loadUsers();
+      await loadUsers(true);
     } catch {
-      showToast('error', 'Terjadi kesalahan jaringan.');
+      toast.error('Terjadi kesalahan jaringan.');
     } finally {
       setBusyId(null);
     }
   }
 
-  const filteredUsers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return users.filter((u) => {
-      if (filterStatus !== 'ALL') {
-        if (filterStatus === 'DITOLAK') {
-          if (u.account_status !== 'DITOLAK' && u.account_status !== 'DITOLAK_PERMANEN') {
-            return false;
-          }
-        } else if (u.account_status !== filterStatus) {
-          return false;
-        }
+  function toggleSelectUser(userId: string) {
+    setSelectedUserIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  }
+
+  function toggleSelectAllCurrentPage() {
+    const pageIds = users.map((u) => u.id);
+    const allSelected = pageIds.length > 0 && pageIds.every((id) => selectedUserIds.includes(id));
+    if (allSelected) {
+      setSelectedUserIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+    } else {
+      setSelectedUserIds((prev) => Array.from(new Set([...prev, ...pageIds])));
+    }
+  }
+
+  async function handleBulkAction(
+    action: 'APPROVE' | 'DEACTIVATE' | 'UPDATE_ROLE',
+    primaryRole?: AppRole
+  ) {
+    if (selectedUserIds.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch('/api/akun/manajemen-pengguna', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userIds: selectedUserIds,
+          action,
+          primaryRole,
+          sendEmail: false,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Gagal menjalankan aksi massal.');
+        return;
       }
-      if (!q) return true;
-      return (
-        u.full_name.toLowerCase().includes(q) ||
-        (u.email || '').toLowerCase().includes(q) ||
-        u.primary_role.toLowerCase().includes(q)
+
+      const count = Number(data.updatedCount ?? selectedUserIds.length);
+      toast.success(
+        action === 'APPROVE'
+          ? `${count} akun berhasil disetujui & diaktifkan secara massal.`
+          : action === 'DEACTIVATE'
+            ? `${count} akun berhasil dinonaktifkan secara massal.`
+            : `Peran ${count} akun berhasil diubah menjadi ${primaryRole} secara massal.`
       );
-    });
-  }, [users, filterStatus, search]);
+      setSelectedUserIds([]);
+      await loadUsers(true);
+    } catch {
+      toast.error('Terjadi kesalahan jaringan saat memproses aksi massal.');
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   const filteredNameRequests = useMemo(() => {
     return nameRequests.filter((r) => {
@@ -411,35 +373,6 @@ export default function ManajemenPenggunaPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {toast && (
-        <div
-          role={toast.type === 'error' ? 'alert' : 'status'}
-          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center justify-between gap-2 ${toast.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : toast.type === 'warning'
-                ? 'bg-amber-50 border-amber-200 text-amber-800'
-                : 'bg-rose-50 border-rose-200 text-rose-800'
-            }`}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            {toast.type === 'success' ? (
-              <MailCheck className="w-4 h-4 shrink-0" />
-            ) : (
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-            )}
-            <span className="break-words">{toast.text}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            aria-label="Tutup notifikasi"
-            className="p-1 rounded-lg hover:bg-black/5 shrink-0"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
       {!smtpConfigured && (
         <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2.5">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -468,11 +401,7 @@ export default function ManajemenPenggunaPage() {
           <button
             type="button"
             disabled={loading}
-            onClick={() => {
-              loadUsers();
-              loadNameRequests();
-              loadAvatarRequests();
-            }}
+            onClick={handleRefreshAll}
             className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -487,15 +416,16 @@ export default function ManajemenPenggunaPage() {
         </div>
       </div>
 
-      {/* Tab Switcher: Akun Pengguna vs Perubahan Nama */}
+      {/* Tab Switcher */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-3 sm:flex-wrap sm:overflow-visible border-b border-slate-200/80 -mx-1 px-1">
         <button
           type="button"
           onClick={() => setActiveTab('users')}
-          className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 whitespace-nowrap ${activeTab === 'users'
+          className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 whitespace-nowrap ${
+            activeTab === 'users'
               ? 'bg-slate-900 text-white shadow-xs'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-            }`}
+          }`}
         >
           <Users className="w-4 h-4 shrink-0" />
           Manajemen Akun Pengguna
@@ -506,10 +436,11 @@ export default function ManajemenPenggunaPage() {
         <button
           type="button"
           onClick={() => setActiveTab('name_changes')}
-          className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 whitespace-nowrap ${activeTab === 'name_changes'
+          className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 whitespace-nowrap ${
+            activeTab === 'name_changes'
               ? 'bg-slate-900 text-white shadow-xs'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-            }`}
+          }`}
         >
           <FileSignature className="w-4 h-4 shrink-0" />
           Persetujuan Perubahan Nama
@@ -526,10 +457,11 @@ export default function ManajemenPenggunaPage() {
         <button
           type="button"
           onClick={() => setActiveTab('avatar_changes')}
-          className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 whitespace-nowrap ${activeTab === 'avatar_changes'
+          className={`min-h-[40px] inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 whitespace-nowrap ${
+            activeTab === 'avatar_changes'
               ? 'bg-slate-900 text-white shadow-xs'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-            }`}
+          }`}
         >
           <Camera className="w-4 h-4 shrink-0" />
           Persetujuan Foto Profil
@@ -547,7 +479,6 @@ export default function ManajemenPenggunaPage() {
 
       {activeTab === 'users' && (
         <>
-          {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div className="glass-card rounded-2xl p-4">
               <p className="text-[11px] font-medium text-slate-500">Total Akun</p>
@@ -571,7 +502,6 @@ export default function ManajemenPenggunaPage() {
             </div>
           </div>
 
-          {/* Filter & Search */}
           <div className="glass-card rounded-3xl p-4 sm:p-5 space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap sm:overflow-visible -mx-1 px-1">
@@ -590,12 +520,13 @@ export default function ManajemenPenggunaPage() {
                     aria-pressed={filterStatus === tab.key}
                     onClick={() => {
                       setFilterStatus(tab.key);
-                      setVisibleUsersCount(25);
+                      setCurrentPage(1);
                     }}
-                    className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${filterStatus === tab.key
+                    className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${
+                      filterStatus === tab.key
                         ? 'bg-emerald-700 text-white'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                    }`}
                   >
                     {tab.label}
                   </button>
@@ -610,9 +541,9 @@ export default function ManajemenPenggunaPage() {
                   value={search}
                   onChange={(e) => {
                     setSearch(e.target.value);
-                    setVisibleUsersCount(25);
+                    setCurrentPage(1);
                   }}
-                  placeholder="Cari nama, email, atau role..."
+                  placeholder="Cari nama, email, telepon, atau role..."
                   className="w-full min-h-[40px] pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-white text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
                 />
                 {search && (
@@ -620,7 +551,8 @@ export default function ManajemenPenggunaPage() {
                     type="button"
                     onClick={() => {
                       setSearch('');
-                      setVisibleUsersCount(25);
+                      setDebouncedSearch('');
+                      setCurrentPage(1);
                     }}
                     aria-label="Hapus pencarian"
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
@@ -635,27 +567,126 @@ export default function ManajemenPenggunaPage() {
               <div className="py-12 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> Memuat daftar pengguna...
               </div>
-            ) : filteredUsers.length === 0 ? (
+            ) : users.length === 0 ? (
               <div className="py-12 text-center text-xs text-slate-500">
                 <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                 Tidak ada data pengguna yang sesuai filter.
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredUsers.slice(0, visibleUsersCount).map((u) => {
-                  const isBusy = busyId === u.id;
+                {canManage && (
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={
+                            users.length > 0 &&
+                            users.every((u) => selectedUserIds.includes(u.id))
+                          }
+                          onChange={toggleSelectAllCurrentPage}
+                          className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span>Pilih Semua di Halaman Ini ({users.length})</span>
+                      </label>
+                      {selectedUserIds.length > 0 && (
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                          {selectedUserIds.length} akun dipilih
+                        </span>
+                      )}
+                    </div>
+
+                    {selectedUserIds.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={bulkBusy}
+                          onClick={() => void handleBulkAction('APPROVE')}
+                          className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
+                        >
+                          {bulkBusy ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <UserCheck className="w-3.5 h-3.5" />
+                          )}
+                          Setujui &amp; Aktifkan ({selectedUserIds.length})
+                        </button>
+
+                        <div className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1">
+                          <select
+                            aria-label="Pilih role untuk ubah peran massal"
+                            value={bulkRole}
+                            disabled={bulkBusy}
+                            onChange={(e) => setBulkRole(e.target.value as AppRole)}
+                            className="px-2 py-1 rounded-lg bg-slate-50 text-xs font-medium text-slate-700 focus:outline-none"
+                          >
+                            {ASSIGNABLE_APP_ROLES.map((r) => (
+                              <option key={r.value} value={r.value}>
+                                {r.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={bulkBusy}
+                            onClick={() => void handleBulkAction('UPDATE_ROLE', bulkRole)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition disabled:opacity-50"
+                          >
+                            Terapkan Role
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={bulkBusy}
+                          onClick={() => void handleBulkAction('DEACTIVATE')}
+                          className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition disabled:opacity-50"
+                        >
+                          <UserX className="w-3.5 h-3.5" /> Nonaktifkan
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={bulkBusy}
+                          onClick={() => setSelectedUserIds([])}
+                          className="min-h-[36px] px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-200/70 transition"
+                        >
+                          Reset Pilihan
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {users.map((u) => {
+                  const isBusy = busyId === u.id || bulkBusy;
+                  const isSelected = selectedUserIds.includes(u.id);
                   return (
                     <div
                       key={u.id}
-                      className="p-4 rounded-2xl bg-white border border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4 min-w-0"
+                      className={`p-4 rounded-2xl bg-white border flex flex-col lg:flex-row lg:items-center justify-between gap-4 min-w-0 transition ${
+                        isSelected
+                          ? 'border-emerald-500 ring-2 ring-emerald-500/15 bg-emerald-50/15'
+                          : 'border-slate-200/80'
+                      }`}
                     >
-                      <div className="space-y-1.5 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-bold text-slate-900 break-words">
-                            {u.full_name}
-                          </span>
-                          {renderStatusBadge(u.account_status)}
-                        </div>
+                      <div className="flex items-start gap-3 min-w-0">
+                        {canManage && (
+                          <input
+                            type="checkbox"
+                            aria-label={`Pilih akun ${u.full_name}`}
+                            checked={isSelected}
+                            onChange={() => toggleSelectUser(u.id)}
+                            className="mt-1 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 shrink-0 cursor-pointer"
+                          />
+                        )}
+                        <div className="space-y-1.5 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900 break-words">
+                              {u.full_name}
+                            </span>
+                            {renderStatusBadge(u.account_status)}
+                          </div>
                         <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2.5 gap-y-1">
                           <span className="break-all">{u.email || 'Tanpa email'}</span>
                           <span>•</span>
@@ -691,11 +722,15 @@ export default function ManajemenPenggunaPage() {
                               E-Library: {u.linked_library.member_code} ({u.linked_library.member_type})
                             </span>
                           )}
-                          {!u.linked_student && !u.linked_teacher && !u.linked_library && u.is_active && (
-                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                              Belum ditempatkan di Buku Induk / E-Library
-                            </span>
-                          )}
+                          {!u.linked_student &&
+                            !u.linked_teacher &&
+                            !u.linked_library &&
+                            u.is_active && (
+                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                                Belum ditempatkan di Buku Induk / E-Library
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -715,7 +750,7 @@ export default function ManajemenPenggunaPage() {
                               }
                               className="w-full sm:w-auto min-h-[38px] px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm sm:text-xs font-medium text-slate-700"
                             >
-                              {ASSIGNABLE_ROLES.map((r) => (
+                              {ASSIGNABLE_APP_ROLES.map((r) => (
                                 <option key={r.value} value={r.value}>
                                   {r.label}
                                 </option>
@@ -781,26 +816,26 @@ export default function ManajemenPenggunaPage() {
                             {(u.account_status === 'NONAKTIF' ||
                               u.account_status === 'DITOLAK' ||
                               u.account_status === 'DITOLAK_PERMANEN') && (
-                                <button
-                                  type="button"
-                                  aria-busy={isBusy || undefined}
-                                  disabled={isBusy}
-                                  onClick={() =>
-                                    handleAction({
-                                      userId: u.id,
-                                      action: 'APPROVE',
-                                    })
-                                  }
-                                  className="min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
-                                >
-                                  {isBusy ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <UserCheck className="w-3.5 h-3.5" />
-                                  )}{' '}
-                                  Aktifkan Kembali
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                aria-busy={isBusy || undefined}
+                                disabled={isBusy}
+                                onClick={() =>
+                                  handleAction({
+                                    userId: u.id,
+                                    action: 'APPROVE',
+                                  })
+                                }
+                                className="min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
+                              >
+                                {isBusy ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <UserCheck className="w-3.5 h-3.5" />
+                                )}{' '}
+                                Aktifkan Kembali
+                              </button>
+                            )}
                           </>
                         ) : (
                           <span className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700">
@@ -812,17 +847,44 @@ export default function ManajemenPenggunaPage() {
                   );
                 })}
 
-                {visibleUsersCount < filteredUsers.length && (
-                  <div className="pt-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setVisibleUsersCount((c) => c + 25)}
-                      className="min-h-[40px] px-5 py-2 rounded-xl bg-white border border-slate-200 hover:border-emerald-300 text-xs font-semibold text-slate-700 hover:text-emerald-800 transition"
-                    >
-                      Muat Lebih Banyak ({filteredUsers.length - visibleUsersCount} tersisa)
-                    </button>
-                  </div>
-                )}
+                <div className="pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-600">
+                  <span>
+                    Menampilkan{' '}
+                    <strong className="text-slate-900">
+                      {users.length > 0 ? (currentPage - 1) * USER_PAGE_SIZE + 1 : 0}
+                    </strong>
+                    –
+                    <strong className="text-slate-900">
+                      {(currentPage - 1) * USER_PAGE_SIZE + users.length}
+                    </strong>{' '}
+                    dari <strong className="text-slate-900">{totalFilteredUsers}</strong> akun
+                  </span>
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={currentPage <= 1 || loading}
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        Sebelumnya
+                      </button>
+                      <span className="px-2.5 py-1 font-semibold text-slate-700">
+                        Hal. {currentPage} / {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={currentPage >= totalPages || loading}
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                      >
+                        Berikutnya
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -830,174 +892,35 @@ export default function ManajemenPenggunaPage() {
       )}
 
       {activeTab === 'name_changes' && (
-        <div className="glass-card rounded-3xl p-4 sm:p-5 space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap sm:overflow-visible -mx-1 px-1">
-              {(
-                [
-                  { key: 'ALL', label: `Semua (${nameRequests.length})` },
-                  {
-                    key: 'MENUNGGU',
-                    label: `Menunggu (${nameRequests.filter((r) => r.status === 'MENUNGGU').length})`,
-                  },
-                  {
-                    key: 'DISETUJUI',
-                    label: `Disetujui (${nameRequests.filter((r) => r.status === 'DISETUJUI').length})`,
-                  },
-                  {
-                    key: 'DITOLAK',
-                    label: `Ditolak (${nameRequests.filter((r) => r.status === 'DITOLAK').length})`,
-                  },
-                ] as const
-              ).map((f) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  aria-pressed={filterNameStatus === f.key}
-                  onClick={() => setFilterNameStatus(f.key)}
-                  className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${filterNameStatus === f.key
-                      ? 'bg-emerald-700 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
+        <NameChangeApprovalsTab
+          nameRequests={nameRequests}
+          filteredNameRequests={filteredNameRequests}
+          filterNameStatus={filterNameStatus}
+          setFilterNameStatus={setFilterNameStatus}
+          search={search}
+          setSearch={setSearch}
+          loadingRequests={loadingRequests}
+          canManage={canManage}
+          busyId={busyId}
+          onApprove={(id) => void handleReviewNameChange(id, 'APPROVE')}
+          onOpenRejectModal={(req) => {
+            setRejectNameModalReq(req);
+            setNameRejectNotes('');
+          }}
+        />
+      )}
 
-            <div className="relative w-full md:w-72 shrink-0">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                aria-label="Cari pengajuan perubahan nama"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Cari nama lama/baru atau email..."
-                className="w-full min-h-[40px] pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-white text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  aria-label="Hapus pencarian"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {loadingRequests ? (
-            <div className="py-12 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" /> Memuat data pengajuan perubahan nama...
-            </div>
-          ) : filteredNameRequests.length === 0 ? (
-            <div className="py-12 text-center text-xs text-slate-500">
-              <FileSignature className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              Tidak ada data pengajuan perubahan nama yang sesuai filter.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredNameRequests.map((r) => {
-                const isBusy = busyId === r.id;
-                return (
-                  <div
-                    key={r.id}
-                    className="p-4 rounded-2xl bg-white border border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
-                  >
-                    <div className="space-y-2 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs text-slate-500">
-                          Nama Lama:{' '}
-                          <span className="font-semibold text-slate-700 line-through">
-                            {r.old_full_name}
-                          </span>
-                        </span>
-                        <span className="text-slate-400">→</span>
-                        <span className="text-sm font-bold text-slate-900 bg-emerald-50 text-emerald-900 border border-emerald-200 px-2.5 py-0.5 rounded-lg">
-                          {r.new_full_name}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.status === 'MENUNGGU'
-                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                              : r.status === 'DISETUJUI'
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                : 'bg-rose-100 text-rose-800 border border-rose-200'
-                            }`}
-                        >
-                          {r.status}
-                        </span>
-                      </div>
-
-                      <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span>Email: <strong className="text-slate-800">{r.profile?.email || '-'}</strong></span>
-                        <span>•</span>
-                        <span>Role: <strong className="text-slate-800">{r.profile?.primary_role || '-'}</strong></span>
-                        <span>•</span>
-                        <span>
-                          Diajukan: {new Date(r.created_at).toLocaleString('id-ID')}
-                        </span>
-                      </div>
-
-                      {r.reason && (
-                        <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100">
-                          Alasan: <span className="text-slate-800">{r.reason}</span>
-                        </p>
-                      )}
-
-                      {r.review_notes && (
-                        <p className="text-xs text-rose-700 bg-rose-50/70 p-2 rounded-xl border border-rose-100">
-                          Catatan Review: {r.review_notes}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {r.status === 'MENUNGGU' && canManage ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => handleReviewNameChange(r.id, 'APPROVE')}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
-                          >
-                            {isBusy ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                            )}
-                            Setujui
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => {
-                              setRejectNameModalReq(r);
-                              setNameRejectNotes('');
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition disabled:opacity-50"
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                            Tolak
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-[11px] text-slate-400">
-                          {r.status === 'DISETUJUI'
-                            ? `Disetujui pada ${r.reviewed_at ? new Date(r.reviewed_at).toLocaleDateString('id-ID') : '-'}`
-                            : r.status === 'DITOLAK'
-                              ? `Ditolak pada ${r.reviewed_at ? new Date(r.reviewed_at).toLocaleDateString('id-ID') : '-'}`
-                              : '-'}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+      {activeTab === 'avatar_changes' && (
+        <AvatarChangeApprovalsTab
+          avatarRequests={avatarRequests}
+          canManage={canManage}
+          busyId={busyId}
+          onApprove={(id) => void handleReviewAvatarChange(id, 'APPROVE')}
+          onOpenRejectModal={(req) => {
+            setRejectAvatarModalReq(req);
+            setAvatarRejectNotes('');
+          }}
+        />
       )}
 
       {/* Modal Tolak Perubahan Nama */}
@@ -1019,8 +942,10 @@ export default function ManajemenPenggunaPage() {
               Tolak Pengajuan Perubahan Nama
             </h2>
             <p className="text-xs text-slate-600 leading-relaxed break-words">
-              Anda akan menolak pengajuan perubahan nama dari <strong>{rejectNameModalReq.old_full_name}</strong> menjadi{' '}
-              <strong>{rejectNameModalReq.new_full_name}</strong> ({rejectNameModalReq.profile?.email || '-'}).
+              Anda akan menolak pengajuan perubahan nama dari{' '}
+              <strong>{rejectNameModalReq.old_full_name}</strong> menjadi{' '}
+              <strong>{rejectNameModalReq.new_full_name}</strong> (
+              {rejectNameModalReq.profile?.email || '-'}).
             </p>
             <div className="space-y-1.5">
               <label htmlFor="name-reject-notes" className="text-xs font-semibold text-slate-700">
@@ -1053,7 +978,9 @@ export default function ManajemenPenggunaPage() {
                 }
                 className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
               >
-                {busyId === rejectNameModalReq.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {busyId === rejectNameModalReq.id && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                )}
                 <span>{busyId === rejectNameModalReq.id ? 'Memproses...' : 'Konfirmasi Tolak'}</span>
               </button>
             </div>
@@ -1129,7 +1056,9 @@ export default function ManajemenPenggunaPage() {
                 className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
               >
                 {busyId === rejectModalUser.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>{busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak & Kirim Email'}</span>
+                <span>
+                  {busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak & Kirim Email'}
+                </span>
               </button>
               <button
                 type="button"
@@ -1151,126 +1080,8 @@ export default function ManajemenPenggunaPage() {
           </div>
         </div>
       )}
-      {activeTab === 'avatar_changes' && (
-        <div className="glass-card rounded-3xl p-4 sm:p-5 space-y-4 min-w-0 max-w-full overflow-hidden">
-          <div className="flex items-center justify-between min-w-0">
-            <div className="min-w-0">
-              <h2 className="text-sm font-bold text-slate-900 break-words">
-                Pengajuan Perubahan Foto Profil ({avatarRequests.length})
-              </h2>
-              <p className="text-xs text-slate-500 break-words">
-                Setujui atau tolak foto profil yang diunggah pengguna sebelum tampil di profil dan kartu digital.
-              </p>
-            </div>
-          </div>
 
-          {avatarRequests.length === 0 ? (
-            <div className="py-12 text-center text-xs text-slate-500">
-              <Camera className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              Belum ada pengajuan perubahan foto profil.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
-              {avatarRequests.map((req) => (
-                <div
-                  key={req.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-4 space-y-3 min-w-0 max-w-full overflow-hidden"
-                >
-                  <div className="flex items-start sm:items-center justify-between gap-2 min-w-0">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-slate-900 truncate">
-                        {req.profile?.full_name || 'Pengguna'}
-                      </p>
-                      <p className="text-[11px] text-slate-500 truncate">
-                        {req.profile?.email} • {req.profile?.primary_role || '-'}
-                      </p>
-                    </div>
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${req.status === 'MENUNGGU'
-                          ? 'bg-amber-100 text-amber-800'
-                          : req.status === 'DISETUJUI'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-rose-100 text-rose-800'
-                        }`}
-                    >
-                      {req.status}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 sm:gap-4 bg-slate-50 rounded-xl p-3 border border-slate-100 min-w-0">
-                    <div className="text-center space-y-1 shrink-0">
-                      <p className="text-[11px] text-slate-500 font-semibold">Foto Lama</p>
-                      {req.old_avatar_url ? (
-                        <Image
-                          src={req.old_avatar_url}
-                          alt="Foto lama"
-                          width={64}
-                          height={64}
-                          unoptimized={req.old_avatar_url.startsWith('/api/')}
-                          className="w-16 h-16 rounded-xl object-cover border border-slate-200"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 rounded-xl bg-slate-200 text-slate-600 text-[11px] flex items-center justify-center">
-                          Kosong
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-slate-500 font-bold shrink-0">→</span>
-                    <div className="text-center space-y-1 shrink-0">
-                      <p className="text-[11px] text-emerald-700 font-semibold">Foto Baru</p>
-                      <Image
-                        src={req.new_avatar_url}
-                        alt="Foto baru"
-                        width={64}
-                        height={64}
-                        unoptimized={req.new_avatar_url.startsWith('/api/')}
-                        className="w-16 h-16 rounded-xl object-cover border-2 border-emerald-400 shadow-xs"
-                      />
-                    </div>
-                  </div>
-
-                  {req.review_notes && (
-                    <p className="text-[11px] text-slate-600 bg-slate-50 rounded-lg px-2.5 py-1.5 break-words">
-                      Catatan: {req.review_notes}
-                    </p>
-                  )}
-
-                  {canManage && req.status === 'MENUNGGU' && (
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        aria-busy={busyId === req.id || undefined}
-                        disabled={busyId === req.id}
-                        onClick={() => handleReviewAvatarChange(req.id, 'APPROVE')}
-                        className="flex-1 min-w-[110px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-50"
-                      >
-                        {busyId === req.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                        )}{' '}
-                        Setujui
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === req.id}
-                        onClick={() => {
-                          setRejectAvatarModalReq(req);
-                          setAvatarRejectNotes('');
-                        }}
-                        className="flex-1 min-w-[110px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold disabled:opacity-50"
-                      >
-                        <XCircle className="w-3.5 h-3.5" /> Tolak
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
+      {/* Modal Tolak Foto Profil */}
       {canManage && rejectAvatarModalReq && (
         <div
           role="dialog"
@@ -1318,7 +1129,9 @@ export default function ManajemenPenggunaPage() {
                 }
                 className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
               >
-                {busyId === rejectAvatarModalReq.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {busyId === rejectAvatarModalReq.id && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                )}
                 <span>{busyId === rejectAvatarModalReq.id ? 'Memproses...' : 'Tolak Foto'}</span>
               </button>
             </div>

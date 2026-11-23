@@ -67,13 +67,8 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (existingProfile) {
-      const rawStatus =
+      const status =
         existingProfile.account_status || (existingProfile.is_active ? 'AKTIF' : 'NONAKTIF');
-      const isPermanentRejected =
-        rawStatus === 'DITOLAK_PERMANEN' ||
-        (rawStatus === 'DITOLAK' &&
-          Boolean(existingProfile.rejection_reason?.startsWith('[TOLAK_PERMANEN]')));
-      const status = isPermanentRejected ? 'DITOLAK_PERMANEN' : rawStatus;
 
       // Jika statusnya DITOLAK biasa (bukan DITOLAK_PERMANEN), izinkan kirim OTP untuk daftar ulang
       if (status !== 'DITOLAK') {

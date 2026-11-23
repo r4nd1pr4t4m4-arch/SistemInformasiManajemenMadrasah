@@ -224,6 +224,50 @@ export async function GET() {
     'STAF_TU',
   ]);
 
+  // Ambil metrik operasional teragregasi via RPC (PPDB, Sarpras, BK, Perpustakaan, Alumni)
+  // dengan fallback query count/sum aman apabila migrasi 0043 belum dijalankan di database
+  interface OperationalRpcMetrics {
+    ppdb?: {
+      total: number;
+      waitingVerification: number;
+      verified: number;
+      accepted: number;
+    };
+    facilities?: {
+      totalItems: number;
+      totalUnits: number;
+      goodConditionCount: number;
+      needsAttentionCount: number;
+    };
+    bk?: {
+      totalRecords: number;
+      konsultasiCount: number;
+      prestasiCount: number;
+      pelanggaranCount: number;
+    };
+    library?: {
+      totalBookTitles: number;
+      totalCopiesAvailable: number;
+    };
+    alumni?: {
+      totalTracers: number;
+      kuliahCount: number;
+      bekerjaCount: number;
+      wirausahaCount: number;
+      pesantrenCount: number;
+    };
+  }
+
+  let opMetrics: OperationalRpcMetrics | null = null;
+  if (isExecutiveOrAdmin || isBkRole || isLibraryRole || isAlumniRole) {
+    const { data: rpcOpData, error: rpcOpErr } = await supabase.rpc(
+      'get_dashboard_operational_metrics'
+    );
+    if (!rpcOpErr && rpcOpData && typeof rpcOpData === 'object') {
+      opMetrics = rpcOpData as OperationalRpcMetrics;
+    }
+  }
+
   // --- A. Executive / Admin Summary ---
   let executiveSummary: Record<string, unknown> | null = null;
   if (isExecutiveOrAdmin) {
@@ -233,9 +277,11 @@ export async function GET() {
       { count: classroomsCount },
       { count: subjectsCount },
       { count: pendingAccountsCount },
+      { count: todayAttendanceTotalCount },
+      { count: todayAttendanceUnconfirmedCount },
       { data: todayAttendances },
-      { data: ppdbRows },
-      { data: facilitiesRows },
+      { data: recentPpdbRows },
+      { data: damagedFacilitiesRows },
       { data: recentLetters },
       { data: upcomingEvents },
     ] = await Promise.all([
@@ -246,18 +292,76 @@ export async function GET() {
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('account_status', 'PENDING'),
       supabase
         .from('teacher_attendances')
+        .select('id', { count: 'exact', head: true })
+        .eq('attendance_date', todayDate),
+      supabase
+        .from('teacher_attendances')
+        .select('id', { count: 'exact', head: true })
+        .eq('attendance_date', todayDate)
+        .eq('admin_confirmed', false),
+      supabase
+        .from('teacher_attendances')
         .select('id, attendance_type, admin_confirmed, check_in_time, check_out_time, teacher:teachers_staff(full_name)')
         .eq('attendance_date', todayDate)
         .order('created_at', { ascending: false })
-        .limit(20),
-      supabase.from('ppdb_registrations').select('id, status, pathway, full_name, created_at').order('created_at', { ascending: false }).limit(200),
-      supabase.from('facilities').select('id, name, category, quantity, condition'),
+        .limit(6),
+      supabase
+        .from('ppdb_registrations')
+        .select('id, status, pathway, full_name, created_at')
+        .order('created_at', { ascending: false })
+        .limit(5),
+      supabase
+        .from('facilities')
+        .select('id, name, category, quantity, condition')
+        .neq('condition', 'BAIK')
+        .order('created_at', { ascending: false })
+        .limit(5),
       supabase.from('letters').select('id, direction, category, letter_number, letter_date, subject, counterparty').order('letter_date', { ascending: false }).limit(5),
       supabase.from('school_events').select('id, title, event_type, day_of_week, start_date, end_date, location, jtm_allocated').eq('is_active', true).limit(6),
     ]);
 
-    const ppdbList = ppdbRows || [];
-    const facilitiesList = facilitiesRows || [];
+    let ppdbMetrics = opMetrics?.ppdb;
+    let facilitiesMetrics = opMetrics?.facilities;
+
+    if (!ppdbMetrics || !facilitiesMetrics) {
+      const [
+        { count: ppdbTotal },
+        { count: ppdbWaiting },
+        { count: ppdbVerified },
+        { count: ppdbAccepted },
+        { data: facRows },
+      ] = await Promise.all([
+        supabase.from('ppdb_registrations').select('id', { count: 'exact', head: true }),
+        supabase
+          .from('ppdb_registrations')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'MENUNGGU_VERIFIKASI'),
+        supabase
+          .from('ppdb_registrations')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'TERVERIFIKASI'),
+        supabase
+          .from('ppdb_registrations')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'LULUS'),
+        supabase.from('facilities').select('quantity, condition'),
+      ]);
+
+      ppdbMetrics = {
+        total: ppdbTotal ?? 0,
+        waitingVerification: ppdbWaiting ?? 0,
+        verified: ppdbVerified ?? 0,
+        accepted: ppdbAccepted ?? 0,
+      };
+      const facList = facRows || [];
+      facilitiesMetrics = {
+        totalItems: facList.length,
+        totalUnits: facList.reduce((acc, f) => acc + Number(f.quantity || 0), 0),
+        goodConditionCount: facList.filter((f) => f.condition === 'BAIK').length,
+        needsAttentionCount: facList.filter((f) => f.condition !== 'BAIK').length,
+      };
+    }
+
     const attList = todayAttendances || [];
 
     executiveSummary = {
@@ -266,22 +370,23 @@ export async function GET() {
       classroomsCount: classroomsCount ?? 0,
       subjectsCount: subjectsCount ?? 0,
       pendingAccountsCount: pendingAccountsCount ?? 0,
-      todayAttendanceTotal: attList.length,
-      todayAttendanceUnconfirmed: attList.filter((a) => !a.admin_confirmed).length,
-      recentTodayAttendances: attList.slice(0, 6),
+      todayAttendanceTotal: todayAttendanceTotalCount ?? attList.length,
+      todayAttendanceUnconfirmed:
+        todayAttendanceUnconfirmedCount ?? attList.filter((a) => !a.admin_confirmed).length,
+      recentTodayAttendances: attList,
       ppdb: {
-        total: ppdbList.length,
-        waitingVerification: ppdbList.filter((r) => r.status === 'MENUNGGU_VERIFIKASI').length,
-        verified: ppdbList.filter((r) => r.status === 'TERVERIFIKASI').length,
-        accepted: ppdbList.filter((r) => r.status === 'LULUS').length,
-        recentRegistrations: ppdbList.slice(0, 5),
+        total: Number(ppdbMetrics.total ?? 0),
+        waitingVerification: Number(ppdbMetrics.waitingVerification ?? 0),
+        verified: Number(ppdbMetrics.verified ?? 0),
+        accepted: Number(ppdbMetrics.accepted ?? 0),
+        recentRegistrations: recentPpdbRows || [],
       },
       facilities: {
-        totalItems: facilitiesList.length,
-        totalUnits: facilitiesList.reduce((acc, f) => acc + Number(f.quantity || 0), 0),
-        goodConditionCount: facilitiesList.filter((f) => f.condition === 'BAIK').length,
-        needsAttentionCount: facilitiesList.filter((f) => f.condition !== 'BAIK').length,
-        damagedList: facilitiesList.filter((f) => f.condition !== 'BAIK').slice(0, 5),
+        totalItems: Number(facilitiesMetrics.totalItems ?? 0),
+        totalUnits: Number(facilitiesMetrics.totalUnits ?? 0),
+        goodConditionCount: Number(facilitiesMetrics.goodConditionCount ?? 0),
+        needsAttentionCount: Number(facilitiesMetrics.needsAttentionCount ?? 0),
+        damagedList: damagedFacilitiesRows || [],
       },
       recentLetters: recentLetters || [],
       upcomingEvents: upcomingEvents || [],
@@ -509,17 +614,36 @@ export async function GET() {
           'KEPALA_TU',
         ]);
 
+    interface FinanceRpcMetrics {
+      spp?: {
+        totalBillsCount: number;
+        totalBilledAmount: number;
+        totalPaidAmount: number;
+        unpaidBillsCount: number;
+        paidBillsCount: number;
+      };
+      tabungan?: {
+        activeAccountsCount: number;
+        totalBalance: number;
+      };
+      honorarium?: {
+        currentMonthSlipsCount: number;
+        currentMonthTotalAmount: number;
+        paidSlipsCount: number;
+        draftOrApprovedCount: number;
+      };
+    }
+
     const [
-      billsRes,
+      financeRpcRes,
       paymentsRes,
-      savingsAccRes,
       savingsTrxRes,
       honorSettingsRes,
-      honorSlipsRes,
     ] = await Promise.all([
-      canSeeSpp
-        ? supabase.from('student_bills').select('id, amount, paid_amount, status')
-        : Promise.resolve({ data: null }),
+      supabase.rpc('get_dashboard_finance_metrics', {
+        p_month: currentMonth,
+        p_year: currentYear,
+      }),
       canSeeSpp
         ? supabase
             .from('bill_payments')
@@ -528,9 +652,6 @@ export async function GET() {
             )
             .order('payment_date', { ascending: false })
             .limit(5)
-        : Promise.resolve({ data: null }),
-      canSeeTabungan
-        ? supabase.from('savings_accounts').select('id, balance, owner_type, is_active').eq('is_active', true)
         : Promise.resolve({ data: null }),
       canSeeTabungan
         ? supabase
@@ -549,34 +670,71 @@ export async function GET() {
             .limit(1)
             .maybeSingle()
         : Promise.resolve({ data: null }),
-      canSeeHonorarium
-        ? supabase
-            .from('teacher_honorariums')
-            .select('id, total_jtm, total_amount, status, period_month, period_year, teacher:teachers_staff(full_name)')
-            .eq('period_month', currentMonth)
-            .eq('period_year', currentYear)
-        : Promise.resolve({ data: null }),
     ]);
 
-    const bills = billsRes.data || [];
-    const savingsAccounts = savingsAccRes.data || [];
-    const honorSlips = honorSlipsRes.data || [];
+    let finMetrics: FinanceRpcMetrics | null =
+      !financeRpcRes.error && financeRpcRes.data && typeof financeRpcRes.data === 'object'
+        ? (financeRpcRes.data as FinanceRpcMetrics)
+        : null;
+
+    // Fallback aman jika fungsi RPC 0043 belum dijalankan di database
+    if (!finMetrics) {
+      const [billsRes, savingsAccRes, honorSlipsRes] = await Promise.all([
+        canSeeSpp
+          ? supabase.from('student_bills').select('amount, paid_amount, status')
+          : Promise.resolve({ data: null }),
+        canSeeTabungan
+          ? supabase.from('savings_accounts').select('balance').eq('is_active', true)
+          : Promise.resolve({ data: null }),
+        canSeeHonorarium
+          ? supabase
+              .from('teacher_honorariums')
+              .select('total_amount, status')
+              .eq('period_month', currentMonth)
+              .eq('period_year', currentYear)
+          : Promise.resolve({ data: null }),
+      ]);
+
+      const bills = billsRes.data || [];
+      const savingsAccounts = savingsAccRes.data || [];
+      const honorSlips = honorSlipsRes.data || [];
+
+      finMetrics = {
+        spp: {
+          totalBillsCount: bills.length,
+          totalBilledAmount: bills.reduce((s, b) => s + Number(b.amount || 0), 0),
+          totalPaidAmount: bills.reduce((s, b) => s + Number(b.paid_amount || 0), 0),
+          unpaidBillsCount: bills.filter((b) => b.status !== 'LUNAS').length,
+          paidBillsCount: bills.filter((b) => b.status === 'LUNAS').length,
+        },
+        tabungan: {
+          activeAccountsCount: savingsAccounts.length,
+          totalBalance: savingsAccounts.reduce((s, a) => s + Number(a.balance || 0), 0),
+        },
+        honorarium: {
+          currentMonthSlipsCount: honorSlips.length,
+          currentMonthTotalAmount: honorSlips.reduce((s, h) => s + Number(h.total_amount || 0), 0),
+          paidSlipsCount: honorSlips.filter((h) => h.status === 'PAID').length,
+          draftOrApprovedCount: honorSlips.filter((h) => h.status !== 'PAID').length,
+        },
+      };
+    }
 
     financeSummary = {
       spp: canSeeSpp
         ? {
-            totalBillsCount: bills.length,
-            totalBilledAmount: bills.reduce((s, b) => s + Number(b.amount || 0), 0),
-            totalPaidAmount: bills.reduce((s, b) => s + Number(b.paid_amount || 0), 0),
-            unpaidBillsCount: bills.filter((b) => b.status !== 'LUNAS').length,
-            paidBillsCount: bills.filter((b) => b.status === 'LUNAS').length,
+            totalBillsCount: Number(finMetrics.spp?.totalBillsCount ?? 0),
+            totalBilledAmount: Number(finMetrics.spp?.totalBilledAmount ?? 0),
+            totalPaidAmount: Number(finMetrics.spp?.totalPaidAmount ?? 0),
+            unpaidBillsCount: Number(finMetrics.spp?.unpaidBillsCount ?? 0),
+            paidBillsCount: Number(finMetrics.spp?.paidBillsCount ?? 0),
             recentPayments: paymentsRes.data || [],
           }
         : null,
       tabungan: canSeeTabungan
         ? {
-            activeAccountsCount: savingsAccounts.length,
-            totalBalance: savingsAccounts.reduce((s, a) => s + Number(a.balance || 0), 0),
+            activeAccountsCount: Number(finMetrics.tabungan?.activeAccountsCount ?? 0),
+            totalBalance: Number(finMetrics.tabungan?.totalBalance ?? 0),
             recentTransactions: savingsTrxRes.data || [],
           }
         : null,
@@ -584,10 +742,10 @@ export async function GET() {
         ? {
             ratePerJtm: Number(honorSettingsRes.data?.rate_per_jtm ?? 25000),
             transportRatePerKm: Number(honorSettingsRes.data?.transport_rate_per_km ?? 2000),
-            currentMonthSlipsCount: honorSlips.length,
-            currentMonthTotalAmount: honorSlips.reduce((s, h) => s + Number(h.total_amount || 0), 0),
-            paidSlipsCount: honorSlips.filter((h) => h.status === 'PAID').length,
-            draftOrApprovedCount: honorSlips.filter((h) => h.status !== 'PAID').length,
+            currentMonthSlipsCount: Number(finMetrics.honorarium?.currentMonthSlipsCount ?? 0),
+            currentMonthTotalAmount: Number(finMetrics.honorarium?.currentMonthTotalAmount ?? 0),
+            paidSlipsCount: Number(finMetrics.honorarium?.paidSlipsCount ?? 0),
+            draftOrApprovedCount: Number(finMetrics.honorarium?.draftOrApprovedCount ?? 0),
           }
         : null,
     };
@@ -600,15 +758,44 @@ export async function GET() {
       .from('bk_records')
       .select('id, record_type, title, points, incident_date, student:students(full_name, nis)')
       .order('incident_date', { ascending: false })
-      .limit(50);
+      .limit(5);
 
-    const list = bkRows || [];
+    let bkCounts = opMetrics?.bk;
+    if (!bkCounts) {
+      const [
+        { count: totalBk },
+        { count: konsultasiCount },
+        { count: prestasiCount },
+        { count: pelanggaranCount },
+      ] = await Promise.all([
+        supabase.from('bk_records').select('id', { count: 'exact', head: true }),
+        supabase
+          .from('bk_records')
+          .select('id', { count: 'exact', head: true })
+          .eq('record_type', 'KONSULTASI'),
+        supabase
+          .from('bk_records')
+          .select('id', { count: 'exact', head: true })
+          .eq('record_type', 'PRESTASI'),
+        supabase
+          .from('bk_records')
+          .select('id', { count: 'exact', head: true })
+          .eq('record_type', 'PELANGGARAN'),
+      ]);
+      bkCounts = {
+        totalRecords: totalBk ?? 0,
+        konsultasiCount: konsultasiCount ?? 0,
+        prestasiCount: prestasiCount ?? 0,
+        pelanggaranCount: pelanggaranCount ?? 0,
+      };
+    }
+
     bkSummary = {
-      totalRecords: list.length,
-      konsultasiCount: list.filter((r) => r.record_type === 'KONSULTASI').length,
-      prestasiCount: list.filter((r) => r.record_type === 'PRESTASI').length,
-      pelanggaranCount: list.filter((r) => r.record_type === 'PELANGGARAN').length,
-      recentRecords: list.slice(0, 5),
+      totalRecords: Number(bkCounts.totalRecords ?? 0),
+      konsultasiCount: Number(bkCounts.konsultasiCount ?? 0),
+      prestasiCount: Number(bkCounts.prestasiCount ?? 0),
+      pelanggaranCount: Number(bkCounts.pelanggaranCount ?? 0),
+      recentRecords: bkRows || [],
     };
   }
 
@@ -623,18 +810,23 @@ export async function GET() {
         recentLogs: [],
       };
     } else {
+      let countQuery = supabase
+        .from('guru_wali_assignments')
+        .select('id', { count: 'exact', head: true });
       let assignQuery = supabase
         .from('guru_wali_assignments')
         .select('id, teacher_id, teacher:teachers_staff(full_name), student:students(id, full_name, nis)');
       if (teacherRow && !isGlobalAdmin) {
+        countQuery = countQuery.eq('teacher_id', teacherRow.id);
         assignQuery = assignQuery.eq('teacher_id', teacherRow.id);
       }
-      const [{ data: gwAssigns }, { data: gwLogs }] = await Promise.all([
-        assignQuery.limit(100),
+      const [{ count: mentoredCount }, { data: gwAssigns }, { data: gwLogs }] = await Promise.all([
+        countQuery,
+        assignQuery.limit(8),
         supabase
           .from('guru_wali_mentoring_logs')
           .select(
-            'id, mentoring_date, topic, aspect, notes, assignment:guru_wali_assignments(teacher_id, teacher:teachers_staff(full_name), student:students(full_name))'
+            'id, mentoring_date, topic, aspect, notes, assignment:guru_wali_assignments!inner(teacher_id, teacher:teachers_staff(full_name), student:students(full_name))'
           )
           .order('mentoring_date', { ascending: false })
           .limit(30),
@@ -649,8 +841,8 @@ export async function GET() {
           : gwLogs || [];
 
       guruWaliSummary = {
-        mentoredStudentsCount: (gwAssigns || []).length,
-        mentoredStudents: (gwAssigns || []).slice(0, 8),
+        mentoredStudentsCount: mentoredCount ?? (gwAssigns || []).length,
+        mentoredStudents: gwAssigns || [],
         recentLogs: filteredLogs.slice(0, 5),
       };
     }
@@ -663,35 +855,57 @@ export async function GET() {
     const [
       { data: booksRows },
       { count: membersCount },
+      { count: activeLoansCount },
       { data: loansRows },
+      personalLoansRes,
     ] = await Promise.all([
       supabase
         .from('library_books')
         .select('id, title, author, book_format, available_copies, total_copies')
         .order('created_at', { ascending: false })
-        .limit(50),
+        .limit(5),
       supabase.from('library_members').select('id', { count: 'exact', head: true }),
       supabase
         .from('library_loans')
-        .select('id, member_id, loan_date, due_date, return_date, status, fine_amount, book:library_books(title), member:library_members(full_name, member_code)')
-        .order('created_at', { ascending: false })
-        .limit(30),
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'DIPINJAM'),
+      canViewAllLibraryMembers
+        ? supabase
+            .from('library_loans')
+            .select('id, member_id, loan_date, due_date, return_date, status, fine_amount, book:library_books(title), member:library_members(full_name, member_code)')
+            .order('created_at', { ascending: false })
+            .limit(5)
+        : Promise.resolve({ data: [] }),
+      libMemberRow
+        ? supabase
+            .from('library_loans')
+            .select('id, member_id, loan_date, due_date, return_date, status, fine_amount, book:library_books(title)')
+            .eq('member_id', libMemberRow.id)
+            .order('created_at', { ascending: false })
+            .limit(10)
+        : Promise.resolve({ data: [] }),
     ]);
 
-    const booksList = booksRows || [];
-    const loansList = loansRows || [];
-    const personalLoans = libMemberRow
-      ? loansList.filter((l) => l.member_id === libMemberRow.id)
-      : [];
+    let libCounts = opMetrics?.library;
+    if (!libCounts) {
+      const { data: allBooks } = await supabase
+        .from('library_books')
+        .select('available_copies');
+      const bList = allBooks || [];
+      libCounts = {
+        totalBookTitles: bList.length,
+        totalCopiesAvailable: bList.reduce((s, b) => s + Number(b.available_copies || 0), 0),
+      };
+    }
 
     librarySummary = {
-      totalBookTitles: booksList.length,
-      totalCopiesAvailable: booksList.reduce((s, b) => s + Number(b.available_copies || 0), 0),
+      totalBookTitles: Number(libCounts.totalBookTitles ?? 0),
+      totalCopiesAvailable: Number(libCounts.totalCopiesAvailable ?? 0),
       totalMembersCount: membersCount ?? 0,
-      activeLoansCount: loansList.filter((l) => l.status === 'DIPINJAM').length,
-      recentBooks: booksList.slice(0, 5),
-      recentLoans: canViewAllLibraryMembers ? loansList.slice(0, 5) : [],
-      personalLoans,
+      activeLoansCount: activeLoansCount ?? 0,
+      recentBooks: booksRows || [],
+      recentLoans: loansRows || [],
+      personalLoans: personalLoansRes.data || [],
     };
   }
 
@@ -716,7 +930,8 @@ export async function GET() {
     const [
       { data: enrollment },
       { data: docs },
-      { data: bills },
+      { data: recentBills },
+      studentBillsRpcRes,
       { data: savings },
       { data: attRows },
     ] = await Promise.all([
@@ -735,7 +950,10 @@ export async function GET() {
         .select('id, amount, paid_amount, status, billing_month, billing_year, fee_type:fee_types(name)')
         .eq('student_id', targetStudent.id)
         .order('created_at', { ascending: false })
-        .limit(10),
+        .limit(4),
+      supabase.rpc('get_student_unpaid_bills_summary', {
+        p_student_id: targetStudent.id,
+      }),
       supabase
         .from('savings_accounts')
         .select('id, account_number, balance')
@@ -749,8 +967,35 @@ export async function GET() {
     ]);
 
     const docsList = docs || [];
-    const billsList = bills || [];
+    const recentBillsList = recentBills || [];
     const attList = attRows || [];
+
+    let unpaidCount = 0;
+    let unpaidAmount = 0;
+    if (
+      !studentBillsRpcRes.error &&
+      studentBillsRpcRes.data &&
+      typeof studentBillsRpcRes.data === 'object'
+    ) {
+      const summaryObj = studentBillsRpcRes.data as {
+        unpaidCount?: number;
+        unpaidAmount?: number;
+      };
+      unpaidCount = Number(summaryObj.unpaidCount ?? 0);
+      unpaidAmount = Number(summaryObj.unpaidAmount ?? 0);
+    } else {
+      const { data: allUnpaidStudentBills } = await supabase
+        .from('student_bills')
+        .select('amount, paid_amount')
+        .eq('student_id', targetStudent.id)
+        .neq('status', 'LUNAS');
+      const unpaidRows = allUnpaidStudentBills || [];
+      unpaidCount = unpaidRows.length;
+      unpaidAmount = unpaidRows.reduce(
+        (s, b) => s + Math.max(0, Number(b.amount || 0) - Number(b.paid_amount || 0)),
+        0
+      );
+    }
 
     studentPersonalSummary = {
       student: {
@@ -767,11 +1012,9 @@ export async function GET() {
         pendingCount: docsList.filter((d) => d.verification_status === 'MENUNGGU').length,
       },
       bills: {
-        unpaidCount: billsList.filter((b) => b.status !== 'LUNAS').length,
-        unpaidAmount: billsList
-          .filter((b) => b.status !== 'LUNAS')
-          .reduce((s, b) => s + (Number(b.amount || 0) - Number(b.paid_amount || 0)), 0),
-        recentBills: billsList.slice(0, 4),
+        unpaidCount,
+        unpaidAmount,
+        recentBills: recentBillsList,
       },
       savings: savings || null,
       monthAttendance: {
@@ -787,20 +1030,57 @@ export async function GET() {
   let alumniSummary: Record<string, unknown> | null = null;
   if (isAlumniRole) {
     const canViewAllAlumniTracers = hasRole(PERMISSIONS.SDM_ALUMNI_VIEW);
-    const { data: tracerRows } = await supabase
-      .from('alumni_tracers')
-      .select('id, full_name, graduation_year, current_activity, institution_or_company, major_or_position')
-      .order('graduation_year', { ascending: false })
-      .limit(100);
+    const { data: tracerRows } = canViewAllAlumniTracers
+      ? await supabase
+          .from('alumni_tracers')
+          .select('id, full_name, graduation_year, current_activity, institution_or_company, major_or_position')
+          .order('graduation_year', { ascending: false })
+          .limit(5)
+      : { data: [] };
 
-    const list = tracerRows || [];
+    let alumniCounts = opMetrics?.alumni;
+    if (!alumniCounts) {
+      const [
+        { count: totalTracers },
+        { count: kuliahCount },
+        { count: bekerjaCount },
+        { count: wirausahaCount },
+        { count: pesantrenCount },
+      ] = await Promise.all([
+        supabase.from('alumni_tracers').select('id', { count: 'exact', head: true }),
+        supabase
+          .from('alumni_tracers')
+          .select('id', { count: 'exact', head: true })
+          .eq('current_activity', 'KULIAH'),
+        supabase
+          .from('alumni_tracers')
+          .select('id', { count: 'exact', head: true })
+          .eq('current_activity', 'BEKERJA'),
+        supabase
+          .from('alumni_tracers')
+          .select('id', { count: 'exact', head: true })
+          .eq('current_activity', 'WIRAUSAHA'),
+        supabase
+          .from('alumni_tracers')
+          .select('id', { count: 'exact', head: true })
+          .eq('current_activity', 'PESANTREN'),
+      ]);
+      alumniCounts = {
+        totalTracers: totalTracers ?? 0,
+        kuliahCount: kuliahCount ?? 0,
+        bekerjaCount: bekerjaCount ?? 0,
+        wirausahaCount: wirausahaCount ?? 0,
+        pesantrenCount: pesantrenCount ?? 0,
+      };
+    }
+
     alumniSummary = {
-      totalTracers: list.length,
-      kuliahCount: list.filter((a) => a.current_activity === 'KULIAH').length,
-      bekerjaCount: list.filter((a) => a.current_activity === 'BEKERJA').length,
-      wirausahaCount: list.filter((a) => a.current_activity === 'WIRAUSAHA').length,
-      pesantrenCount: list.filter((a) => a.current_activity === 'PESANTREN').length,
-      recentTracers: canViewAllAlumniTracers ? list.slice(0, 5) : [],
+      totalTracers: Number(alumniCounts.totalTracers ?? 0),
+      kuliahCount: Number(alumniCounts.kuliahCount ?? 0),
+      bekerjaCount: Number(alumniCounts.bekerjaCount ?? 0),
+      wirausahaCount: Number(alumniCounts.wirausahaCount ?? 0),
+      pesantrenCount: Number(alumniCounts.pesantrenCount ?? 0),
+      recentTracers: tracerRows || [],
     };
   }
 

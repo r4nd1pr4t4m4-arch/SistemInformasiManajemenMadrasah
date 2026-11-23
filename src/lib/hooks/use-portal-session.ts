@@ -17,6 +17,8 @@ export interface PortalTeacherAssignments {
   isHomeroomTeacher: boolean;
   isGuruWali: boolean;
   isPicketTeacher: boolean;
+  isPicketToday?: boolean;
+  hasActiveExamPeriodToday?: boolean;
   isExamSupervisor: boolean;
   isExamCommittee: boolean;
 }
@@ -35,7 +37,7 @@ let cachedUser: PortalSessionUser | null = null;
 let inflightPromise: Promise<PortalSessionUser | null> | null = null;
 let sessionVersion = 0;
 
-async function fetchPortalUser(): Promise<PortalSessionUser | null> {
+export async function fetchPortalUser(): Promise<PortalSessionUser | null> {
   if (cachedUser) return cachedUser;
   if (!inflightPromise) {
     const versionAtStart = sessionVersion;

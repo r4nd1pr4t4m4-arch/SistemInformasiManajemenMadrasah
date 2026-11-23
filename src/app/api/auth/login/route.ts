@@ -308,17 +308,9 @@ export async function POST(request: Request) {
         ).data
       : profile;
 
-    const rawAccountStatus = (profile as { account_status?: string } | null)?.account_status;
-    const rawRejectionReason = (profile as { rejection_reason?: string | null } | null)
-      ?.rejection_reason;
-    const isPermanentRejected =
-      rawAccountStatus === 'DITOLAK_PERMANEN' ||
-      (rawAccountStatus === 'DITOLAK' &&
-        Boolean(rawRejectionReason?.startsWith('[TOLAK_PERMANEN]')));
-    const accountStatus = isPermanentRejected ? 'DITOLAK_PERMANEN' : rawAccountStatus;
-    const rejectionReason = rawRejectionReason
-      ? rawRejectionReason.replace(/^\[TOLAK_PERMANEN\]\s*/, '')
-      : null;
+    const accountStatus = (profile as { account_status?: string } | null)?.account_status;
+    const rejectionReason =
+      (profile as { rejection_reason?: string | null } | null)?.rejection_reason?.trim() || null;
     const isAllowed =
       Boolean(fallbackProfile?.is_active) && (!accountStatus || accountStatus === 'AKTIF');
 

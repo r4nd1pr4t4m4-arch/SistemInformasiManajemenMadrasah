@@ -45,6 +45,51 @@ const AssignLibraryOnlySchema = z.object({
   address: z.string().optional().nullable(),
 });
 
+const BulkImportStudentsSchema = z.object({
+  type: z.literal('BULK_IMPORT_STUDENTS'),
+  records: z
+    .array(
+      z.object({
+        full_name: z.string().min(2),
+        nis: z.string().optional().nullable(),
+        nisn: z.string().optional().nullable(),
+        nik: z.string().optional().nullable(),
+        gender: z.enum(['L', 'P']).default('L'),
+        birth_place: z.string().optional().nullable(),
+        birth_date: z.string().optional().nullable(),
+        father_name: z.string().optional().nullable(),
+        mother_name: z.string().optional().nullable(),
+        phone: z.string().optional().nullable(),
+        address: z.string().optional().nullable(),
+      })
+    )
+    .min(1)
+    .max(500),
+});
+
+const BulkImportTeachersSchema = z.object({
+  type: z.literal('BULK_IMPORT_TEACHERS'),
+  records: z
+    .array(
+      z.object({
+        full_name: z.string().min(2),
+        staff_type: z.enum(['GURU', 'TATA_USAHA', 'LAINNYA']).default('GURU'),
+        nip: z.string().optional().nullable(),
+        nuptk: z.string().optional().nullable(),
+        nik: z.string().optional().nullable(),
+        gender: z.enum(['L', 'P']).default('L'),
+        employment_status: z.string().optional().default('GTY'),
+        education_level: z.string().optional().nullable(),
+        major: z.string().optional().nullable(),
+        phone: z.string().optional().nullable(),
+        email: z.string().optional().nullable(),
+        initial_position: z.string().optional().nullable(),
+      })
+    )
+    .min(1)
+    .max(500),
+});
+
 export async function GET() {
   const guard = await requireApiRoles(PERMISSIONS.BUKU_INDUK_API_READ);
   if (guard.errorResponse) return guard.errorResponse;
@@ -387,6 +432,134 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ member });
+    }
+
+    if (body.type === 'BULK_IMPORT_STUDENTS') {
+      const parsed = BulkImportStudentsSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Format data impor siswa tidak valid.', details: parsed.error.flatten() },
+          { status: 400 }
+        );
+      }
+
+      const payloadRows = parsed.data.records.map((r) => ({
+        full_name: r.full_name.trim(),
+        nis: r.nis?.trim() || null,
+        nisn: r.nisn?.trim() || null,
+        nik: r.nik?.trim() || null,
+        gender: r.gender,
+        birth_place: r.birth_place?.trim() || null,
+        birth_date: r.birth_date?.trim() || null,
+        father_name: r.father_name?.trim() || null,
+        mother_name: r.mother_name?.trim() || null,
+        phone: r.phone?.trim() || null,
+        address: r.address?.trim() || null,
+        status: 'AKTIF',
+      }));
+
+      const { data: insertedStudents, error: bulkStudentErr } = await supabase
+        .from('students')
+        .insert(payloadRows)
+        .select('id, full_name, phone, email');
+
+      if (bulkStudentErr || !insertedStudents) {
+        return NextResponse.json(
+          { error: bulkStudentErr?.message || 'Gagal mengimpor data siswa secara massal.' },
+          { status: 500 }
+        );
+      }
+
+      const tsBase = Date.now();
+      const libRows = insertedStudents.map((s, idx) => ({
+        member_code: `LIB-S-${String(tsBase + idx).slice(-6)}-${idx + 1}`,
+        member_type: 'SISWA',
+        student_id: s.id,
+        full_name: s.full_name,
+        phone: s.phone || null,
+        email: s.email || null,
+        is_auto_registered: true,
+        status: 'AKTIF',
+      }));
+
+      await supabase.from('library_members').insert(libRows);
+
+      return NextResponse.json({
+        importedCount: insertedStudents.length,
+      });
+    }
+
+    if (body.type === 'BULK_IMPORT_TEACHERS') {
+      const parsed = BulkImportTeachersSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Format data impor GTK tidak valid.', details: parsed.error.flatten() },
+          { status: 400 }
+        );
+      }
+
+      const payloadRows = parsed.data.records.map((r) => ({
+        full_name: r.full_name.trim(),
+        staff_type: r.staff_type,
+        nip: r.nip?.trim() || null,
+        nuptk: r.nuptk?.trim() || null,
+        nik: r.nik?.trim() || null,
+        gender: r.gender,
+        employment_status: r.employment_status?.trim() || 'GTY',
+        education_level: r.education_level?.trim() || null,
+        major: r.major?.trim() || null,
+        phone: r.phone?.trim() || null,
+        email: r.email?.trim() || null,
+      }));
+
+      const { data: insertedTeachers, error: bulkTeacherErr } = await supabase
+        .from('teachers_staff')
+        .insert(payloadRows)
+        .select('id, full_name, phone, email');
+
+      if (bulkTeacherErr || !insertedTeachers) {
+        return NextResponse.json(
+          { error: bulkTeacherErr?.message || 'Gagal mengimpor data GTK secara massal.' },
+          { status: 500 }
+        );
+      }
+
+      const todayStr = getWibTodayDateString();
+      const historyRows = insertedTeachers
+        .map((t, idx) => {
+          const pos = parsed.data.records[idx]?.initial_position?.trim();
+          if (!pos) return null;
+          return {
+            teacher_id: t.id,
+            position_title: pos,
+            start_date: todayStr,
+          };
+        })
+        .filter((item): item is { teacher_id: string; position_title: string; start_date: string } =>
+          Boolean(item)
+        );
+
+      if (historyRows.length > 0) {
+        await supabase.from('employment_histories').insert(historyRows);
+      }
+
+      const tsBase = Date.now();
+      const libRows = insertedTeachers.map((t, idx) => ({
+        member_code: `LIB-G-${String(tsBase + idx).slice(-6)}-${idx + 1}`,
+        member_type: 'GTK',
+        teacher_id: t.id,
+        full_name: t.full_name,
+        phone: t.phone || null,
+        email: t.email || null,
+        is_auto_registered: true,
+        status: 'AKTIF',
+      }));
+
+      await supabase.from('library_members').insert(libRows);
+
+      return NextResponse.json({
+        importedCount: insertedTeachers.length,
+      });
     }
 
     return NextResponse.json({ error: 'Tipe entitas tidak dikenal.' }, { status: 400 });

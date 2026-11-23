@@ -4,6 +4,7 @@ import "./globals.css";
 import { InstitutionFaviconSync } from "@/components/layout/favicon-sync";
 import { AppStateMonitor } from "@/components/providers/app-state-monitor";
 import { PwaProvider } from "@/components/providers/pwa-provider";
+import { ToastProvider } from "@/components/providers/toast-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -22,7 +23,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "SIMMS — Sistem Informasi Manajemen Madrasah & Sekolah",
+  title: "SiM-M — Sistem Informasi Manajemen Madrasah & Sekolah",
   description:
     "Platform terpadu Website Resmi CMS, Portal Akademik, dan Manajemen Administrasi, Keuangan & Layanan Pendukung.",
   manifest: "/manifest.webmanifest",
@@ -36,7 +37,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="id"
@@ -44,9 +49,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
         <PwaProvider>
-          <InstitutionFaviconSync />
-          <AppStateMonitor />
-          {children}
+          <ToastProvider>
+            <InstitutionFaviconSync />
+            <AppStateMonitor />
+            {children}
+          </ToastProvider>
         </PwaProvider>
       </body>
     </html>

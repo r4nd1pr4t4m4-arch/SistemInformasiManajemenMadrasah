@@ -5,17 +5,36 @@ export const PUSH_STATE_CHANGED_EVENT = 'simms-push-state-changed';
 export const NOTIF_READ_SYNC_EVENT = 'simms-notif-read-sync';
 export const PUSH_OPT_IN_DISMISSED_KEY = 'simms_push_optin_dismissed_at';
 export const PUSH_LAST_ENDPOINT_KEY = 'simms_push_last_endpoint';
+export const NOTIF_BROADCAST_CHANNEL_NAME = 'simms_notif_sync_channel';
 
 export function notifyPushStateChanged(active: boolean) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(
     new CustomEvent(PUSH_STATE_CHANGED_EVENT, { detail: { active } })
   );
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const bc = new BroadcastChannel(NOTIF_BROADCAST_CHANNEL_NAME);
+      bc.postMessage({ type: PUSH_STATE_CHANGED_EVENT, active });
+      bc.close();
+    } catch {
+      // abaikan
+    }
+  }
 }
 
 export function notifyNotificationReadSync() {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(NOTIF_READ_SYNC_EVENT));
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const bc = new BroadcastChannel(NOTIF_BROADCAST_CHANNEL_NAME);
+      bc.postMessage({ type: NOTIF_READ_SYNC_EVENT });
+      bc.close();
+    } catch {
+      // abaikan
+    }
+  }
 }
 
 export function isPushSupported(): boolean {
