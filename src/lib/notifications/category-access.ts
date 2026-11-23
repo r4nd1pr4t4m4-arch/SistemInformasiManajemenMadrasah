@@ -13,44 +13,11 @@ export const FULL_NOTIFICATION_ADMIN_ROLES: readonly AppRole[] = [
 ];
 
 /**
- * Peran yang dapat mengakses Dashboard Pengelolaan & Analitik Notifikasi (/portal/notifikasi/kelola).
- * Hak kategori di dalam dashboard otomatis disaring berdasarkan peran & tugas tambahan masing-masing.
- */
-export const NOTIFICATION_DASHBOARD_ROLES: readonly AppRole[] = [
-  'SUPERADMIN',
-  'OPERATOR',
-  'KEPALA_LEMBAGA',
-  'WAKA_HUMAS',
-  'WAKA_KURIKULUM',
-  'WAKA_KESISWAAN',
-  'WAKA_SARPRAS',
-  'KEPALA_TU',
-  'BENDAHARA',
-  'BENDAHARA_KOMITE',
-  'PENGELOLA_TABUNGAN',
-  'GURU_BK',
-  'PUSTAKAWAN',
-];
-
-/**
- * Pemetaan kategori notifikasi yang boleh dikelola / dikirim / dipantau
- * sesuai peran dan tugas tambahan (selain SUPERADMIN & OPERATOR yang mendapat semua kategori).
+ * Pemetaan kategori notifikasi yang boleh dikelola penuh (broadcast, analitik, & kebijakan)
+ * sesuai peran operasional dan tugas tambahan.
+ * CATATAN: Tidak ada peran readonly (seperti KEPALA_LEMBAGA) pada halaman /portal/notifikasi/kelola.
  */
 const ROLE_NOTIFICATION_CATEGORIES: Partial<Record<AppRole, readonly NotificationCategoryKey[]>> = {
-  KEPALA_LEMBAGA: [
-    'PENGUMUMAN_BROADCAST',
-    'BERITA_CMS',
-    'PPDB',
-    'PRESENSI_SISWA',
-    'GURU_WALI_HAFALAN',
-    'LAYANAN_BK',
-    'PENILAIAN_RAPORT',
-    'KEUANGAN_SPP',
-    'TABUNGAN',
-    'SDM_HONORARIUM',
-    'PERPUSTAKAAN_SURAT',
-    'PENGINGAT_TERJADWAL',
-  ],
   WAKA_HUMAS: [
     'PENGUMUMAN_BROADCAST',
     'BERITA_CMS',
@@ -114,6 +81,15 @@ const ROLE_NOTIFICATION_CATEGORIES: Partial<Record<AppRole, readonly Notificatio
   ],
 };
 
+/**
+ * Peran yang memiliki izin mengelola halaman /portal/notifikasi/kelola.
+ * Seluruh peran di daftar ini memiliki hak kelola aktif pada kategorinya (tidak ada akses readonly).
+ */
+export const NOTIFICATION_DASHBOARD_ROLES: readonly AppRole[] = [
+  ...FULL_NOTIFICATION_ADMIN_ROLES,
+  ...(Object.keys(ROLE_NOTIFICATION_CATEGORIES) as AppRole[]),
+];
+
 export function isFullNotificationAdmin(roles: readonly AppRole[]): boolean {
   return roles.some((role) => FULL_NOTIFICATION_ADMIN_ROLES.includes(role));
 }
@@ -144,24 +120,12 @@ export function canManageNotificationCategory(
 }
 
 /**
- * Siapa yang boleh mengubah kebijakan kunci kategori (allow_user_opt_out):
- * - SUPERADMIN & OPERATOR: semua kategori
- * - KEPALA_LEMBAGA, WAKA_*, KEPALA_TU: hanya kategori dalam lingkup peran/tugasnya
+ * Setiap peran yang memiliki izin akses kategori di /portal/notifikasi/kelola
+ * memiliki izin kelola penuh atas kategori dalam wewenangnya (tidak ada peran readonly).
  */
 export function canEditNotificationPolicy(
   roles: readonly AppRole[],
   categoryKey: NotificationCategoryKey
 ): boolean {
-  if (isFullNotificationAdmin(roles)) return true;
-  const policyEditorRoles: readonly AppRole[] = [
-    'KEPALA_LEMBAGA',
-    'WAKA_HUMAS',
-    'WAKA_KURIKULUM',
-    'WAKA_KESISWAAN',
-    'WAKA_SARPRAS',
-    'KEPALA_TU',
-  ];
-  const hasEditorRole = roles.some((r) => policyEditorRoles.includes(r));
-  if (!hasEditorRole) return false;
   return canManageNotificationCategory(roles, categoryKey);
 }

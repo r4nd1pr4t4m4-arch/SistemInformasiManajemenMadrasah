@@ -11,7 +11,11 @@ import {
   Settings,
   Sparkles,
 } from 'lucide-react';
-import { PUSH_RECEIVED_EVENT } from '@/lib/pwa/push-client';
+import {
+  NOTIF_READ_SYNC_EVENT,
+  PUSH_RECEIVED_EVENT,
+  notifyNotificationReadSync,
+} from '@/lib/pwa/push-client';
 import type { InAppNotificationItem } from '@/lib/notifications/types';
 
 function formatRelativeTime(iso: string): string {
@@ -59,7 +63,9 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
   }, []);
 
   useEffect(() => {
-    void fetchNotifications(true);
+    const initTimer = window.setTimeout(() => {
+      void fetchNotifications(true);
+    }, 0);
 
     const handlePushReceived = () => {
       void fetchNotifications(true);
@@ -72,6 +78,7 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
     };
 
     window.addEventListener(PUSH_RECEIVED_EVENT, handlePushReceived);
+    window.addEventListener(NOTIF_READ_SYNC_EVENT, handlePushReceived);
     document.addEventListener('visibilitychange', handleVisibility);
 
     const interval = window.setInterval(() => {
@@ -81,7 +88,9 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
     }, 45000);
 
     return () => {
+      window.clearTimeout(initTimer);
       window.removeEventListener(PUSH_RECEIVED_EVENT, handlePushReceived);
+      window.removeEventListener(NOTIF_READ_SYNC_EVENT, handlePushReceived);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.clearInterval(interval);
     };
@@ -125,6 +134,7 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
       if (res.ok) {
         setUnreadCount(0);
         setItems((prev) => prev.map((it) => ({ ...it, is_read: true })));
+        notifyNotificationReadSync();
       }
     } finally {
       setMarkingAll(false);
@@ -142,6 +152,8 @@ export function NotificationBell({ canManageDashboard }: { canManageDashboard?: 
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: item.id }),
+      }).then((res) => {
+        if (res.ok) notifyNotificationReadSync();
       });
     }
     router.push(item.url || '/portal');

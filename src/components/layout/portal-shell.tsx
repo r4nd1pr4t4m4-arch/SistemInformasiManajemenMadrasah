@@ -69,7 +69,7 @@ import {
 } from '@/lib/pwa/offline-sync';
 import { deactivateCurrentDevicePush } from '@/lib/pwa/push-client';
 import { NotificationBell } from '@/components/notifications/notification-bell';
-import { PushOptInBanner } from '@/components/notifications/push-opt-in-banner';
+import { MandatoryPushModal } from '@/components/notifications/mandatory-push-modal';
 
 const MANDATORY_MOBILE_PWA_ROLES: AppRole[] = [
   'GURU',
@@ -2062,7 +2062,13 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
             </div>
           ) : (
             <>
-              <PushOptInBanner audienceType="USER" />
+              {user && (
+                <MandatoryPushModal
+                  audienceType="USER"
+                  institutionName={school.short_name || school.name || 'SIMMS'}
+                  onLogout={() => void handleLogout()}
+                />
+              )}
               {children}
             </>
           )}

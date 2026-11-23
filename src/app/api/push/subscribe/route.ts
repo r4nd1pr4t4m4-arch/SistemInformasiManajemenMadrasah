@@ -45,22 +45,6 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (existing) {
-    // Jika resync otomatis saat buka portal, hormati pilihan user jika sebelumnya sengaja mematikan perangkat ini
-    if (
-      resyncOnly &&
-      session &&
-      existing.user_id === session.userId &&
-      !existing.is_active &&
-      existing.deactivated_reason === 'USER_DISABLED'
-    ) {
-      return NextResponse.json({
-        ok: true,
-        id: existing.id,
-        isActive: false,
-        respectedUserDisabled: true,
-      });
-    }
-
     const { error: updateErr } = await db
       .from('push_subscriptions')
       .update({

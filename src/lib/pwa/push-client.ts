@@ -1,8 +1,22 @@
 'use client';
 
 export const PUSH_RECEIVED_EVENT = 'simms-push-received';
+export const PUSH_STATE_CHANGED_EVENT = 'simms-push-state-changed';
+export const NOTIF_READ_SYNC_EVENT = 'simms-notif-read-sync';
 export const PUSH_OPT_IN_DISMISSED_KEY = 'simms_push_optin_dismissed_at';
 export const PUSH_LAST_ENDPOINT_KEY = 'simms_push_last_endpoint';
+
+export function notifyPushStateChanged(active: boolean) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent(PUSH_STATE_CHANGED_EVENT, { detail: { active } })
+  );
+}
+
+export function notifyNotificationReadSync() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(NOTIF_READ_SYNC_EVENT));
+}
 
 export function isPushSupported(): boolean {
   if (typeof window === 'undefined') return false;
@@ -159,6 +173,7 @@ export async function subscribeCurrentDevice(options: {
       // abaikan
     }
 
+    notifyPushStateChanged(true);
     return { ok: true, endpoint, permission: 'granted' };
   } catch (err) {
     return {
@@ -232,6 +247,7 @@ export async function resyncPushSubscriptionOnPortalLoad(platform: string): Prom
       } catch {
         // abaikan
       }
+      notifyPushStateChanged(true);
       return true;
     }
     return false;
