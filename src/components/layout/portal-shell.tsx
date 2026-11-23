@@ -24,6 +24,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  Download,
   FileCheck2,
   FileText,
   Globe,
@@ -59,6 +60,21 @@ import {
 } from '@/lib/domain/penilaian';
 import { clearPortalSessionCache } from '@/lib/hooks/use-portal-session';
 import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
+import { usePwa } from '@/components/providers/pwa-provider';
+import { InstallPwaModal } from '@/components/pwa/install-pwa-modal';
+import {
+  clearOfflineQueue,
+  clearServiceWorkerAuthCaches,
+} from '@/lib/pwa/offline-sync';
+
+const MANDATORY_MOBILE_PWA_ROLES: AppRole[] = [
+  'GURU',
+  'WALI_KELAS',
+  'GURU_WALI',
+  'GURU_BK',
+  'SISWA',
+  'ORANG_TUA',
+];
 
 interface TeacherOperationalAssignments {
   teacherId: string;
@@ -1348,6 +1364,10 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
     setLoggingOut(true);
     try {
       clearPortalSessionCache();
+      await Promise.all([
+        clearOfflineQueue(),
+        clearServiceWorkerAuthCaches(),
+      ]);
       await fetch('/api/auth/logout', { method: 'POST' });
     } finally {
       window.location.assign('/login');
@@ -1366,6 +1386,24 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
       ? user.roles
       : [user.primaryRole]
     : [];
+
+  const pwa = usePwa();
+  const [installGuideOpen, setInstallGuideOpen] = useState(false);
+
+  const needsMandatoryMobilePwa =
+    authLoaded &&
+    Boolean(user) &&
+    pwa.isMobileViewport &&
+    !pwa.isStandalone &&
+    userRoles.some((role) => MANDATORY_MOBILE_PWA_ROLES.includes(role));
+
+  async function handleDesktopFooterInstall() {
+    if (pwa.canInstallPrompt) {
+      const outcome = await pwa.triggerInstallPrompt();
+      if (outcome !== 'unavailable') return;
+    }
+    setInstallGuideOpen(true);
+  }
 
   function matchesTeacherDuty(req?: TeacherDutyRequirement): boolean {
     if (!req) return false;
@@ -1960,6 +1998,16 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
             <Link href="/portal/akun/profil" className="hover:text-emerald-700 transition">
               Profil Akun
             </Link>
+            {!pwa.isStandalone && (
+              <button
+                type="button"
+                onClick={() => void handleDesktopFooterInstall()}
+                className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 font-semibold transition"
+              >
+                <Download className="w-3 h-3" />
+                <span>Install Aplikasi</span>
+              </button>
+            )}
           </div>
         </footer>
       </div>
@@ -1981,6 +2029,26 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
           onOpenMenu={() => setSidebarOpen(true)}
         />
       )}
+
+      {/* Modal Install PWA Wajib (Mobile — Guru, Siswa, Orang Tua) & Panduan Desktop */}
+      <InstallPwaModal
+        open={needsMandatoryMobilePwa}
+        mode="mandatory"
+        platform={pwa.platform}
+        canInstallPrompt={pwa.canInstallPrompt}
+        institutionName={school.short_name || school.name || 'SIMMS'}
+        onTriggerInstall={pwa.triggerInstallPrompt}
+        onLogout={() => void handleLogout()}
+      />
+      <InstallPwaModal
+        open={installGuideOpen && !needsMandatoryMobilePwa}
+        mode="guide"
+        platform={pwa.platform}
+        canInstallPrompt={pwa.canInstallPrompt}
+        institutionName={school.short_name || school.name || 'SIMMS'}
+        onTriggerInstall={pwa.triggerInstallPrompt}
+        onClose={() => setInstallGuideOpen(false)}
+      />
 
       {/* Modal Konfirmasi Logout */}
       {logoutModalOpen && (

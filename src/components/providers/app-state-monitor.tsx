@@ -2,12 +2,21 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { CloudUpload } from 'lucide-react';
 import {
   NoInternetState,
   SessionExpiredModal,
   SlowNetworkBanner,
   SuccessState,
 } from '@/components/ui/state-views';
+import {
+  OFFLINE_QUEUE_EVENT,
+  clearServiceWorkerAuthCaches,
+  enqueueOfflineMutation,
+  flushOfflineQueue,
+  getOfflineQueueCount,
+  shouldQueueOfflineMutation,
+} from '@/lib/pwa/offline-sync';
 
 interface NetworkInformationLike extends EventTarget {
   effectiveType?: string;
@@ -55,9 +64,12 @@ function AppStateMonitorInner() {
   const [slowDismissed, setSlowDismissed] = useState(false);
 
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [syncedNoticeCount, setSyncedNoticeCount] = useState(0);
 
   const pathnameRef = useRef(pathname);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -76,26 +88,57 @@ function AppStateMonitorInner() {
       setIsOffline(false);
       setReconnecting(false);
       setJustReconnected(true);
+      void flushOfflineQueue();
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = setTimeout(() => {
         setJustReconnected(false);
       }, 4000);
     };
 
+    const handleQueueChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        count?: number;
+        syncedCount?: number;
+        authRequired?: boolean;
+      }>).detail;
+
+      if (typeof detail?.count === 'number') {
+        setPendingSyncCount(detail.count);
+      } else {
+        void getOfflineQueueCount().then(setPendingSyncCount);
+      }
+
+      if (detail?.syncedCount && detail.syncedCount > 0) {
+        setSyncedNoticeCount(detail.syncedCount);
+        if (syncNoticeTimerRef.current) clearTimeout(syncNoticeTimerRef.current);
+        syncNoticeTimerRef.current = setTimeout(() => {
+          setSyncedNoticeCount(0);
+        }, 5000);
+      }
+
+      if (detail?.authRequired && pathnameRef.current.startsWith('/portal')) {
+        setSessionExpired(true);
+      }
+    };
+
     const syncInitial = window.setTimeout(() => {
       if (!navigator.onLine) {
         setIsOffline(true);
       }
+      void getOfflineQueueCount().then(setPendingSyncCount);
     }, 0);
 
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
+    window.addEventListener(OFFLINE_QUEUE_EVENT, handleQueueChanged);
 
     return () => {
       window.clearTimeout(syncInitial);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
+      window.removeEventListener(OFFLINE_QUEUE_EVENT, handleQueueChanged);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (syncNoticeTimerRef.current) clearTimeout(syncNoticeTimerRef.current);
     };
   }, []);
 
@@ -170,6 +213,12 @@ function AppStateMonitorInner() {
         }, 4500);
       }
 
+      const method = (
+        init?.method ||
+        (input instanceof Request ? input.method : 'GET')
+      ).toUpperCase();
+      const body = init?.body ?? null;
+
       try {
         const res = await originalFetch(input, init);
 
@@ -179,10 +228,51 @@ function AppStateMonitorInner() {
           pathnameRef.current.startsWith('/portal') &&
           !SESSION_IGNORED_API_PREFIXES.some((prefix) => urlPath.startsWith(prefix))
         ) {
+          void clearServiceWorkerAuthCaches();
           setSessionExpired(true);
         }
 
         return res;
+      } catch (err) {
+        // Offline-First Global Background Sync: antrekan mutasi JSON portal saat offline
+        if (
+          isInternalApi &&
+          pathnameRef.current.startsWith('/portal') &&
+          !navigator.onLine &&
+          shouldQueueOfflineMutation(urlPath, method, body)
+        ) {
+          const serializedBody =
+            typeof body === 'string'
+              ? body
+              : body instanceof URLSearchParams
+                ? body.toString()
+                : null;
+
+          const queued = await enqueueOfflineMutation({
+            url: rawUrl,
+            method,
+            headers: init?.headers,
+            body: serializedBody,
+          });
+
+          if (queued) {
+            return new Response(
+              JSON.stringify({
+                ok: true,
+                queuedOffline: true,
+                queueId: queued.id,
+                message:
+                  'Anda sedang offline. Perubahan disimpan ke antrean dan akan otomatis disinkronkan saat koneksi kembali.',
+              }),
+              {
+                status: 202,
+                statusText: 'Accepted (Queued Offline)',
+                headers: { 'Content-Type': 'application/json' },
+              }
+            );
+          }
+        }
+        throw err;
       } finally {
         if (slowTimer) clearTimeout(slowTimer);
         if (triggeredSlow) {
@@ -237,8 +327,12 @@ function AppStateMonitorInner() {
 
   return (
     <>
-      {/* Floating Network Status Stack (Offline / Slow Network / Reconnected) */}
-      {(isOffline || justReconnected || (slowNetwork.active && !slowDismissed)) && (
+      {/* Floating Network Status Stack (Offline / Sync Queue / Slow Network / Reconnected) */}
+      {(isOffline ||
+        justReconnected ||
+        pendingSyncCount > 0 ||
+        syncedNoticeCount > 0 ||
+        (slowNetwork.active && !slowDismissed)) && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-1.5rem)] max-w-xl space-y-2 pointer-events-none">
           {isOffline && (
             <div className="pointer-events-auto">
@@ -250,7 +344,39 @@ function AppStateMonitorInner() {
             </div>
           )}
 
-          {!isOffline && justReconnected && (
+          {pendingSyncCount > 0 && (
+            <div className="pointer-events-auto rounded-2xl bg-sky-50/95 backdrop-blur border border-sky-200 px-4 py-2.5 shadow-lg flex items-center justify-between gap-3 text-xs text-sky-900">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <CloudUpload className="w-4 h-4 text-sky-600 shrink-0" />
+                <p className="font-medium truncate">
+                  {pendingSyncCount} perubahan menunggu sinkronisasi otomatis
+                </p>
+              </div>
+              {!isOffline && (
+                <button
+                  type="button"
+                  onClick={() => void flushOfflineQueue()}
+                  className="px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-semibold shrink-0 transition"
+                >
+                  Sinkronkan
+                </button>
+              )}
+            </div>
+          )}
+
+          {!isOffline && syncedNoticeCount > 0 && (
+            <div className="pointer-events-auto">
+              <SuccessState
+                variant="banner"
+                title="Sinkronisasi Offline Selesai"
+                description={`${syncedNoticeCount} perubahan yang tersimpan saat offline berhasil dikirim ke server.`}
+                onDismiss={() => setSyncedNoticeCount(0)}
+                className="shadow-lg"
+              />
+            </div>
+          )}
+
+          {!isOffline && justReconnected && syncedNoticeCount === 0 && (
             <div className="pointer-events-auto">
               <SuccessState
                 variant="banner"

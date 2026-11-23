@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { InstitutionFaviconSync } from "@/components/layout/favicon-sync";
 import { AppStateMonitor } from "@/components/providers/app-state-monitor";
+import { PwaProvider } from "@/components/providers/pwa-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,10 +15,25 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  themeColor: "#059669",
+  width: "device-width",
+  initialScale: 1,
+};
+
 export const metadata: Metadata = {
   title: "SIMMS — Sistem Informasi Manajemen Madrasah & Sekolah",
   description:
     "Platform terpadu Website Resmi CMS, Portal Akademik, dan Manajemen Administrasi, Keuangan & Layanan Pendukung.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "SIMMS",
+  },
+  icons: {
+    apple: "/api/pwa/icon?size=apple",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -27,9 +43,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
-        <InstitutionFaviconSync />
-        <AppStateMonitor />
-        {children}
+        <PwaProvider>
+          <InstitutionFaviconSync />
+          <AppStateMonitor />
+          {children}
+        </PwaProvider>
       </body>
     </html>
   );
