@@ -1244,13 +1244,18 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                           {canManage && (
                             <button
                               type="button"
+                              aria-busy={deletingDocId === existing.id || undefined}
                               disabled={deletingDocId === existing.id}
                               onClick={() => void handleDeleteDocument(existing)}
-                              className="text-rose-600 hover:text-rose-700 disabled:opacity-50"
+                              className="p-1 rounded-lg text-rose-600 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50 transition"
                               aria-label={`Hapus dokumen ${docDef.label}`}
                               title="Hapus Dokumen"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              {deletingDocId === existing.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
                             </button>
                           )}
                         </div>
@@ -1320,7 +1325,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                       : 'cursor-pointer hover:bg-slate-800'
                   }`}
                 >
-                  <Upload className="w-3.5 h-3.5" />
+                  {uploadingType === 'LAINNYA' ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
                   {uploadingType === 'LAINNYA' ? 'Mengunggah...' : 'Upload Dokumen Lainnya'}
                   <input
                     type="file"
@@ -1366,13 +1375,18 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                       {canManage && (
                         <button
                           type="button"
+                          aria-busy={deletingDocId === d.id || undefined}
                           disabled={deletingDocId === d.id}
                           onClick={() => void handleDeleteDocument(d)}
-                          className="text-rose-600 hover:text-rose-700 disabled:opacity-50"
+                          className="p-1 rounded-lg text-rose-600 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50 transition"
                           aria-label={`Hapus dokumen ${d.document_title || d.file_name}`}
                           title="Hapus Dokumen"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          {deletingDocId === d.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
                         </button>
                       )}
                     </div>

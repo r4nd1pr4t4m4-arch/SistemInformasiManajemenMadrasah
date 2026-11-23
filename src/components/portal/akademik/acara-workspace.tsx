@@ -1825,6 +1825,7 @@ export function AcaraWorkspace({ section }: { section: AcaraSection }) {
                                 {c.status === 'TERJADWAL' && (canManageEvents || matchingPicket) && (
                                   <button
                                     type="button"
+                                    aria-busy={submitting || undefined}
                                     disabled={submitting}
                                     onClick={() =>
                                       postAcara(
@@ -1838,9 +1839,10 @@ export function AcaraWorkspace({ section }: { section: AcaraSection }) {
                                         `Upacara ${c.ceremony_date} dikonfirmasi terlaksana (+${c.jtm_allocated} JTM).`
                                       )
                                     }
-                                    className="w-full sm:w-auto px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white font-semibold transition cursor-pointer"
+                                    className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white font-semibold transition cursor-pointer"
                                   >
-                                    Konfirmasi Terlaksana
+                                    {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                    <span>Konfirmasi Terlaksana</span>
                                   </button>
                                 )}
                               </div>

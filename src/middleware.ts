@@ -117,21 +117,44 @@ export async function middleware(request: NextRequest) {
       roleSet.add('ORANG_TUA');
     }
 
+    let isPicketTeacher = false;
+    let isExamSupervisor = false;
+    let isExamCommittee = false;
+    let taughtSubjectIds: string[] = [];
+
     if (teacherRow?.id) {
-      const [{ data: dutyRows }, { data: homeroomRows }, { data: guruWaliRows }] =
-        await Promise.all([
-          supabase
-            .from('teacher_additional_duties')
-            .select('duty_type:additional_duty_types(code, name)')
-            .eq('teacher_id', teacherRow.id)
-            .eq('is_active', true),
-          supabase.from('classrooms').select('id').eq('homeroom_teacher_id', teacherRow.id).limit(1),
-          supabase
-            .from('guru_wali_assignments')
-            .select('id')
-            .eq('teacher_id', teacherRow.id)
-            .limit(1),
-        ]);
+      const [
+        { data: dutyRows },
+        { data: homeroomRows },
+        { data: guruWaliRows },
+        { data: picketRows },
+        { data: picketDelegationRows },
+        { data: examSupRows },
+        { data: examComRows },
+        { data: scheduleRows },
+      ] = await Promise.all([
+        supabase
+          .from('teacher_additional_duties')
+          .select('duty_type:additional_duty_types(code, name)')
+          .eq('teacher_id', teacherRow.id)
+          .eq('is_active', true),
+        supabase.from('classrooms').select('id').eq('homeroom_teacher_id', teacherRow.id).limit(1),
+        supabase
+          .from('guru_wali_assignments')
+          .select('id')
+          .eq('teacher_id', teacherRow.id)
+          .limit(1),
+        supabase.from('picket_schedules').select('id').eq('teacher_id', teacherRow.id).limit(1),
+        supabase
+          .from('teacher_delegations')
+          .select('id')
+          .eq('substitute_teacher_id', teacherRow.id)
+          .eq('delegation_type', 'PIKET')
+          .limit(1),
+        supabase.from('exam_supervisors').select('id').eq('teacher_id', teacherRow.id).limit(1),
+        supabase.from('exam_committees').select('id').eq('teacher_id', teacherRow.id).limit(1),
+        supabase.from('schedules').select('subject_id').eq('teacher_id', teacherRow.id),
+      ]);
 
       for (const d of dutyRows || []) {
         const dt = Array.isArray(d.duty_type) ? d.duty_type[0] : d.duty_type;
@@ -142,11 +165,30 @@ export async function middleware(request: NextRequest) {
       }
       if ((homeroomRows || []).length > 0) roleSet.add('WALI_KELAS');
       if ((guruWaliRows || []).length > 0) roleSet.add('GURU_WALI');
+
+      isPicketTeacher =
+        (picketRows || []).length > 0 || (picketDelegationRows || []).length > 0;
+      isExamSupervisor = (examSupRows || []).length > 0;
+      isExamCommittee = (examComRows || []).length > 0;
+      taughtSubjectIds = Array.from(
+        new Set(
+          (scheduleRows || [])
+            .map((r) => r.subject_id as string | null)
+            .filter((id): id is string => Boolean(id))
+        )
+      );
     }
 
     const userRoles = Array.from(roleSet);
 
-    if (!canAccessPortalPath(request.nextUrl.pathname, userRoles)) {
+    if (
+      !canAccessPortalPath(request.nextUrl.pathname, userRoles, {
+        isPicketTeacher,
+        isExamSupervisor,
+        isExamCommittee,
+        taughtSubjectIds,
+      })
+    ) {
       const portalUrl = request.nextUrl.clone();
       portalUrl.pathname = '/portal';
       portalUrl.search = '';

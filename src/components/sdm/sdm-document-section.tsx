@@ -301,23 +301,33 @@ export function SdmDocumentSection({
                     <>
                       <button
                         type="button"
+                        aria-busy={busyDocId === doc.id || undefined}
                         disabled={busyDocId === doc.id}
                         onClick={() => handleVerify(doc.id, 'TERVERIFIKASI')}
                         title="Verifikasi Dokumen"
                         aria-label={`Verifikasi ${doc.file_name}`}
                         className="min-w-[36px] min-h-[36px] inline-flex items-center justify-center p-2 rounded-xl text-emerald-600 hover:bg-emerald-50 disabled:opacity-40 transition"
                       >
-                        <CheckCircle2 className="w-4 h-4" />
+                        {busyDocId === doc.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4" />
+                        )}
                       </button>
                       <button
                         type="button"
+                        aria-busy={busyDocId === doc.id || undefined}
                         disabled={busyDocId === doc.id}
                         onClick={() => handleVerify(doc.id, 'DITOLAK')}
                         title="Tolak Dokumen"
                         aria-label={`Tolak ${doc.file_name}`}
                         className="min-w-[36px] min-h-[36px] inline-flex items-center justify-center p-2 rounded-xl text-amber-600 hover:bg-amber-50 disabled:opacity-40 transition"
                       >
-                        <XCircle className="w-4 h-4" />
+                        {busyDocId === doc.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <XCircle className="w-4 h-4" />
+                        )}
                       </button>
                     </>
                   )}
@@ -336,9 +346,10 @@ export function SdmDocumentSection({
                       <>
                         <button
                           type="button"
+                          aria-busy={busyDocId === doc.id || undefined}
                           disabled={busyDocId === doc.id}
                           onClick={() => handleDelete(doc)}
-                          className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-rose-600 text-white text-[11px] font-semibold disabled:opacity-50 inline-flex items-center gap-1"
+                          className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold disabled:opacity-50 inline-flex items-center gap-1 transition"
                         >
                           {busyDocId === doc.id && <Loader2 className="w-3 h-3 animate-spin" />}
                           Hapus
@@ -347,7 +358,7 @@ export function SdmDocumentSection({
                           type="button"
                           disabled={busyDocId === doc.id}
                           onClick={() => setConfirmDeleteId(null)}
-                          className="min-h-[36px] px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 text-[11px] font-semibold"
+                          className="min-h-[36px] px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-[11px] font-semibold transition"
                         >
                           Batal
                         </button>

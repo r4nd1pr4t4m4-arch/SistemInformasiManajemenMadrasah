@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { InstitutionLogo } from '@/components/ui/institution-logo';
+import { LoadingState, PermissionDeniedState } from '@/components/ui/state-views';
 import {
   Award,
   BookOpen,
@@ -23,6 +24,7 @@ import {
   HeartHandshake,
   KeyRound,
   LayoutDashboard,
+  Loader2,
   LogOut,
   MapPin,
   Menu,
@@ -1375,7 +1377,18 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
   }
 
   function canAccessCurrentView(targetPath: string): boolean {
-    if (!canAccessPortalPath(targetPath, userRoles)) return false;
+    const ta = user?.teacherAssignments;
+    const taughtSubjectIds = (ta?.taughtSubjects || []).map((s) => s.subjectId);
+    if (
+      !canAccessPortalPath(targetPath, userRoles, {
+        isPicketTeacher: Boolean(ta?.isPicketTeacher),
+        isExamSupervisor: Boolean(ta?.isExamSupervisor),
+        isExamCommittee: Boolean(ta?.isExamCommittee),
+        taughtSubjectIds,
+      })
+    ) {
+      return false;
+    }
     for (const grp of ACCORDION_GROUPS) {
       for (const it of grp.items) {
         if (it.path === targetPath) {
@@ -1797,7 +1810,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-xl bg-white/80 border border-slate-200/80 text-slate-700"
+              className="lg:hidden p-2 rounded-xl bg-white/80 hover:bg-white hover:border-slate-300 border border-slate-200/80 text-slate-700 transition"
               aria-label="Buka Menu"
             >
               <Menu className="w-4 h-4" />
@@ -1854,26 +1867,15 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
 
         {/* Page Content */}
         <main className="flex-1 p-4 sm:p-6">
-          {authLoaded && !canAccessCurrentView(normalizedPath) ? (
-            <div className="max-w-xl mx-auto glass-card rounded-3xl p-8 text-center space-y-4 mt-8">
-              <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto">
-                <ShieldAlert className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <h1 className="text-lg font-bold text-slate-900">Akses Halaman Ditolak</h1>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Peran akun Anda ({userRoles.join(', ') || 'Tidak ada peran'}) tidak memiliki izin
-                  untuk mengakses halaman ini.
-                </p>
-              </div>
-              <div>
-                <Link
-                  href="/portal"
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
-                >
-                  Kembali ke Dashboard Portal
-                </Link>
-              </div>
+          {!authLoaded ? (
+            <LoadingState
+              variant="page"
+              title="Memverifikasi Hak Akses..."
+              description="Sistem sedang memeriksa sesi dan izin peran akun Anda."
+            />
+          ) : !canAccessCurrentView(normalizedPath) ? (
+            <div className="mt-6">
+              <PermissionDeniedState currentRoles={userRoles} />
             </div>
           ) : (
             children
@@ -1985,12 +1987,17 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
               </button>
               <button
                 type="button"
+                aria-busy={loggingOut || undefined}
                 disabled={loggingOut}
                 onClick={handleLogout}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-60 transition"
               >
-                <LogOut className="w-3.5 h-3.5" />
-                {loggingOut ? 'Mengakhiri Sesi...' : 'Ya, Keluar Sekarang'}
+                {loggingOut ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                ) : (
+                  <LogOut className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>{loggingOut ? 'Mengakhiri Sesi...' : 'Ya, Keluar Sekarang'}</span>
               </button>
             </div>
           </div>

@@ -6,11 +6,11 @@ import {
   ExternalLink,
   Image as ImageIcon,
   PlayCircle,
-  RotateCcw,
   Search,
   Video,
   X,
 } from 'lucide-react';
+import { EmptyState, NoSearchResultState } from '@/components/ui/state-views';
 
 export interface PublicGalleryItem {
   id: string;
@@ -110,14 +110,11 @@ export function GaleriGrid({ gallery }: { gallery: PublicGalleryItem[] }) {
 
   if (gallery.length === 0) {
     return (
-      <div className="glass-card rounded-3xl p-8 text-center space-y-3">
-        <ImageIcon className="w-10 h-10 text-emerald-600 mx-auto" />
-        <p className="font-bold text-slate-900">Belum Ada Dokumentasi Terunggah</p>
-        <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
-          Dokumentasi foto dan video kegiatan akan tampil di sini setelah ditambahkan oleh tim
-          Humas.
-        </p>
-      </div>
+      <EmptyState
+        icon={<ImageIcon className="w-6 h-6" />}
+        title="Belum Ada Dokumentasi Terunggah"
+        description="Dokumentasi foto dan video kegiatan akan tampil di sini setelah ditambahkan oleh tim Humas."
+      />
     );
   }
 
@@ -199,23 +196,20 @@ export function GaleriGrid({ gallery }: { gallery: PublicGalleryItem[] }) {
 
       {/* Grid Galeri */}
       {filteredGallery.length === 0 ? (
-        <div className="glass-card rounded-3xl p-8 text-center space-y-3">
-          <p className="text-sm font-semibold text-slate-700">
-            Tidak ada dokumentasi yang cocok dengan filter saat ini.
-          </p>
-          {hasActiveFilter && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedType('ALL');
-                setSearchQuery('');
-              }}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
-            >
-              <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
-            </button>
-          )}
-        </div>
+        <NoSearchResultState
+          query={searchQuery}
+          title="Dokumentasi Tidak Ditemukan"
+          description="Tidak ada foto atau video yang sesuai dengan kata kunci maupun tipe media yang sedang dipilih."
+          onReset={
+            hasActiveFilter
+              ? () => {
+                  setSelectedType('ALL');
+                  setSearchQuery('');
+                }
+              : undefined
+          }
+          resetLabel="Reset Filter Galeri"
+        />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
           {filteredGallery.map((item) => {

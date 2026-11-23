@@ -572,17 +572,21 @@ function LoginCardContent() {
               {mode === 'register' && (
                 <button
                   type="button"
+                  aria-busy={otpSending || undefined}
                   disabled={otpSending || !email.trim() || (otpSent && resendCooldown > 0)}
                   onClick={() => handleSendRegisterOtp(otpSent)}
-                  className="min-h-[42px] px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold transition shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  className="min-h-[42px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold transition shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                 >
-                  {otpSending
-                    ? 'Mengirim...'
-                    : otpSent
-                    ? resendCooldown > 0
-                      ? `Kirim Ulang (${resendCooldown}d)`
-                      : 'Kirim Ulang OTP'
-                    : 'Kirim OTP'}
+                  {otpSending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>
+                    {otpSending
+                      ? 'Mengirim...'
+                      : otpSent
+                      ? resendCooldown > 0
+                        ? `Kirim Ulang (${resendCooldown}d)`
+                        : 'Kirim Ulang OTP'
+                      : 'Kirim OTP'}
+                  </span>
                 </button>
               )}
             </div>
@@ -619,15 +623,19 @@ function LoginCardContent() {
                 />
                 <button
                   type="button"
+                  aria-busy={otpVerifying || undefined}
                   disabled={otpVerifying || otpVerified || otpCode.trim().length !== 6}
                   onClick={handleVerifyRegisterOtp}
-                  className="min-h-[42px] px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold transition shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  className="min-h-[42px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold transition shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                 >
-                  {otpVerified
-                    ? 'Terverifikasi'
-                    : otpVerifying
-                    ? 'Memeriksa...'
-                    : 'Verifikasi OTP'}
+                  {otpVerifying && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+                  <span>
+                    {otpVerified
+                      ? 'Terverifikasi'
+                      : otpVerifying
+                      ? 'Memeriksa...'
+                      : 'Verifikasi OTP'}
+                  </span>
                 </button>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
@@ -690,9 +698,12 @@ function LoginCardContent() {
 
           <button
             type="submit"
+            aria-busy={loading || undefined}
             disabled={
               loading ||
-              (mode === 'register' && !otpVerified) ||
+              !email.trim() ||
+              !password.trim() ||
+              (mode === 'register' && (!otpVerified || !fullName.trim() || !confirmPassword.trim())) ||
               (mode === 'login' && lockoutSeconds > 0)
             }
             className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-2xl transition shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"

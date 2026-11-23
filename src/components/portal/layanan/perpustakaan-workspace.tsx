@@ -811,6 +811,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                           {canManage && isEbook && (
                             <button
                               type="button"
+                              aria-busy={submittingAction === 'TOGGLE_BOOK_PREMIUM' || undefined}
                               disabled={Boolean(submittingAction)}
                               onClick={() =>
                                 void postLib(
@@ -824,9 +825,12 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                                     : 'Buku ditandai sebagai Buku Premium.'
                                 )
                               }
-                              className="px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[11px] transition disabled:opacity-60"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[11px] transition disabled:opacity-60"
                             >
-                              {b.is_premium ? 'Hapus Premium' : 'Set Premium'}
+                              {submittingAction === 'TOGGLE_BOOK_PREMIUM' && (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              )}
+                              <span>{b.is_premium ? 'Hapus Premium' : 'Set Premium'}</span>
                             </button>
                           )}
                           {isEbook && b.has_ebook && (
@@ -1038,6 +1042,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                           {active && (
                             <button
                               type="button"
+                              aria-busy={submittingAction === 'REVOKE_PREMIUM_ACCESS' || undefined}
                               disabled={Boolean(submittingAction)}
                               onClick={() =>
                                 void postLib(
@@ -1047,7 +1052,12 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                               }
                               className="w-full inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 font-semibold text-[11px] transition disabled:opacity-60"
                             >
-                              <XCircle className="w-3.5 h-3.5" /> Cabut Izin
+                              {submittingAction === 'REVOKE_PREMIUM_ACCESS' ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <XCircle className="w-3.5 h-3.5" />
+                              )}{' '}
+                              Cabut Izin
                             </button>
                           )}
                         </div>
@@ -1102,6 +1112,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                                 {active && (
                                   <button
                                     type="button"
+                                    aria-busy={submittingAction === 'REVOKE_PREMIUM_ACCESS' || undefined}
                                     disabled={Boolean(submittingAction)}
                                     onClick={() =>
                                       void postLib(
@@ -1111,7 +1122,12 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                                     }
                                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-rose-600 hover:bg-rose-50 font-semibold text-[11px] disabled:opacity-60"
                                   >
-                                    <XCircle className="w-3.5 h-3.5" /> Cabut
+                                    {submittingAction === 'REVOKE_PREMIUM_ACCESS' ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <XCircle className="w-3.5 h-3.5" />
+                                    )}{' '}
+                                    Cabut
                                   </button>
                                 )}
                               </td>

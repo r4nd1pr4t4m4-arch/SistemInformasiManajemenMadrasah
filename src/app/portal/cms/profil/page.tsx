@@ -414,11 +414,16 @@ export default function CmsProfilPage() {
                   {settings.logo_url && (
                     <button
                       type="button"
+                      aria-busy={uploadingLogo || undefined}
                       disabled={uploadingLogo}
                       onClick={handleRemoveLogo}
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition disabled:opacity-50"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      {uploadingLogo ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
                       <span>Hapus</span>
                     </button>
                   )}

@@ -1767,11 +1767,13 @@ export function HonorariumWorkspace({ section }: { section: HonorariumSection })
                             {d.receives_allowance && isDirty && (
                               <button
                                 type="button"
+                                aria-busy={Boolean(submittingAction) || undefined}
                                 disabled={Boolean(submittingAction) || isInvalidDraft}
                                 onClick={() => void handleSaveDutyAllowance(d)}
-                                className="shrink-0 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition disabled:opacity-60"
+                                className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition disabled:opacity-60"
                               >
-                                Simpan
+                                {Boolean(submittingAction) && <Loader2 className="w-3 h-3 animate-spin" />}
+                                <span>Simpan</span>
                               </button>
                             )}
                           </div>

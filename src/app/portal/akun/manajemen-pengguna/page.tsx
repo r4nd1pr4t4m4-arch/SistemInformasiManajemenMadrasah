@@ -763,6 +763,7 @@ export default function ManajemenPenggunaPage() {
                         {u.account_status === 'AKTIF' && (
                           <button
                             type="button"
+                            aria-busy={isBusy || undefined}
                             disabled={isBusy}
                             onClick={() =>
                               handleAction({
@@ -772,7 +773,12 @@ export default function ManajemenPenggunaPage() {
                             }
                             className="min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition disabled:opacity-50"
                           >
-                            <UserX className="w-3.5 h-3.5" /> Nonaktifkan
+                            {isBusy ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <UserX className="w-3.5 h-3.5" />
+                            )}{' '}
+                            Nonaktifkan
                           </button>
                         )}
 
@@ -781,6 +787,7 @@ export default function ManajemenPenggunaPage() {
                           u.account_status === 'DITOLAK_PERMANEN') && (
                           <button
                             type="button"
+                            aria-busy={isBusy || undefined}
                             disabled={isBusy}
                             onClick={() =>
                               handleAction({
@@ -790,7 +797,12 @@ export default function ManajemenPenggunaPage() {
                             }
                             className="min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold transition disabled:opacity-50"
                           >
-                            <UserCheck className="w-3.5 h-3.5" /> Aktifkan Kembali
+                            {isBusy ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <UserCheck className="w-3.5 h-3.5" />
+                            )}{' '}
+                            Aktifkan Kembali
                           </button>
                         )}
                       </>
@@ -1040,13 +1052,15 @@ export default function ManajemenPenggunaPage() {
               </button>
               <button
                 type="button"
+                aria-busy={busyId === rejectNameModalReq.id || undefined}
                 disabled={busyId === rejectNameModalReq.id}
                 onClick={() =>
                   handleReviewNameChange(rejectNameModalReq.id, 'REJECT', nameRejectNotes)
                 }
-                className="min-h-[40px] px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
+                className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
               >
-                {busyId === rejectNameModalReq.id ? 'Memproses...' : 'Konfirmasi Tolak'}
+                {busyId === rejectNameModalReq.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{busyId === rejectNameModalReq.id ? 'Memproses...' : 'Konfirmasi Tolak'}</span>
               </button>
             </div>
           </div>
@@ -1109,6 +1123,7 @@ export default function ManajemenPenggunaPage() {
               </button>
               <button
                 type="button"
+                aria-busy={busyId === rejectModalUser.id || undefined}
                 disabled={busyId === rejectModalUser.id}
                 onClick={() =>
                   handleAction({
@@ -1117,12 +1132,14 @@ export default function ManajemenPenggunaPage() {
                     rejectionReason,
                   })
                 }
-                className="min-h-[40px] px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
+                className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
               >
-                {busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak & Kirim Email'}
+                {busyId === rejectModalUser.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak & Kirim Email'}</span>
               </button>
               <button
                 type="button"
+                aria-busy={busyId === rejectModalUser.id || undefined}
                 disabled={busyId === rejectModalUser.id}
                 onClick={() =>
                   handleAction({
@@ -1131,9 +1148,10 @@ export default function ManajemenPenggunaPage() {
                     rejectionReason,
                   })
                 }
-                className="min-h-[40px] px-4 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 text-white text-xs font-semibold disabled:opacity-50"
+                className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 text-white text-xs font-semibold disabled:opacity-50"
               >
-                {busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak Permanen'}
+                {busyId === rejectModalUser.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{busyId === rejectModalUser.id ? 'Memproses...' : 'Tolak Permanen'}</span>
               </button>
             </div>
           </div>
@@ -1222,11 +1240,17 @@ export default function ManajemenPenggunaPage() {
                     <div className="flex items-center gap-2 pt-1">
                       <button
                         type="button"
+                        aria-busy={busyId === req.id || undefined}
                         disabled={busyId === req.id}
                         onClick={() => handleReviewAvatarChange(req.id, 'APPROVE')}
                         className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-50"
                       >
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Setujui
+                        {busyId === req.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}{' '}
+                        Setujui
                       </button>
                       <button
                         type="button"
@@ -1282,19 +1306,21 @@ export default function ManajemenPenggunaPage() {
                 type="button"
                 disabled={busyId === rejectAvatarModalReq.id}
                 onClick={() => setRejectAvatarModalReq(null)}
-                className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
               >
                 Batal
               </button>
               <button
                 type="button"
+                aria-busy={busyId === rejectAvatarModalReq.id || undefined}
                 disabled={busyId === rejectAvatarModalReq.id}
                 onClick={() =>
                   handleReviewAvatarChange(rejectAvatarModalReq.id, 'REJECT', avatarRejectNotes)
                 }
-                className="min-h-[40px] px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
+                className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold disabled:opacity-50"
               >
-                {busyId === rejectAvatarModalReq.id ? 'Memproses...' : 'Tolak Foto'}
+                {busyId === rejectAvatarModalReq.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{busyId === rejectAvatarModalReq.id ? 'Memproses...' : 'Tolak Foto'}</span>
               </button>
             </div>
           </div>

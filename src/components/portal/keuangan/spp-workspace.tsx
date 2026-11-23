@@ -1277,6 +1277,7 @@ export function SppWorkspace({ section }: { section: SppSection }) {
                           <>
                             <button
                               type="button"
+                              aria-busy={submitting || undefined}
                               disabled={submitting}
                               onClick={async () => {
                                 const ok = await postSpp(
@@ -1285,15 +1286,16 @@ export function SppWorkspace({ section }: { section: SppSection }) {
                                 );
                                 if (ok) setConfirmDeleteGroupId(null);
                               }}
-                              className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold disabled:opacity-50"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold disabled:opacity-50 transition"
                             >
-                              Hapus
+                              {submitting && <Loader2 className="w-3 h-3 animate-spin" />}
+                              <span>Hapus</span>
                             </button>
                             <button
                               type="button"
                               disabled={submitting}
                               onClick={() => setConfirmDeleteGroupId(null)}
-                              className="px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 text-[11px]"
+                              className="px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-[11px] transition"
                             >
                               Batal
                             </button>

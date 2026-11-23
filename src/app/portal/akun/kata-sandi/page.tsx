@@ -404,7 +404,13 @@ export default function GantiKataSandiPage() {
 
           <button
             type="submit"
-            disabled={submitting || (method === 'mfa' && factors.length === 0)}
+            aria-busy={submitting || undefined}
+            disabled={
+              submitting ||
+              (method === 'mfa' && factors.length === 0) ||
+              !newPassword.trim() ||
+              !confirmPassword.trim()
+            }
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold px-6 py-3 rounded-2xl text-sm transition"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}

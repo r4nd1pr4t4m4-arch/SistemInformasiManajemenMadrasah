@@ -560,15 +560,17 @@ export default function ManajemenGtkPage() {
                       {canManage ? (
                         <button
                           type="button"
+                          aria-busy={isToggling || undefined}
                           disabled={isToggling}
                           onClick={() => void toggleStatus(item)}
-                          className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold disabled:opacity-50 transition ${
+                          className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold disabled:opacity-50 transition ${
                             item.is_active
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-200 text-slate-600'
+                              ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
+                              : 'bg-slate-200 hover:bg-slate-300 text-slate-600'
                           }`}
                         >
-                          {isToggling ? '...' : item.is_active ? 'Aktif' : 'Nonaktif'}
+                          {isToggling && <Loader2 className="w-3 h-3 animate-spin" />}
+                          <span>{item.is_active ? 'Aktif' : 'Nonaktif'}</span>
                         </button>
                       ) : (
                         <span
@@ -615,9 +617,10 @@ export default function ManajemenGtkPage() {
                           <>
                             <button
                               type="button"
+                              aria-busy={isDeleting || undefined}
                               disabled={isDeleting}
                               onClick={() => void handleDelete(item)}
-                              className="px-3 py-1.5 rounded-lg bg-rose-600 text-white font-semibold disabled:opacity-50 inline-flex items-center gap-1"
+                              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold disabled:opacity-50 inline-flex items-center gap-1 transition"
                             >
                               {isDeleting && <Loader2 className="w-3 h-3 animate-spin" />}
                               Hapus
@@ -626,7 +629,7 @@ export default function ManajemenGtkPage() {
                               type="button"
                               disabled={isDeleting}
                               onClick={() => setConfirmDeleteId(null)}
-                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600"
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition"
                             >
                               Batal
                             </button>

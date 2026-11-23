@@ -394,7 +394,8 @@ function VerifikasiContent() {
             </div>
             <button
               type="submit"
-              disabled={loading}
+              aria-busy={loading || undefined}
+              disabled={loading || !inputRef.trim()}
               className="min-h-[46px] inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-slate-900 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm transition shrink-0"
             >
               {loading ? (

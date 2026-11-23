@@ -553,6 +553,25 @@ export const PERMISSIONS = {
   ] as AppRole[],
 
   // Portal GTK & Orang Tua (Self-Service)
+  GTK_PERSONAL_VIEW: [
+    'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'WAKA_HUMAS',
+    'WAKA_SARPRAS',
+    'KEPALA_TU',
+    'STAF_TU',
+    'GURU',
+    'WALI_KELAS',
+    'GURU_WALI',
+    'GURU_BK',
+    'BENDAHARA',
+    'BENDAHARA_KOMITE',
+    'PENGELOLA_TABUNGAN',
+    'PUSTAKAWAN',
+    'PEMBINA_OSIM',
+    'PEMBINA_EKSTRAKURIKULER',
+  ] as AppRole[],
   GTK_BIODATA_VIEW: [
     'GURU',
     'WALI_KELAS',
@@ -623,7 +642,6 @@ export const PERMISSIONS = {
   KKM_MANAGE: [
     'SUPERADMIN',
     'OPERATOR',
-    'KEPALA_LEMBAGA',
     'WAKA_KURIKULUM',
     'KEPALA_TU',
     'STAF_TU',
@@ -675,7 +693,92 @@ export function hasRolePermission(
   return userRoles.some((role) => allowedRoles.includes(role));
 }
 
+export type PortalDutyRequirement =
+  | 'PICKET'
+  | 'EXAM_SUPERVISOR'
+  | 'EXAM_COMMITTEE'
+  | 'PICKET_OR_COMMITTEE'
+  | 'SUPERVISOR_OR_COMMITTEE';
+
+export interface PortalAccessContext {
+  isPicketTeacher?: boolean;
+  isExamSupervisor?: boolean;
+  isExamCommittee?: boolean;
+  taughtSubjectIds?: readonly string[];
+}
+
+interface DutyRouteRule {
+  allowedRoles: readonly AppRole[];
+  requireDuty?: PortalDutyRequirement;
+}
+
+const ADMIN_OPS_ROLES: AppRole[] = [
+  'SUPERADMIN',
+  'OPERATOR',
+  'KEPALA_LEMBAGA',
+  'WAKA_KURIKULUM',
+  'WAKA_KESISWAAN',
+  'KEPALA_TU',
+  'STAF_TU',
+];
+
+const EXACT_DUTY_ROUTE_RULES: Record<string, DutyRouteRule> = {
+  '/portal/akademik/presensi/konfirmasi': {
+    allowedRoles: ADMIN_OPS_ROLES,
+    requireDuty: 'PICKET',
+  },
+  '/portal/akademik/presensi/pengganti': {
+    allowedRoles: ADMIN_OPS_ROLES,
+    requireDuty: 'PICKET',
+  },
+  '/portal/akademik/presensi/absensi-siswa': {
+    allowedRoles: [...ADMIN_OPS_ROLES, 'WALI_KELAS'],
+    requireDuty: 'PICKET',
+  },
+  '/portal/akademik/presensi/laporan-piket': {
+    allowedRoles: ADMIN_OPS_ROLES,
+    requireDuty: 'PICKET',
+  },
+  '/portal/akademik/presensi/jam-manual': {
+    allowedRoles: ADMIN_OPS_ROLES,
+    requireDuty: 'PICKET_OR_COMMITTEE',
+  },
+  '/portal/akademik/presensi/izin-keluar': {
+    allowedRoles: ADMIN_OPS_ROLES,
+    requireDuty: 'PICKET_OR_COMMITTEE',
+  },
+  '/portal/akademik/ujian/konfirmasi-pengawas': {
+    allowedRoles: ADMIN_OPS_ROLES,
+    requireDuty: 'EXAM_COMMITTEE',
+  },
+  '/portal/akademik/ujian/bap': {
+    allowedRoles: ADMIN_OPS_ROLES,
+    requireDuty: 'SUPERVISOR_OR_COMMITTEE',
+  },
+  '/portal/akademik/ujian/pengganti': {
+    allowedRoles: ADMIN_OPS_ROLES,
+    requireDuty: 'EXAM_COMMITTEE',
+  },
+  '/portal/akademik/ujian/absensi-siswa': {
+    allowedRoles: [...ADMIN_OPS_ROLES, 'WALI_KELAS'],
+    requireDuty: 'SUPERVISOR_OR_COMMITTEE',
+  },
+  '/portal/akademik/ujian/lpj-panitia': {
+    allowedRoles: ADMIN_OPS_ROLES,
+    requireDuty: 'EXAM_COMMITTEE',
+  },
+  '/portal/akademik/acara/konfirmasi': {
+    allowedRoles: [...ADMIN_OPS_ROLES, 'PEMBINA_OSIM', 'PEMBINA_EKSTRAKURIKULER'],
+    requireDuty: 'PICKET',
+  },
+  '/portal/akademik/rekap-absensi/siswa-harian': {
+    allowedRoles: [...ADMIN_OPS_ROLES, 'WALI_KELAS', 'GURU_BK', 'GURU_WALI'],
+    requireDuty: 'PICKET',
+  },
+};
+
 const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
+  '/portal/tabungan-saya': ['UMUM', 'ALUMNI'],
   '/portal/akademik/buku-induk/siswa': PERMISSIONS.BUKU_INDUK_SISWA_VIEW,
   '/portal/akademik/buku-induk/gtk': PERMISSIONS.BUKU_INDUK_GTK_VIEW,
   '/portal/akademik/buku-induk/penempatan-akun': PERMISSIONS.BUKU_INDUK_MANAGE,
@@ -683,14 +786,26 @@ const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
   '/portal/akademik/kkm': PERMISSIONS.KKM_MANAGE,
   '/portal/akademik/kalender/log-jtm': PERMISSIONS.KALENDER_LOG_JTM_VIEW,
   '/portal/penilaian/monitoring': PERMISSIONS.PENILAIAN_ADMIN_READ,
+  '/portal/siswa/jadwal-pelajaran': ['SISWA'],
+  '/portal/siswa/jadwal-piket': ['SISWA'],
+  '/portal/siswa/tabungan': ['SISWA'],
+  '/portal/siswa/absensi': ['SISWA'],
+  '/portal/siswa/spp': ['SISWA'],
+  '/portal/siswa/ujian': ['SISWA'],
+  '/portal/siswa/bk': ['SISWA'],
   '/portal/siswa/nilai': PERMISSIONS.SISWA_NILAI_VIEW,
+  '/portal/orang-tua/jadwal-pelajaran': ['ORANG_TUA'],
+  '/portal/orang-tua/jadwal-piket': ['ORANG_TUA'],
+  '/portal/orang-tua/tabungan': ['ORANG_TUA'],
+  '/portal/orang-tua/absensi': ['ORANG_TUA'],
+  '/portal/orang-tua/spp': ['ORANG_TUA'],
+  '/portal/orang-tua/bk': ['ORANG_TUA'],
   '/portal/orang-tua/nilai': PERMISSIONS.ORTU_NILAI_VIEW,
-  '/portal/sdm/gtk': PERMISSIONS.SDM_GTK_VIEW,
-  '/portal/sdm/siswa': PERMISSIONS.SDM_SISWA_VIEW,
-  '/portal/sdm/orang-tua': PERMISSIONS.SDM_ORTU_VIEW,
-  '/portal/sdm/alumni': PERMISSIONS.SDM_ALUMNI_VIEW,
-  '/portal/sdm/alumni/lulusan': PERMISSIONS.SDM_ALUMNI_VIEW,
-  '/portal/sdm/alumni/tracer': PERMISSIONS.SDM_ALUMNI_VIEW,
+  '/portal/gtk/jadwal-mengajar': PERMISSIONS.GTK_PERSONAL_VIEW,
+  '/portal/gtk/jadwal-piket': PERMISSIONS.GTK_PERSONAL_VIEW,
+  '/portal/gtk/presensi-saya': PERMISSIONS.GTK_PERSONAL_VIEW,
+  '/portal/gtk/tabungan': PERMISSIONS.GTK_PERSONAL_VIEW,
+  '/portal/gtk/honorarium': PERMISSIONS.GTK_PERSONAL_VIEW,
   '/portal/keuangan/spp/terbitkan': PERMISSIONS.SPP_MANAGE,
   '/portal/keuangan/tabungan/buka-rekening': PERMISSIONS.TABUNGAN_MANAGE,
   '/portal/keuangan/tabungan/transaksi': PERMISSIONS.TABUNGAN_MANAGE,
@@ -714,6 +829,10 @@ const PREFIX_ROUTE_RULES: Array<[string, AppRole[]]> = [
   ['/portal/akademik/kalender', PERMISSIONS.KALENDER_VIEW],
   ['/portal/akademik', PERMISSIONS.PRESENSI_VIEW],
   ['/portal/penilaian', PERMISSIONS.PENILAIAN_TEACHER],
+  ['/portal/sdm/gtk', PERMISSIONS.SDM_GTK_VIEW],
+  ['/portal/sdm/siswa', PERMISSIONS.SDM_SISWA_VIEW],
+  ['/portal/sdm/orang-tua', PERMISSIONS.SDM_ORTU_VIEW],
+  ['/portal/sdm/alumni', PERMISSIONS.SDM_ALUMNI_VIEW],
   ['/portal/sdm', PERMISSIONS.SDM_VIEW],
   ['/portal/keuangan/spp', PERMISSIONS.SPP_VIEW],
   ['/portal/keuangan/tabungan', PERMISSIONS.TABUNGAN_VIEW],
@@ -726,26 +845,67 @@ const PREFIX_ROUTE_RULES: Array<[string, AppRole[]]> = [
   ['/portal/layanan/alumni', PERMISSIONS.ALUMNI_VIEW],
   ['/portal/layanan', PERMISSIONS.PERPUSTAKAAN_VIEW],
   ['/portal/siswa/biodata-dokumen', PERMISSIONS.SISWA_BIODATA_VIEW],
-  ['/portal/siswa', PERMISSIONS.SISWA_BIODATA_VIEW],
+  ['/portal/siswa', ['SISWA']],
   ['/portal/gtk/biodata-dokumen', PERMISSIONS.GTK_BIODATA_VIEW],
-  ['/portal/gtk', PERMISSIONS.GTK_BIODATA_VIEW],
+  ['/portal/gtk', PERMISSIONS.GTK_PERSONAL_VIEW],
   ['/portal/orang-tua/biodata-dokumen', PERMISSIONS.ORTU_BIODATA_VIEW],
-  ['/portal/orang-tua', PERMISSIONS.ORTU_BIODATA_VIEW],
+  ['/portal/orang-tua', ['ORANG_TUA']],
 ];
 
-export function canAccessPortalPath(pathname: string, userRoles: readonly AppRole[]): boolean {
+function matchesDutyRequirement(
+  req: PortalDutyRequirement | undefined,
+  ctx?: PortalAccessContext | null
+): boolean {
+  if (!req || !ctx) return false;
+  switch (req) {
+    case 'PICKET':
+      return Boolean(ctx.isPicketTeacher);
+    case 'EXAM_SUPERVISOR':
+      return Boolean(ctx.isExamSupervisor);
+    case 'EXAM_COMMITTEE':
+      return Boolean(ctx.isExamCommittee);
+    case 'PICKET_OR_COMMITTEE':
+      return Boolean(ctx.isPicketTeacher || ctx.isExamCommittee);
+    case 'SUPERVISOR_OR_COMMITTEE':
+      return Boolean(ctx.isExamSupervisor || ctx.isExamCommittee);
+    default:
+      return false;
+  }
+}
+
+export function canAccessPortalPath(
+  pathname: string,
+  userRoles: readonly AppRole[],
+  context?: PortalAccessContext | null
+): boolean {
   if (userRoles.length === 0) return false;
   const normalized = pathname.replace(/\/$/, '') || '/portal';
 
   if (
     normalized === '/portal' ||
-    normalized === '/portal/tabungan-saya' ||
     normalized === '/portal/akun' ||
     normalized === '/portal/akun/profil' ||
     normalized === '/portal/akun/kata-sandi' ||
     normalized === '/portal/akun/mfa'
   ) {
     return true;
+  }
+
+  // Cek aturan rute penilaian dinamis: /portal/penilaian/[subjectId]/[type]
+  const penilaianMatch = /^\/portal\/penilaian\/([^/]+)\/([^/]+)$/.exec(normalized);
+  if (penilaianMatch && penilaianMatch[1] !== 'monitoring') {
+    if (userRoles.includes('SUPERADMIN')) return true;
+    const subjectId = penilaianMatch[1];
+    return Boolean(context?.taughtSubjectIds?.includes(subjectId));
+  }
+
+  // Cek aturan rute operasional yang memerlukan peran admin ATAU tugas tambahan guru
+  const dutyRule = EXACT_DUTY_ROUTE_RULES[normalized];
+  if (dutyRule) {
+    return (
+      hasRolePermission(userRoles, dutyRule.allowedRoles) ||
+      matchesDutyRequirement(dutyRule.requireDuty, context)
+    );
   }
 
   if (EXACT_ROUTE_RULES[normalized]) {

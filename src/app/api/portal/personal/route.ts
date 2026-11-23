@@ -40,14 +40,16 @@ export async function GET(request: NextRequest) {
   const section = request.nextUrl.searchParams.get('section') || 'all';
   const requestedStudentId = request.nextUrl.searchParams.get('student_id');
 
-  const canViewGtk = hasAnyRole(session, PERMISSIONS.GTK_BIODATA_VIEW);
-  const canViewOrtu = hasAnyRole(session, PERMISSIONS.ORTU_BIODATA_VIEW);
-  const canViewSiswa = hasAnyRole(session, PERMISSIONS.SISWA_BIODATA_VIEW);
+  const canViewGtk = hasAnyRole(session, PERMISSIONS.GTK_PERSONAL_VIEW);
+  const canViewOrtu = session.roles.includes('ORANG_TUA');
+  const canViewSiswa = session.roles.includes('SISWA');
+  const canViewUmum = session.roles.includes('UMUM') || session.roles.includes('ALUMNI');
 
   if (
     (scopeParam === 'gtk' && !canViewGtk) ||
     (scopeParam === 'orang-tua' && !canViewOrtu) ||
-    (scopeParam === 'siswa' && !canViewSiswa)
+    (scopeParam === 'siswa' && !canViewSiswa) ||
+    (scopeParam === 'umum' && !canViewUmum)
   ) {
     return NextResponse.json(
       { error: 'Akses ditolak. Peran akun Anda tidak memiliki izin untuk ruang lingkup ini.' },

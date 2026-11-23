@@ -520,11 +520,10 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
       {toast && (
         <div
           role={toast.type === 'ok' ? 'status' : 'alert'}
-          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-start sm:items-center justify-between gap-2 ${
-            toast.type === 'ok'
+          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-start sm:items-center justify-between gap-2 ${toast.type === 'ok'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : 'bg-rose-50 border-rose-200 text-rose-800'
-          }`}
+            }`}
         >
           <div className="flex items-start sm:items-center gap-2 min-w-0">
             {toast.type === 'ok' ? (
@@ -587,42 +586,38 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
           </button>
           <Link
             href="/portal/keuangan/tabungan/transaksi"
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-              section === 'transaksi'
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${section === 'transaksi'
                 ? 'bg-emerald-700 text-white shadow-xs'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-            }`}
+              }`}
           >
             <Wallet className="w-3.5 h-3.5" /> Transaksi Setor / Tarik
           </Link>
           <Link
             href="/portal/keuangan/tabungan/buka-rekening"
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-              section === 'buka-rekening'
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${section === 'buka-rekening'
                 ? 'bg-emerald-700 text-white shadow-xs'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-            }`}
+              }`}
           >
             <User className="w-3.5 h-3.5" /> Buka Rekening
           </Link>
           <Link
             href="/portal/keuangan/tabungan/rekap"
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-              section === 'rekap'
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${section === 'rekap'
                 ? 'bg-emerald-700 text-white shadow-xs'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-            }`}
+              }`}
           >
             <History className="w-3.5 h-3.5" /> Rekapitulasi
           </Link>
           {canManage && (
             <Link
               href="/portal/keuangan/tabungan/aturan-fee"
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-                section === 'aturan-fee'
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${section === 'aturan-fee'
                   ? 'bg-emerald-700 text-white shadow-xs'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-              }`}
+                }`}
             >
               <Percent className="w-3.5 h-3.5" /> Aturan Fee Penarikan
             </Link>
@@ -661,353 +656,353 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
             Anda memiliki akses lihat saja. Hubungi Petugas Tabungan untuk memproses transaksi setor atau tarik tunai.
           </div>
         ) : (
-        <div className="grid lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7 glass-card rounded-3xl p-5 sm:p-6 space-y-4">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Wallet className="w-4 h-4 text-emerald-700 shrink-0" /> Transaksi Setor / Tarik Tabungan
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Pilih nomor rekening dan tentukan jenis transaksi. Pada penarikan, fee transaksi akan dihitung secara otomatis.
-              </p>
-            </div>
-
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (!trxForm.account_id) {
-                  showToast('err', 'Pilih rekening tabungan terlebih dahulu.');
-                  return;
-                }
-                if (!selectedAccount) {
-                  showToast('err', 'Data rekening tidak ditemukan.');
-                  return;
-                }
-                if (
-                  !Number.isInteger(trxForm.amount) ||
-                  trxForm.amount < 1000 ||
-                  trxForm.amount % 1000 !== 0
-                ) {
-                  showToast(
-                    'err',
-                    'Nominal transaksi minimal Rp 1.000 dan harus kelipatan Rp 1.000 (sebelum dikurangi fee penarikan).'
-                  );
-                  return;
-                }
-                if (
-                  trxForm.transaction_type === 'TARIK' &&
-                  trxForm.amount > Number(selectedAccount.balance)
-                ) {
-                  showToast('err', 'Saldo tabungan tidak mencukupi untuk penarikan.');
-                  return;
-                }
-
-                const result = await postTabungan(
-                  {
-                    action: 'TRANSACTION',
-                    ...trxForm,
-                    notes: trxForm.notes.trim(),
-                  },
-                  trxForm.transaction_type === 'TARIK'
-                    ? 'Transaksi penarikan tabungan berhasil diproses.'
-                    : 'Transaksi setoran tabungan berhasil dicatat.'
-                );
-
-                if (result && result.transaction) {
-                  setLastReceipt({
-                    referenceNumber: result.transaction.reference_number,
-                    accountNumber: selectedAccount.account_number,
-                    ownerName: selectedAccount.owner_name,
-                    ownerType: selectedAccount.owner_type,
-                    type: trxForm.transaction_type,
-                    amount: trxForm.amount,
-                    feePercentage: result.fee_percentage || 0,
-                    feeAmount: result.fee_amount || 0,
-                    netAmount: result.net_amount ?? trxForm.amount,
-                    balanceAfter: result.balance,
-                    transactionDate:
-                      result.transaction.transaction_date || new Date().toISOString(),
-                  });
-                  setTrxForm((prev) => ({ ...prev, notes: '' }));
-                }
-              }}
-              className="space-y-4"
-            >
+          <div className="grid lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-7 glass-card rounded-3xl p-5 sm:p-6 space-y-4">
               <div>
-                <label
-                  htmlFor="trx-account"
-                  className="block text-xs font-semibold text-slate-700 mb-1"
-                >
-                  Pilih Rekening Tabungan <span className="text-rose-600">*</span>
-                </label>
-                <select
-                  id="trx-account"
-                  required
-                  value={trxForm.account_id}
-                  onChange={(e) => setTrxForm({ ...trxForm, account_id: e.target.value })}
-                  className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
-                >
-                  <option value="">-- Cari / Pilih Rekening --</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      [{a.account_number}] {a.owner_name} ({a.owner_type}) — Saldo:{' '}
-                      {formatRupiah(Number(a.balance))}
-                    </option>
-                  ))}
-                </select>
-                {selectedAccount && (
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Pemilik:{' '}
-                    <strong className="text-slate-800">{selectedAccount.owner_name}</strong> • Saldo
-                    Tersedia:{' '}
-                    <strong className="text-emerald-700 tabular-nums">
-                      {formatRupiah(Number(selectedAccount.balance))}
-                    </strong>
-                  </p>
-                )}
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-emerald-700 shrink-0" /> Transaksi Setor / Tarik Tabungan
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Pilih nomor rekening dan tentukan jenis transaksi. Pada penarikan, fee transaksi akan dihitung secara otomatis.
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!trxForm.account_id) {
+                    showToast('err', 'Pilih rekening tabungan terlebih dahulu.');
+                    return;
+                  }
+                  if (!selectedAccount) {
+                    showToast('err', 'Data rekening tidak ditemukan.');
+                    return;
+                  }
+                  if (
+                    !Number.isInteger(trxForm.amount) ||
+                    trxForm.amount < 1000 ||
+                    trxForm.amount % 1000 !== 0
+                  ) {
+                    showToast(
+                      'err',
+                      'Nominal transaksi minimal Rp 1.000 dan harus kelipatan Rp 1.000 (sebelum dikurangi fee penarikan).'
+                    );
+                    return;
+                  }
+                  if (
+                    trxForm.transaction_type === 'TARIK' &&
+                    trxForm.amount > Number(selectedAccount.balance)
+                  ) {
+                    showToast('err', 'Saldo tabungan tidak mencukupi untuk penarikan.');
+                    return;
+                  }
+
+                  const result = await postTabungan(
+                    {
+                      action: 'TRANSACTION',
+                      ...trxForm,
+                      notes: trxForm.notes.trim(),
+                    },
+                    trxForm.transaction_type === 'TARIK'
+                      ? 'Transaksi penarikan tabungan berhasil diproses.'
+                      : 'Transaksi setoran tabungan berhasil dicatat.'
+                  );
+
+                  if (result && result.transaction) {
+                    setLastReceipt({
+                      referenceNumber: result.transaction.reference_number,
+                      accountNumber: selectedAccount.account_number,
+                      ownerName: selectedAccount.owner_name,
+                      ownerType: selectedAccount.owner_type,
+                      type: trxForm.transaction_type,
+                      amount: trxForm.amount,
+                      feePercentage: result.fee_percentage || 0,
+                      feeAmount: result.fee_amount || 0,
+                      netAmount: result.net_amount ?? trxForm.amount,
+                      balanceAfter: result.balance,
+                      transactionDate:
+                        result.transaction.transaction_date || new Date().toISOString(),
+                    });
+                    setTrxForm((prev) => ({ ...prev, notes: '' }));
+                  }
+                }}
+                className="space-y-4"
+              >
                 <div>
                   <label
-                    htmlFor="trx-type"
+                    htmlFor="trx-account"
                     className="block text-xs font-semibold text-slate-700 mb-1"
                   >
-                    Jenis Transaksi <span className="text-rose-600">*</span>
+                    Pilih Rekening Tabungan <span className="text-rose-600">*</span>
                   </label>
                   <select
-                    id="trx-type"
-                    value={trxForm.transaction_type}
-                    onChange={(e) =>
-                      setTrxForm({
-                        ...trxForm,
-                        transaction_type: e.target.value as 'SETOR' | 'TARIK',
-                      })
-                    }
-                    className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                    id="trx-account"
+                    required
+                    value={trxForm.account_id}
+                    onChange={(e) => setTrxForm({ ...trxForm, account_id: e.target.value })}
+                    className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                   >
-                    <option value="SETOR">SETOR TABUNGAN (Simpanan)</option>
-                    <option value="TARIK">TARIK TABUNGAN (Penarikan Tunai)</option>
+                    <option value="">-- Cari / Pilih Rekening --</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        [{a.account_number}] {a.owner_name} ({a.owner_type}) — Saldo:{' '}
+                        {formatRupiah(Number(a.balance))}
+                      </option>
+                    ))}
                   </select>
+                  {selectedAccount && (
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Pemilik:{' '}
+                      <strong className="text-slate-800">{selectedAccount.owner_name}</strong> • Saldo
+                      Tersedia:{' '}
+                      <strong className="text-emerald-700 tabular-nums">
+                        {formatRupiah(Number(selectedAccount.balance))}
+                      </strong>
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label
+                      htmlFor="trx-type"
+                      className="block text-xs font-semibold text-slate-700 mb-1"
+                    >
+                      Jenis Transaksi <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      id="trx-type"
+                      value={trxForm.transaction_type}
+                      onChange={(e) =>
+                        setTrxForm({
+                          ...trxForm,
+                          transaction_type: e.target.value as 'SETOR' | 'TARIK',
+                        })
+                      }
+                      className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                    >
+                      <option value="SETOR">SETOR TABUNGAN (Simpanan)</option>
+                      <option value="TARIK">TARIK TABUNGAN (Penarikan Tunai)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="trx-amount"
+                      className="block text-xs font-semibold text-slate-700 mb-1"
+                    >
+                      Nominal Transaksi (Rp) <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      id="trx-amount"
+                      type="number"
+                      min={1000}
+                      step={1000}
+                      required
+                      value={trxForm.amount}
+                      onChange={(e) => setTrxForm({ ...trxForm, amount: Number(e.target.value) })}
+                      className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+                      {formatRupiah(Number(trxForm.amount) || 0)}
+                      {trxForm.transaction_type === 'TARIK' ? ' (sebelum dikurangi fee)' : ''}
+                    </p>
+                    {(!Number.isInteger(trxForm.amount) ||
+                      trxForm.amount < 1000 ||
+                      trxForm.amount % 1000 !== 0) ? (
+                      <p className="text-[10px] text-rose-600 font-medium mt-0.5">
+                        Minimal Rp 1.000 dan harus kelipatan Rp 1.000.
+                      </p>
+                    ) : selectedAccount &&
+                      trxForm.transaction_type === 'TARIK' &&
+                      trxForm.amount > Number(selectedAccount.balance) ? (
+                      <p className="text-[10px] text-rose-600 font-medium mt-0.5">
+                        Saldo rekening tidak mencukupi ({formatRupiah(Number(selectedAccount.balance))}).
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Minimal Rp 1.000 &amp; kelipatan Rp 1.000
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div>
                   <label
-                    htmlFor="trx-amount"
+                    htmlFor="trx-notes"
                     className="block text-xs font-semibold text-slate-700 mb-1"
                   >
-                    Nominal Transaksi (Rp) <span className="text-rose-600">*</span>
+                    Catatan / Keterangan (Opsional)
                   </label>
                   <input
-                    id="trx-amount"
-                    type="number"
-                    min={1000}
-                    step={1000}
-                    required
-                    value={trxForm.amount}
-                    onChange={(e) => setTrxForm({ ...trxForm, amount: Number(e.target.value) })}
-                    className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                    id="trx-notes"
+                    type="text"
+                    placeholder="Contoh: Keperluan bayar buku, biaya praktikum, dll"
+                    value={trxForm.notes}
+                    onChange={(e) => setTrxForm({ ...trxForm, notes: e.target.value })}
+                    className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                   />
-                  <p className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
-                    {formatRupiah(Number(trxForm.amount) || 0)}
-                    {trxForm.transaction_type === 'TARIK' ? ' (sebelum dikurangi fee)' : ''}
-                  </p>
-                  {(!Number.isInteger(trxForm.amount) ||
-                    trxForm.amount < 1000 ||
-                    trxForm.amount % 1000 !== 0) ? (
-                    <p className="text-[10px] text-rose-600 font-medium mt-0.5">
-                      Minimal Rp 1.000 dan harus kelipatan Rp 1.000.
-                    </p>
-                  ) : selectedAccount &&
-                    trxForm.transaction_type === 'TARIK' &&
-                    trxForm.amount > Number(selectedAccount.balance) ? (
-                    <p className="text-[10px] text-rose-600 font-medium mt-0.5">
-                      Saldo rekening tidak mencukupi ({formatRupiah(Number(selectedAccount.balance))}).
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      Minimal Rp 1.000 &amp; kelipatan Rp 1.000
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="trx-notes"
-                  className="block text-xs font-semibold text-slate-700 mb-1"
-                >
-                  Catatan / Keterangan (Opsional)
-                </label>
-                <input
-                  id="trx-notes"
-                  type="text"
-                  placeholder="Contoh: Keperluan bayar buku, biaya praktikum, dll"
-                  value={trxForm.notes}
-                  onChange={(e) => setTrxForm({ ...trxForm, notes: e.target.value })}
-                  className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white font-semibold py-3 rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-sm"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Memproses Transaksi...
-                  </>
-                ) : trxForm.transaction_type === 'TARIK' ? (
-                  <>
-                    <ArrowDownRight className="w-4 h-4 text-amber-400" /> Proses Penarikan Tunai
-                  </>
-                ) : (
-                  <>
-                    <ArrowUpRight className="w-4 h-4 text-emerald-400" /> Proses Setor Tabungan
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-
-          {/* Rincian Fee & Estimasi Penarikan / Struk Terakhir */}
-          <div className="lg:col-span-5 space-y-4">
-            {trxForm.transaction_type === 'TARIK' && realTimeFeeCalc && (
-              <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6 space-y-4">
-                <div className="flex items-center gap-2 text-amber-900">
-                  <Calculator className="w-4 h-4 text-amber-700" />
-                  <h3 className="text-xs font-bold uppercase tracking-wider">
-                    Rincian Fee Penarikan Otomatis
-                  </h3>
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between py-1 border-b border-amber-200/70 text-slate-600">
-                    <span>Nominal Penarikan Saldo:</span>
-                    <strong className="text-slate-900">
-                      {formatRupiah(realTimeFeeCalc.amount)}
-                    </strong>
-                  </div>
-
-                  <div className="flex justify-between py-1 border-b border-amber-200/70 text-slate-600">
-                    <span>Tarif Fee Dikenakan:</span>
-                    <span className="font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-lg text-[11px]">
-                      {realTimeFeeCalc.feePercentage}% ({realTimeFeeCalc.matchedTier?.label || '-'})
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-start py-1 border-b border-amber-200/70 text-rose-700">
-                    <span>Potongan Fee Transaksi:</span>
-                    <div className="text-right">
-                      <strong className="text-rose-700 block">
-                        - {formatRupiah(realTimeFeeCalc.feeAmount)}
-                      </strong>
-                      {realTimeFeeCalc.rawFeeAmount !== realTimeFeeCalc.feeAmount && (
-                        <span className="text-[10px] text-amber-800 block">
-                          (Dibulatkan dari {formatRupiah(realTimeFeeCalc.rawFeeAmount)})
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="pt-2">
-                    <p className="text-[11px] font-semibold text-slate-500 uppercase">
-                      Nominal Uang Yang Diterima Pemilik:
-                    </p>
-                    <p className="text-2xl font-black text-emerald-700 mt-0.5">
-                      {formatRupiah(realTimeFeeCalc.netAmount)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl bg-white/80 border border-amber-200 p-3 text-[11px] text-amber-900 leading-relaxed space-y-1">
-                  <p>
-                    💡 <strong>Ketentuan Fee:</strong> Nominal fee langsung mengurangi nominal uang tunai
-                    yang diserahkan ke pemilik tabungan. Saldo rekening tetap berkurang sebesar nominal penarikan penuh (
-                    <strong>{formatRupiah(realTimeFeeCalc.amount)}</strong>).
-                  </p>
-                  <p className="text-amber-800">
-                    <strong>Aturan Pembulatan Fee:</strong> Ratusan &lt; 330 → 000 | 330–660 → 500 | &gt; 660 → 1.000.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Bukti Transaksi Terakhir */}
-            {lastReceipt && (
-              <div className="rounded-3xl border border-emerald-200 bg-emerald-50/70 p-6 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    Kuitansi Transaksi Terakhir
-                  </span>
-                  <span className="text-[10px] font-mono text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
-                    {lastReceipt.referenceNumber}
-                  </span>
-                </div>
-
-                <div className="text-xs space-y-1.5 bg-white p-4 rounded-2xl border border-emerald-100">
-                  <p className="text-slate-600">
-                    Rekening:{' '}
-                    <strong className="text-slate-900">
-                      {lastReceipt.accountNumber} ({lastReceipt.ownerName})
-                    </strong>
-                  </p>
-                  <p className="text-slate-600">
-                    Jenis:{' '}
-                    <strong className="text-slate-900">
-                      {lastReceipt.type === 'TARIK' ? 'PENARIKAN TABUNGAN' : 'SETORAN TABUNGAN'}
-                    </strong>
-                  </p>
-                  <p className="text-slate-600">
-                    Nominal Transaksi:{' '}
-                    <strong className="text-slate-900">{formatRupiah(lastReceipt.amount)}</strong>
-                  </p>
-                  {lastReceipt.type === 'TARIK' && (
-                    <>
-                      <p className="text-rose-600">
-                        Fee Penarikan ({lastReceipt.feePercentage}%):{' '}
-                        <strong>- {formatRupiah(lastReceipt.feeAmount)}</strong>
-                      </p>
-                      <p className="text-emerald-700 font-bold border-t border-slate-100 pt-1">
-                        Uang Diserahkan ke Nasabah: {formatRupiah(lastReceipt.netAmount)}
-                      </p>
-                    </>
-                  )}
-                  <p className="text-slate-600 border-t border-slate-100 pt-1">
-                    Sisa Saldo Rekening:{' '}
-                    <strong className="text-emerald-700">
-                      {formatRupiah(lastReceipt.balanceAfter)}
-                    </strong>
-                  </p>
                 </div>
 
                 <button
-                  type="button"
-                  onClick={() =>
-                    setActiveSlip({
-                      referenceNumber: lastReceipt.referenceNumber,
-                      accountNumber: lastReceipt.accountNumber,
-                      ownerName: lastReceipt.ownerName,
-                      ownerType: lastReceipt.ownerType,
-                      transactionType: lastReceipt.type,
-                      amount: lastReceipt.amount,
-                      feePercentage: lastReceipt.feePercentage,
-                      feeAmount: lastReceipt.feeAmount,
-                      netAmount: lastReceipt.netAmount,
-                      balanceAfter: lastReceipt.balanceAfter,
-                      transactionDate: lastReceipt.transactionDate,
-                    })
-                  }
-                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2 px-3 text-xs transition"
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white font-semibold py-3 rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-sm"
                 >
-                  <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip PNG
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Memproses Transaksi...
+                    </>
+                  ) : trxForm.transaction_type === 'TARIK' ? (
+                    <>
+                      <ArrowDownRight className="w-4 h-4 text-amber-400" /> Proses Penarikan Tunai
+                    </>
+                  ) : (
+                    <>
+                      <ArrowUpRight className="w-4 h-4 text-emerald-400" /> Proses Setor Tabungan
+                    </>
+                  )}
                 </button>
-              </div>
-            )}
+              </form>
+            </div>
+
+            {/* Rincian Fee & Estimasi Penarikan / Struk Terakhir */}
+            <div className="lg:col-span-5 space-y-4">
+              {trxForm.transaction_type === 'TARIK' && realTimeFeeCalc && (
+                <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6 space-y-4">
+                  <div className="flex items-center gap-2 text-amber-900">
+                    <Calculator className="w-4 h-4 text-amber-700" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider">
+                      Rincian Fee Penarikan Otomatis
+                    </h3>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between py-1 border-b border-amber-200/70 text-slate-600">
+                      <span>Nominal Penarikan Saldo:</span>
+                      <strong className="text-slate-900">
+                        {formatRupiah(realTimeFeeCalc.amount)}
+                      </strong>
+                    </div>
+
+                    <div className="flex justify-between py-1 border-b border-amber-200/70 text-slate-600">
+                      <span>Tarif Fee Dikenakan:</span>
+                      <span className="font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-lg text-[11px]">
+                        {realTimeFeeCalc.feePercentage}% ({realTimeFeeCalc.matchedTier?.label || '-'})
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-start py-1 border-b border-amber-200/70 text-rose-700">
+                      <span>Potongan Fee Transaksi:</span>
+                      <div className="text-right">
+                        <strong className="text-rose-700 block">
+                          - {formatRupiah(realTimeFeeCalc.feeAmount)}
+                        </strong>
+                        {realTimeFeeCalc.rawFeeAmount !== realTimeFeeCalc.feeAmount && (
+                          <span className="text-[10px] text-amber-800 block">
+                            (Dibulatkan dari {formatRupiah(realTimeFeeCalc.rawFeeAmount)})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <p className="text-[11px] font-semibold text-slate-500 uppercase">
+                        Nominal Uang Yang Diterima Pemilik:
+                      </p>
+                      <p className="text-2xl font-black text-emerald-700 mt-0.5">
+                        {formatRupiah(realTimeFeeCalc.netAmount)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white/80 border border-amber-200 p-3 text-[11px] text-amber-900 leading-relaxed space-y-1">
+                    <p>
+                      💡 <strong>Ketentuan Fee:</strong> Nominal fee langsung mengurangi nominal uang tunai
+                      yang diserahkan ke pemilik tabungan. Saldo rekening tetap berkurang sebesar nominal penarikan penuh (
+                      <strong>{formatRupiah(realTimeFeeCalc.amount)}</strong>).
+                    </p>
+                    <p className="text-amber-800">
+                      <strong>Aturan Pembulatan Fee:</strong> Ratusan &lt; 330 → 000 | 330–660 → 500 | &gt; 660 → 1.000.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Bukti Transaksi Terakhir */}
+              {lastReceipt && (
+                <div className="rounded-3xl border border-emerald-200 bg-emerald-50/70 p-6 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      Kuitansi Transaksi Terakhir
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+                      {lastReceipt.referenceNumber}
+                    </span>
+                  </div>
+
+                  <div className="text-xs space-y-1.5 bg-white p-4 rounded-2xl border border-emerald-100">
+                    <p className="text-slate-600">
+                      Rekening:{' '}
+                      <strong className="text-slate-900">
+                        {lastReceipt.accountNumber} ({lastReceipt.ownerName})
+                      </strong>
+                    </p>
+                    <p className="text-slate-600">
+                      Jenis:{' '}
+                      <strong className="text-slate-900">
+                        {lastReceipt.type === 'TARIK' ? 'PENARIKAN TABUNGAN' : 'SETORAN TABUNGAN'}
+                      </strong>
+                    </p>
+                    <p className="text-slate-600">
+                      Nominal Transaksi:{' '}
+                      <strong className="text-slate-900">{formatRupiah(lastReceipt.amount)}</strong>
+                    </p>
+                    {lastReceipt.type === 'TARIK' && (
+                      <>
+                        <p className="text-rose-600">
+                          Fee Penarikan ({lastReceipt.feePercentage}%):{' '}
+                          <strong>- {formatRupiah(lastReceipt.feeAmount)}</strong>
+                        </p>
+                        <p className="text-emerald-700 font-bold border-t border-slate-100 pt-1">
+                          Uang Diserahkan ke Nasabah: {formatRupiah(lastReceipt.netAmount)}
+                        </p>
+                      </>
+                    )}
+                    <p className="text-slate-600 border-t border-slate-100 pt-1">
+                      Sisa Saldo Rekening:{' '}
+                      <strong className="text-emerald-700">
+                        {formatRupiah(lastReceipt.balanceAfter)}
+                      </strong>
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveSlip({
+                        referenceNumber: lastReceipt.referenceNumber,
+                        accountNumber: lastReceipt.accountNumber,
+                        ownerName: lastReceipt.ownerName,
+                        ownerType: lastReceipt.ownerType,
+                        transactionType: lastReceipt.type,
+                        amount: lastReceipt.amount,
+                        feePercentage: lastReceipt.feePercentage,
+                        feeAmount: lastReceipt.feeAmount,
+                        netAmount: lastReceipt.netAmount,
+                        balanceAfter: lastReceipt.balanceAfter,
+                        transactionDate: lastReceipt.transactionDate,
+                      })
+                    }
+                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2 px-3 text-xs transition"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip PNG
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
         )
       )}
 
@@ -1423,11 +1418,10 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                           </p>
                         </div>
                         <span
-                          className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            t.transaction_type === 'SETOR'
+                          className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${t.transaction_type === 'SETOR'
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                               : 'bg-amber-100 text-amber-800 border border-amber-200'
-                          }`}
+                            }`}
                         >
                           {t.transaction_type}
                         </span>
@@ -1534,11 +1528,10 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                           </td>
                           <td className="py-2.5 px-3 whitespace-nowrap">
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                t.transaction_type === 'SETOR'
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${t.transaction_type === 'SETOR'
                                   ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                                   : 'bg-amber-100 text-amber-800 border border-amber-200'
-                              }`}
+                                }`}
                             >
                               {t.transaction_type === 'SETOR' ? 'SETOR' : 'TARIK'}
                             </span>
@@ -1765,244 +1758,147 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
             Anda tidak memiliki izin untuk mengubah pengaturan tingkatan fee penarikan tabungan.
           </div>
         ) : (
-        <div className="space-y-6">
-          <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-              <div className="min-w-0">
-                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <Percent className="w-4 h-4 text-emerald-700 shrink-0" /> Pengaturan Tingkatan Fee Penarikan
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  Admin dan Pengelola Tabungan dapat mengatur persentase fee serta batas bawah (minimum) dan batas atas (maksimum) nominal penarikan.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                {confirmResetTiers ? (
-                  <div className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-xl text-xs">
-                    <span className="text-amber-900 font-medium">Reset ke 6 standar?</span>
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={handleResetFeeTiers}
-                      className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold disabled:opacity-50"
-                    >
-                      Ya
-                    </button>
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={() => setConfirmResetTiers(false)}
-                      className="px-2 py-1 rounded-lg bg-white border border-amber-200 text-slate-600"
-                    >
-                      Batal
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmResetTiers(true)}
-                    disabled={submitting}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold disabled:opacity-50 transition"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" /> Reset Default (6 Tingkatan)
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={openAddTierModal}
-                  disabled={submitting}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold disabled:opacity-50 transition"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Tambah Aturan Fee
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveFeeTiers}
-                  disabled={submitting || editingTiers.length === 0}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-50 transition shadow-xs"
-                >
-                  {submitting ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Save className="w-3.5 h-3.5" />
-                  )}
-                  Simpan Pengaturan
-                </button>
-              </div>
-            </div>
-
-            {hasUnsavedTiers && (
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-                Terdapat perubahan aturan fee yang belum disimpan ke server. Klik{' '}
-                <strong>Simpan Pengaturan</strong> untuk menerapkan secara permanen.
-              </div>
-            )}
-
-            {editingTiers.length === 0 ? (
-              <p className="py-8 text-center text-xs text-slate-400">
-                Belum ada tingkatan aturan fee. Klik <strong>Tambah Aturan Fee</strong> atau{' '}
-                <strong>Reset Default</strong>.
-              </p>
-            ) : (
-              <>
-                {/* Mobile Tier Cards */}
-                <div className="md:hidden space-y-2.5">
-                  {editingTiers.map((tier, idx) => (
-                    <div
-                      key={idx}
-                      className="modular-card rounded-2xl p-3.5 space-y-2.5 text-xs"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-bold text-slate-900 break-words">
-                            #{idx + 1} • {tier.label || generateTierLabel(tier.min_amount, tier.max_amount)}
-                          </p>
-                          <p className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
-                            {formatRupiah(Number(tier.min_amount))} –{' '}
-                            {tier.max_amount != null
-                              ? formatRupiah(Number(tier.max_amount))
-                              : 'Tanpa Batas Atas'}
-                          </p>
-                        </div>
-                        <span className="shrink-0 font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg tabular-nums">
-                          {tier.fee_percentage}%
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-100">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            tier.is_active
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-slate-100 text-slate-500'
-                          }`}
-                        >
-                          {tier.is_active ? 'Aktif' : 'Nonaktif'}
-                        </span>
-
-                        <div className="flex items-center gap-1.5">
-                          {confirmDeleteTierIdx === idx ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteTier(idx)}
-                                className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-semibold"
-                              >
-                                Hapus
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteTierIdx(null)}
-                                className="px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 text-[11px]"
-                              >
-                                Batal
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => openEditTierModal(idx)}
-                                className="p-1.5 rounded-lg text-slate-600 bg-slate-100 hover:bg-slate-200 transition"
-                                aria-label={`Edit aturan ${idx + 1}`}
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteTierIdx(idx)}
-                                className="p-1.5 rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 transition"
-                                aria-label={`Hapus aturan ${idx + 1}`}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+          <div className="space-y-6">
+            <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div className="min-w-0">
+                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Percent className="w-4 h-4 text-emerald-700 shrink-0" /> Pengaturan Tingkatan Fee Penarikan
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Admin dan Pengelola Tabungan dapat mengatur persentase fee serta batas bawah (minimum) dan batas atas (maksimum) nominal penarikan.
+                  </p>
                 </div>
 
-                {/* Desktop Tier Table */}
-                <div className="hidden md:block overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse min-w-[680px]">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50/50 whitespace-nowrap">
-                        <th className="py-2.5 px-3 text-center w-12">#</th>
-                        <th className="py-2.5 px-3">Keterangan Tingkatan</th>
-                        <th className="py-2.5 px-3 text-right">Batas Bawah (Min)</th>
-                        <th className="py-2.5 px-3 text-right">Batas Atas (Maks)</th>
-                        <th className="py-2.5 px-3 text-center">Persentase Fee</th>
-                        <th className="py-2.5 px-3 text-center">Status</th>
-                        <th className="py-2.5 px-3 text-center w-28">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {editingTiers.map((tier, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/60 transition">
-                          <td className="py-3 px-3 text-center font-bold text-slate-400">
-                            {idx + 1}
-                          </td>
-                          <td className="py-3 px-3">
-                            <p className="font-bold text-slate-900">
-                              {tier.label || generateTierLabel(tier.min_amount, tier.max_amount)}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {confirmResetTiers ? (
+                    <div className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-xl text-xs">
+                      <span className="text-amber-900 font-medium">Reset ke 6 standar?</span>
+                      <button
+                        type="button"
+                        aria-busy={submitting || undefined}
+                        disabled={submitting}
+                        onClick={handleResetFeeTiers}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold disabled:opacity-50 transition"
+                      >
+                        {submitting && <Loader2 className="w-3 h-3 animate-spin" />}
+                        <span>Ya</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => setConfirmResetTiers(false)}
+                        className="px-2 py-1 rounded-lg bg-white hover:bg-amber-50 border border-amber-200 text-slate-600 transition"
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmResetTiers(true)}
+                      disabled={submitting}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold disabled:opacity-50 transition"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-slate-500" /> Reset Default (6 Tingkatan)
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={openAddTierModal}
+                    disabled={submitting}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold disabled:opacity-50 transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Tambah Aturan Fee
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveFeeTiers}
+                    disabled={submitting || editingTiers.length === 0}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-50 transition shadow-xs"
+                  >
+                    {submitting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    Simpan Pengaturan
+                  </button>
+                </div>
+              </div>
+
+              {hasUnsavedTiers && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                  Terdapat perubahan aturan fee yang belum disimpan ke server. Klik{' '}
+                  <strong>Simpan Pengaturan</strong> untuk menerapkan secara permanen.
+                </div>
+              )}
+
+              {editingTiers.length === 0 ? (
+                <p className="py-8 text-center text-xs text-slate-400">
+                  Belum ada tingkatan aturan fee. Klik <strong>Tambah Aturan Fee</strong> atau{' '}
+                  <strong>Reset Default</strong>.
+                </p>
+              ) : (
+                <>
+                  {/* Mobile Tier Cards */}
+                  <div className="md:hidden space-y-2.5">
+                    {editingTiers.map((tier, idx) => (
+                      <div
+                        key={idx}
+                        className="modular-card rounded-2xl p-3.5 space-y-2.5 text-xs"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-900 break-words">
+                              #{idx + 1} • {tier.label || generateTierLabel(tier.min_amount, tier.max_amount)}
                             </p>
-                          </td>
-                          <td className="py-3 px-3 text-right font-mono text-slate-700 tabular-nums">
-                            {formatRupiah(Number(tier.min_amount))}
-                          </td>
-                          <td className="py-3 px-3 text-right font-mono text-slate-700 tabular-nums">
-                            {tier.max_amount != null ? (
-                              formatRupiah(Number(tier.max_amount))
-                            ) : (
-                              <span className="text-amber-700 font-sans italic text-[11px]">
-                                Tanpa Batas Atas
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            <span className="font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg tabular-nums">
-                              {tier.fee_percentage}%
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                tier.is_active
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-slate-100 text-slate-500'
+                            <p className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+                              {formatRupiah(Number(tier.min_amount))} –{' '}
+                              {tier.max_amount != null
+                                ? formatRupiah(Number(tier.max_amount))
+                                : 'Tanpa Batas Atas'}
+                            </p>
+                          </div>
+                          <span className="shrink-0 font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg tabular-nums">
+                            {tier.fee_percentage}%
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-100">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${tier.is_active
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-slate-100 text-slate-500'
                               }`}
-                            >
-                              {tier.is_active ? 'Aktif' : 'Nonaktif'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-center">
+                          >
+                            {tier.is_active ? 'Aktif' : 'Nonaktif'}
+                          </span>
+
+                          <div className="flex items-center gap-1.5">
                             {confirmDeleteTierIdx === idx ? (
-                              <div className="inline-flex items-center gap-1">
+                              <>
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteTier(idx)}
-                                  className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-semibold"
+                                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold transition"
                                 >
                                   Hapus
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setConfirmDeleteTierIdx(null)}
-                                  className="px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 text-[11px]"
+                                  className="px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-[11px] transition"
                                 >
                                   Batal
                                 </button>
-                              </div>
+                              </>
                             ) : (
-                              <div className="flex items-center justify-center gap-1">
+                              <>
                                 <button
                                   type="button"
                                   onClick={() => openEditTierModal(idx)}
-                                  className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition"
-                                  title="Edit Aturan"
+                                  className="p-1.5 rounded-lg text-slate-600 bg-slate-100 hover:bg-slate-200 transition"
                                   aria-label={`Edit aturan ${idx + 1}`}
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
@@ -2010,96 +1906,193 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
                                 <button
                                   type="button"
                                   onClick={() => setConfirmDeleteTierIdx(idx)}
-                                  className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-100 transition"
-                                  title="Hapus Aturan"
+                                  className="p-1.5 rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 transition"
                                   aria-label={`Hapus aturan ${idx + 1}`}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-                              </div>
+                              </>
                             )}
-                          </td>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop Tier Table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse min-w-[680px]">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50/50 whitespace-nowrap">
+                          <th className="py-2.5 px-3 text-center w-12">#</th>
+                          <th className="py-2.5 px-3">Keterangan Tingkatan</th>
+                          <th className="py-2.5 px-3 text-right">Batas Bawah (Min)</th>
+                          <th className="py-2.5 px-3 text-right">Batas Atas (Maks)</th>
+                          <th className="py-2.5 px-3 text-center">Persentase Fee</th>
+                          <th className="py-2.5 px-3 text-center">Status</th>
+                          <th className="py-2.5 px-3 text-center w-28">Aksi</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {editingTiers.map((tier, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/60 transition">
+                            <td className="py-3 px-3 text-center font-bold text-slate-400">
+                              {idx + 1}
+                            </td>
+                            <td className="py-3 px-3">
+                              <p className="font-bold text-slate-900">
+                                {tier.label || generateTierLabel(tier.min_amount, tier.max_amount)}
+                              </p>
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono text-slate-700 tabular-nums">
+                              {formatRupiah(Number(tier.min_amount))}
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono text-slate-700 tabular-nums">
+                              {tier.max_amount != null ? (
+                                formatRupiah(Number(tier.max_amount))
+                              ) : (
+                                <span className="text-amber-700 font-sans italic text-[11px]">
+                                  Tanpa Batas Atas
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span className="font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg tabular-nums">
+                                {tier.fee_percentage}%
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${tier.is_active
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-slate-100 text-slate-500'
+                                  }`}
+                              >
+                                {tier.is_active ? 'Aktif' : 'Nonaktif'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              {confirmDeleteTierIdx === idx ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteTier(idx)}
+                                    className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold transition"
+                                  >
+                                    Hapus
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteTierIdx(null)}
+                                    className="px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-[11px] transition"
+                                  >
+                                    Batal
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditTierModal(idx)}
+                                    className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition"
+                                    title="Edit Aturan"
+                                    aria-label={`Edit aturan ${idx + 1}`}
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteTierIdx(idx)}
+                                    className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-100 transition"
+                                    title="Hapus Aturan"
+                                    aria-label={`Hapus aturan ${idx + 1}`}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Simulator Kalkulasi Fee */}
+            <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4 border border-emerald-200/60 bg-emerald-50/20">
+              <div className="flex items-center gap-2 text-slate-900">
+                <Calculator className="w-4 h-4 text-emerald-700 shrink-0" />
+                <h3 className="text-sm font-bold">Simulator &amp; Uji Coba Aturan Fee Penarikan</h3>
+              </div>
+              <p className="text-xs text-slate-500">
+                Uji coba nominal penarikan untuk memvalidasi apakah tingkatan fee yang Anda atur berjalan sesuai harapan sebelum diterapkan.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 items-end pt-1">
+                <div>
+                  <label
+                    htmlFor="sim-amount"
+                    className="block text-xs font-semibold text-slate-700 mb-1"
+                  >
+                    Masukkan Nominal Penarikan (Rp):
+                  </label>
+                  <input
+                    id="sim-amount"
+                    type="number"
+                    min={1000}
+                    step={50000}
+                    value={simAmount}
+                    onChange={(e) => setSimAmount(Number(e.target.value))}
+                    className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-900 tabular-nums"
+                  />
                 </div>
-              </>
-            )}
-          </div>
 
-          {/* Simulator Kalkulasi Fee */}
-          <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4 border border-emerald-200/60 bg-emerald-50/20">
-            <div className="flex items-center gap-2 text-slate-900">
-              <Calculator className="w-4 h-4 text-emerald-700 shrink-0" />
-              <h3 className="text-sm font-bold">Simulator &amp; Uji Coba Aturan Fee Penarikan</h3>
-            </div>
-            <p className="text-xs text-slate-500">
-              Uji coba nominal penarikan untuk memvalidasi apakah tingkatan fee yang Anda atur berjalan sesuai harapan sebelum diterapkan.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 items-end pt-1">
-              <div>
-                <label
-                  htmlFor="sim-amount"
-                  className="block text-xs font-semibold text-slate-700 mb-1"
-                >
-                  Masukkan Nominal Penarikan (Rp):
-                </label>
-                <input
-                  id="sim-amount"
-                  type="number"
-                  min={1000}
-                  step={50000}
-                  value={simAmount}
-                  onChange={(e) => setSimAmount(Number(e.target.value))}
-                  className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-900 tabular-nums"
-                />
-              </div>
-
-              <div className="p-3 bg-white rounded-2xl border border-slate-200">
-                <p className="text-[10px] text-slate-500 uppercase font-semibold">Tingkatan Cocok:</p>
-                <p className="font-bold text-slate-900 text-xs mt-0.5 truncate">
-                  {simFeeCalc.matchedTier?.label || 'Tidak ada aturan aktif'}
-                </p>
-                <p className="text-[11px] text-emerald-700 font-bold">
-                  Tarif: {simFeeCalc.feePercentage}%
-                </p>
-              </div>
-
-              <div className="p-3 bg-white rounded-2xl border border-slate-200">
-                <p className="text-[10px] text-slate-500 uppercase font-semibold">Potongan Fee (Setelah Pembulatan):</p>
-                <p className="font-bold text-rose-600 text-sm mt-0.5">
-                  - {formatRupiah(simFeeCalc.feeAmount)}
-                </p>
-                {simFeeCalc.rawFeeAmount !== simFeeCalc.feeAmount ? (
-                  <p className="text-[10px] text-amber-700 font-medium">
-                    Fee murni: {formatRupiah(simFeeCalc.rawFeeAmount)}
+                <div className="p-3 bg-white rounded-2xl border border-slate-200">
+                  <p className="text-[10px] text-slate-500 uppercase font-semibold">Tingkatan Cocok:</p>
+                  <p className="font-bold text-slate-900 text-xs mt-0.5 truncate">
+                    {simFeeCalc.matchedTier?.label || 'Tidak ada aturan aktif'}
                   </p>
-                ) : (
-                  <p className="text-[10px] text-slate-400">Masuk ke kas madrasah</p>
-                )}
+                  <p className="text-[11px] text-emerald-700 font-bold">
+                    Tarif: {simFeeCalc.feePercentage}%
+                  </p>
+                </div>
+
+                <div className="p-3 bg-white rounded-2xl border border-slate-200">
+                  <p className="text-[10px] text-slate-500 uppercase font-semibold">Potongan Fee (Setelah Pembulatan):</p>
+                  <p className="font-bold text-rose-600 text-sm mt-0.5">
+                    - {formatRupiah(simFeeCalc.feeAmount)}
+                  </p>
+                  {simFeeCalc.rawFeeAmount !== simFeeCalc.feeAmount ? (
+                    <p className="text-[10px] text-amber-700 font-medium">
+                      Fee murni: {formatRupiah(simFeeCalc.rawFeeAmount)}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400">Masuk ke kas madrasah</p>
+                  )}
+                </div>
+
+                <div className="p-3 bg-white rounded-2xl border border-emerald-200 bg-emerald-50/50">
+                  <p className="text-[10px] text-slate-500 uppercase font-semibold">Uang Diterima Pemilik:</p>
+                  <p className="font-black text-emerald-800 text-base mt-0.5">
+                    {formatRupiah(simFeeCalc.netAmount)}
+                  </p>
+                  <p className="text-[10px] text-emerald-600">Diterima bersih tunai</p>
+                </div>
               </div>
 
-              <div className="p-3 bg-white rounded-2xl border border-emerald-200 bg-emerald-50/50">
-                <p className="text-[10px] text-slate-500 uppercase font-semibold">Uang Diterima Pemilik:</p>
-                <p className="font-black text-emerald-800 text-base mt-0.5">
-                  {formatRupiah(simFeeCalc.netAmount)}
-                </p>
-                <p className="text-[10px] text-emerald-600">Diterima bersih tunai</p>
+              <div className="rounded-2xl bg-white/90 border border-emerald-200 p-4 text-xs text-slate-700 space-y-1.5">
+                <p className="font-bold text-emerald-900">Aturan Pembulatan Nominal Fee:</p>
+                <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-slate-600">
+                  <li>Jika nominal ratusannya <strong>kurang dari 330</strong>, dibulatkan menjadi <strong>000</strong> (contoh: Rp 2.300 → Rp 2.000).</li>
+                  <li>Jika nominal ratusannya <strong>antara 330 hingga 660</strong>, dibulatkan menjadi <strong>500</strong> (contoh: Rp 2.560 → Rp 2.500).</li>
+                  <li>Jika nominal ratusannya <strong>lebih dari 660</strong>, dibulatkan menjadi <strong>1.000</strong> (contoh: Rp 2.870 → Rp 3.000).</li>
+                </ul>
               </div>
-            </div>
-
-            <div className="rounded-2xl bg-white/90 border border-emerald-200 p-4 text-xs text-slate-700 space-y-1.5">
-              <p className="font-bold text-emerald-900">Aturan Pembulatan Nominal Fee:</p>
-              <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-slate-600">
-                <li>Jika nominal ratusannya <strong>kurang dari 330</strong>, dibulatkan menjadi <strong>000</strong> (contoh: Rp 2.300 → Rp 2.000).</li>
-                <li>Jika nominal ratusannya <strong>antara 330 hingga 660</strong>, dibulatkan menjadi <strong>500</strong> (contoh: Rp 2.560 → Rp 2.500).</li>
-                <li>Jika nominal ratusannya <strong>lebih dari 660</strong>, dibulatkan menjadi <strong>1.000</strong> (contoh: Rp 2.870 → Rp 3.000).</li>
-              </ul>
             </div>
           </div>
-        </div>
         )
       )}
 

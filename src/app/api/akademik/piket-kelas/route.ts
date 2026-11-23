@@ -32,10 +32,19 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const isGlobalManager = hasAnyRole(session, [
+  const isGlobalViewer = hasAnyRole(session, [
     'SUPERADMIN',
     'OPERATOR',
     'KEPALA_LEMBAGA',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'KEPALA_TU',
+    'STAF_TU',
+    'GURU',
+  ]);
+  const isGlobalManager = hasAnyRole(session, [
+    'SUPERADMIN',
+    'OPERATOR',
     'WAKA_KURIKULUM',
     'WAKA_KESISWAAN',
     'KEPALA_TU',
@@ -47,6 +56,18 @@ export async function GET(request: NextRequest) {
       Boolean(session.teacherAssignments?.isHomeroomTeacher)) &&
     homeroomIds.length > 0;
   const canManage = isGlobalManager || isWaliKelasManager;
+  const canRead =
+    isGlobalViewer ||
+    isWaliKelasManager ||
+    session.roles.includes('SISWA') ||
+    session.roles.includes('ORANG_TUA');
+
+  if (!canRead) {
+    return NextResponse.json(
+      { error: 'Akses ditolak. Peran akun Anda tidak memiliki izin melihat jadwal piket kelas.' },
+      { status: 403 }
+    );
+  }
   const requestedClassroomId = request.nextUrl.searchParams.get('classroom_id');
 
   // Resolve academic year
@@ -56,10 +77,10 @@ export async function GET(request: NextRequest) {
     .eq('is_active', true)
     .maybeSingle();
 
-  let targetClassroomId = canManage ? requestedClassroomId || null : null;
+  let targetClassroomId = canManage || isGlobalViewer ? requestedClassroomId || null : null;
   const myStudentIds: string[] = [];
 
-  if (!canManage || !targetClassroomId) {
+  if ((!canManage && !isGlobalViewer) || !targetClassroomId) {
     if (session.roles.includes('SISWA')) {
       const { data: student } = await supabase
         .from('students')
@@ -192,7 +213,6 @@ export async function POST(request: NextRequest) {
   const isGlobalManager = hasAnyRole(session, [
     'SUPERADMIN',
     'OPERATOR',
-    'KEPALA_LEMBAGA',
     'WAKA_KURIKULUM',
     'WAKA_KESISWAAN',
     'KEPALA_TU',

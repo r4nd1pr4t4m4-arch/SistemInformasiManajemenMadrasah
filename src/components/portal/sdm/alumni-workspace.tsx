@@ -740,9 +740,10 @@ export function SdmAlumniWorkspace({ section }: { section: SdmAlumniSection }) {
                           <>
                             <button
                               type="button"
+                              aria-busy={isDeleting || undefined}
                               disabled={isDeleting}
                               onClick={() => void handleDeleteTracer(item)}
-                              className="px-3 py-1.5 rounded-lg bg-rose-600 text-white font-semibold disabled:opacity-50 inline-flex items-center gap-1"
+                              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold disabled:opacity-50 inline-flex items-center gap-1 transition"
                             >
                               {isDeleting && <Loader2 className="w-3 h-3 animate-spin" />}
                               Hapus
@@ -751,7 +752,7 @@ export function SdmAlumniWorkspace({ section }: { section: SdmAlumniSection }) {
                               type="button"
                               disabled={isDeleting}
                               onClick={() => setConfirmDeleteTracerId(null)}
-                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600"
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition"
                             >
                               Batal
                             </button>

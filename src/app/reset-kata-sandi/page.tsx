@@ -514,7 +514,13 @@ export default function ResetKataSandiPage() {
 
             <button
               type="submit"
-              disabled={submitting || (method === 'mfa' && factors.length === 0)}
+              aria-busy={submitting || undefined}
+              disabled={
+                submitting ||
+                (method === 'mfa' && factors.length === 0) ||
+                !newPassword.trim() ||
+                !confirmPassword.trim()
+              }
               className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-2xl text-sm transition shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}

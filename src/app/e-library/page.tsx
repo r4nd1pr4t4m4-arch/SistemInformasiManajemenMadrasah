@@ -3,24 +3,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  AlertCircle,
   BookOpen,
   Crown,
   Lock,
   Search,
   Sparkles,
-  Loader2,
   Layers,
   User,
   Calendar,
   BookMarked,
   SlidersHorizontal,
-  RefreshCw,
-  RotateCcw,
   X,
 } from 'lucide-react';
 import { PublicShell } from '@/components/layout/public-shell';
 import { FlipbookReader } from '@/components/elibrary/flipbook-reader';
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  NoSearchResultState,
+} from '@/components/ui/state-views';
 
 interface PublicEbook {
   id: string;
@@ -306,44 +308,35 @@ export default function PublicELibraryPage() {
 
         {/* Catalog Grid */}
         {loading ? (
-          <div className="glass-card rounded-3xl p-12 sm:p-16 flex flex-col items-center justify-center gap-3 text-sm text-slate-500">
-            <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
-            <span>Memuat katalog E-Book...</span>
-          </div>
+          <LoadingState
+            variant="skeleton"
+            rows={6}
+            title="Memuat katalog E-Book perpustakaan digital..."
+          />
         ) : fetchError ? (
-          <div className="glass-card rounded-3xl p-10 text-center space-y-3 border border-rose-200">
-            <AlertCircle className="w-9 h-9 text-rose-500 mx-auto" />
-            <h2 className="text-base font-bold text-slate-900">Gagal Memuat Katalog</h2>
-            <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto">{fetchError}</p>
-            <button
-              type="button"
-              onClick={() => {
-                setLoading(true);
-                setFetchError(null);
-                setRetryTick((t) => t + 1);
-              }}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
-            >
-              <RefreshCw className="w-3.5 h-3.5" /> Coba Lagi
-            </button>
-          </div>
+          <ErrorState
+            title="Gagal Memuat Katalog E-Library"
+            message={fetchError}
+            onRetry={() => {
+              setLoading(true);
+              setFetchError(null);
+              setRetryTick((t) => t + 1);
+            }}
+          />
+        ) : books.length === 0 ? (
+          <EmptyState
+            icon={<BookOpen className="w-6 h-6" />}
+            title="Belum Ada Koleksi E-Book"
+            description="Koleksi buku digital akan tampil di sini setelah ditambahkan oleh pustakawan melalui Portal Perpustakaan."
+          />
         ) : filteredBooks.length === 0 ? (
-          <div className="glass-card rounded-3xl p-10 sm:p-14 text-center space-y-3">
-            <BookOpen className="w-10 h-10 text-slate-300 mx-auto" />
-            <h2 className="text-base font-bold text-slate-800">Koleksi tidak ditemukan</h2>
-            <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
-              Belum ada E-Book yang sesuai dengan kata kunci atau filter kategori yang dipilih.
-            </p>
-            {hasActiveFilter && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
-              >
-                <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
-              </button>
-            )}
-          </div>
+          <NoSearchResultState
+            query={search}
+            title="Koleksi E-Book Tidak Ditemukan"
+            description="Belum ada E-Book yang sesuai dengan kata kunci, kategori, atau filter akses yang dipilih."
+            onReset={hasActiveFilter ? resetFilters : undefined}
+            resetLabel="Reset Pencarian & Filter"
+          />
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">

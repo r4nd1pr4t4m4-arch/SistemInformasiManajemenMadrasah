@@ -1028,16 +1028,18 @@ export function AssessmentWorkspace({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
+                  aria-busy={mutatingMeta || undefined}
                   disabled={mutatingMeta}
                   onClick={handleAddChapter}
-                  className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 transition"
                 >
-                  Simpan BAB
+                  {mutatingMeta && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Simpan BAB</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowChapterForm(false)}
-                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600"
+                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 transition"
                 >
                   Batal
                 </button>
@@ -1057,16 +1059,18 @@ export function AssessmentWorkspace({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
+                  aria-busy={mutatingMeta || undefined}
                   disabled={mutatingMeta}
                   onClick={() => handleUpdateChapter(editingChapterId)}
-                  className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-50"
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-50 transition"
                 >
-                  Perbarui Judul
+                  {mutatingMeta && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Perbarui Judul</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setEditingChapterId(null)}
-                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600"
+                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 transition"
                 >
                   Batal
                 </button>
@@ -1123,16 +1127,18 @@ export function AssessmentWorkspace({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
+                  aria-busy={mutatingMeta || undefined}
                   disabled={mutatingMeta}
                   onClick={handleAddColumn}
-                  className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 transition"
                 >
-                  Tambahkan
+                  {mutatingMeta && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Tambahkan</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowAddColumn(false)}
-                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600"
+                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 transition"
                 >
                   Batal
                 </button>
@@ -1161,16 +1167,18 @@ export function AssessmentWorkspace({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
+                  aria-busy={mutatingMeta || undefined}
                   disabled={mutatingMeta}
                   onClick={() => handleUpdateColumn(editingColId)}
-                  className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-amber-600 text-white text-xs font-semibold disabled:opacity-50"
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold disabled:opacity-50 transition"
                 >
-                  Simpan Nama
+                  {mutatingMeta && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Simpan Nama</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setEditingColId(null)}
-                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600"
+                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 transition"
                 >
                   Batal
                 </button>

@@ -1224,6 +1224,7 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
 
                       <button
                         type="button"
+                        aria-busy={assigningExamStudents || undefined}
                         disabled={
                           assigningExamStudents ||
                           selectedExamStudentIds.length === 0 ||
@@ -1247,11 +1248,14 @@ export function UjianWorkspace({ section }: { section: UjianSection }) {
                             setAssigningExamStudents(false);
                           }
                         }}
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer"
+                        className="w-full inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer"
                       >
-                        {assigningExamStudents
-                          ? 'Menyimpan...'
-                          : `Masukkan ke Ruang Ujian (${selectedExamStudentIds.length} Siswa)`}
+                        {assigningExamStudents && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        <span>
+                          {assigningExamStudents
+                            ? 'Menyimpan...'
+                            : `Masukkan ke Ruang Ujian (${selectedExamStudentIds.length} Siswa)`}
+                        </span>
                       </button>
                     </div>
                   )}

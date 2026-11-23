@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import {
-  AlertCircle,
-  CheckCircle2,
   ChevronDown,
   HelpCircle,
   Loader2,
@@ -11,13 +9,18 @@ import {
   MapPin,
   MessageSquare,
   Phone,
-  RefreshCw,
   Send,
-  X,
 } from 'lucide-react';
 import { PublicShell } from '@/components/layout/public-shell';
 import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 import { SmartCaptchaMount, useSmartCaptcha } from '@/components/security/smart-captcha';
+import {
+  EmptyState,
+  ErrorState,
+  FormFieldFeedback,
+  LoadingState,
+  SuccessState,
+} from '@/components/ui/state-views';
 
 interface FaqItem {
   id: string;
@@ -58,6 +61,28 @@ export default function KontakPage() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  const fieldErrors = {
+    senderName:
+      touched.senderName && form.senderName.trim().length < 2
+        ? 'Nama lengkap minimal 2 karakter.'
+        : null,
+    senderEmail:
+      touched.senderEmail &&
+      form.senderEmail.trim().length > 0 &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.senderEmail.trim())
+        ? 'Format alamat email tidak valid.'
+        : null,
+    subject:
+      touched.subject && form.subject.trim().length < 3
+        ? 'Subjek pesan minimal 3 karakter.'
+        : null,
+    message:
+      touched.message && form.message.trim().length < 5
+        ? 'Isi pesan minimal 5 karakter agar dapat ditindaklanjuti.'
+        : null,
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -180,35 +205,20 @@ export default function KontakPage() {
             </div>
 
             {sent && (
-              <div
-                role="status"
-                className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start justify-between gap-2.5"
-              >
-                <div className="flex items-start gap-2 min-w-0">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-700" />
-                  <span className="leading-relaxed">
-                    Pesan Anda telah tersimpan di database dan akan segera ditindaklanjuti.
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSent(false)}
-                  aria-label="Tutup notifikasi sukses"
-                  className="p-1 rounded-lg text-emerald-700 hover:bg-emerald-100 shrink-0"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              <SuccessState
+                variant="banner"
+                title="Pesan Berhasil Terkirim"
+                description="Pesan Anda telah tersimpan di database dan akan segera ditindaklanjuti oleh tim Humas & Tata Usaha."
+                onDismiss={() => setSent(false)}
+              />
             )}
 
             {error && (
-              <div
-                role="alert"
-                className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5"
-              >
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{error}</span>
-              </div>
+              <ErrorState
+                compact
+                title="Pengiriman Pesan Belum Berhasil"
+                message={error}
+              />
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -224,11 +234,14 @@ export default function KontakPage() {
                     id="kontak-name"
                     required
                     type="text"
+                    aria-invalid={Boolean(fieldErrors.senderName) || undefined}
                     value={form.senderName}
+                    onBlur={() => setTouched((prev) => ({ ...prev, senderName: true }))}
                     onChange={(e) => setForm({ ...form, senderName: e.target.value })}
                     placeholder="Nama Anda"
                     className={INPUT_CLASS}
                   />
+                  <FormFieldFeedback error={fieldErrors.senderName} />
                 </div>
                 <div className="min-w-0">
                   <label
@@ -263,11 +276,14 @@ export default function KontakPage() {
                   <input
                     id="kontak-email"
                     type="email"
+                    aria-invalid={Boolean(fieldErrors.senderEmail) || undefined}
                     value={form.senderEmail}
+                    onBlur={() => setTouched((prev) => ({ ...prev, senderEmail: true }))}
                     onChange={(e) => setForm({ ...form, senderEmail: e.target.value })}
                     placeholder="nama@email.com"
                     className={INPUT_CLASS}
                   />
+                  <FormFieldFeedback error={fieldErrors.senderEmail} />
                 </div>
                 <div className="min-w-0">
                   <label
@@ -299,11 +315,14 @@ export default function KontakPage() {
                   id="kontak-subject"
                   required
                   type="text"
+                  aria-invalid={Boolean(fieldErrors.subject) || undefined}
                   value={form.subject}
+                  onBlur={() => setTouched((prev) => ({ ...prev, subject: true }))}
                   onChange={(e) => setForm({ ...form, subject: e.target.value })}
                   placeholder="Ringkasan topik pesan"
                   className={INPUT_CLASS}
                 />
+                <FormFieldFeedback error={fieldErrors.subject} />
               </div>
 
               <div>
@@ -317,16 +336,28 @@ export default function KontakPage() {
                   id="kontak-message"
                   required
                   rows={4}
+                  aria-invalid={Boolean(fieldErrors.message) || undefined}
                   value={form.message}
+                  onBlur={() => setTouched((prev) => ({ ...prev, message: true }))}
                   onChange={(e) => setForm({ ...form, message: e.target.value })}
                   placeholder="Tuliskan pertanyaan, saran, atau pengaduan Anda secara jelas..."
                   className="w-full rounded-xl border border-slate-300/90 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                />
+                <FormFieldFeedback
+                  error={fieldErrors.message}
+                  hint={!fieldErrors.message ? 'Minimal 5 karakter. Semakin jelas isi pesan, semakin cepat kami membantu.' : null}
                 />
               </div>
 
               <button
                 type="submit"
-                disabled={sending}
+                aria-busy={sending || undefined}
+                disabled={
+                  sending ||
+                  form.senderName.trim().length < 2 ||
+                  form.subject.trim().length < 3 ||
+                  form.message.trim().length < 5
+                }
                 className="w-full sm:w-auto min-h-[46px] inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold px-6 py-3 rounded-2xl text-sm transition shadow-xs"
               >
                 {sending ? (
@@ -407,29 +438,24 @@ export default function KontakPage() {
               </h2>
               <div className="space-y-2.5">
                 {loadingFaqs ? (
-                  <div className="flex items-center gap-2 text-xs text-slate-500 py-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-emerald-700" />
-                    <span>Memuat daftar pertanyaan...</span>
-                  </div>
+                  <LoadingState variant="inline" title="Memuat daftar pertanyaan..." className="py-2" />
                 ) : faqError ? (
-                  <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex flex-wrap items-center justify-between gap-2">
-                    <span>{faqError}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLoadingFaqs(true);
-                        setFaqError(null);
-                        setFaqRetryTick((t) => t + 1);
-                      }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-rose-200 font-semibold hover:bg-rose-100/50 transition"
-                    >
-                      <RefreshCw className="w-3 h-3" /> Coba Lagi
-                    </button>
-                  </div>
+                  <ErrorState
+                    compact
+                    title="Gagal Memuat FAQ"
+                    message={faqError}
+                    onRetry={() => {
+                      setLoadingFaqs(true);
+                      setFaqError(null);
+                      setFaqRetryTick((t) => t + 1);
+                    }}
+                  />
                 ) : faqs.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    Belum ada pertanyaan umum (FAQ) yang dipublikasikan.
-                  </p>
+                  <EmptyState
+                    compact
+                    title="Belum Ada FAQ"
+                    description="Belum ada pertanyaan umum (FAQ) yang dipublikasikan."
+                  />
                 ) : (
                   faqs.map((item) => {
                     const isOpen = openFaqId === item.id;

@@ -5,12 +5,12 @@ import {
   ArrowRight,
   Calendar,
   Newspaper,
-  RotateCcw,
   Search,
   User,
   X,
 } from 'lucide-react';
 import type { PostItem } from '@/types/database';
+import { EmptyState, NoSearchResultState } from '@/components/ui/state-views';
 
 const PAGE_SIZE = 9;
 
@@ -98,14 +98,11 @@ export function BeritaFeed({ posts }: { posts: PostItem[] }) {
 
   if (posts.length === 0) {
     return (
-      <div className="glass-card rounded-3xl p-8 text-center space-y-2.5">
-        <Newspaper className="w-10 h-10 text-emerald-600 mx-auto" />
-        <p className="font-bold text-slate-900 text-base">Belum Ada Berita atau Publikasi</p>
-        <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
-          Berita, pengumuman, dan artikel pendidikan akan tampil di sini setelah dipublikasikan
-          melalui Portal CMS.
-        </p>
-      </div>
+      <EmptyState
+        icon={<Newspaper className="w-6 h-6" />}
+        title="Belum Ada Berita atau Publikasi"
+        description="Berita, pengumuman, dan artikel pendidikan akan tampil di sini setelah dipublikasikan melalui Portal CMS."
+      />
     );
   }
 
@@ -185,24 +182,21 @@ export function BeritaFeed({ posts }: { posts: PostItem[] }) {
 
       {/* Daftar Publikasi */}
       {filteredPosts.length === 0 ? (
-        <div className="glass-card rounded-3xl p-8 text-center space-y-3">
-          <p className="text-sm font-semibold text-slate-700">
-            Tidak ada publikasi yang sesuai dengan pencarian atau kategori tersebut.
-          </p>
-          {hasActiveFilter && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedCategory('ALL');
-                setSearchQuery('');
-                setVisibleCount(PAGE_SIZE);
-              }}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
-            >
-              <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
-            </button>
-          )}
-        </div>
+        <NoSearchResultState
+          query={searchQuery}
+          title="Publikasi Tidak Ditemukan"
+          description="Tidak ada berita atau pengumuman yang cocok dengan kata kunci maupun kategori yang Anda pilih."
+          onReset={
+            hasActiveFilter
+              ? () => {
+                  setSelectedCategory('ALL');
+                  setSearchQuery('');
+                  setVisibleCount(PAGE_SIZE);
+                }
+              : undefined
+          }
+          resetLabel="Reset Pencarian & Kategori"
+        />
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">

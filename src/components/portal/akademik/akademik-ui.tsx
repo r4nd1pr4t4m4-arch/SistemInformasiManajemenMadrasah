@@ -1,7 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, X } from 'lucide-react';
+import { X } from 'lucide-react';
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  SuccessState,
+} from '@/components/ui/state-views';
 
 export interface ToastState {
   type: 'success' | 'error';
@@ -55,44 +61,33 @@ export function AkademikToast({
   onDismiss?: () => void;
 }) {
   if (!toast) return null;
-  const isSuccess = toast.type === 'success';
+  if (toast.type === 'success') {
+    return (
+      <SuccessState
+        variant="banner"
+        title="Berhasil"
+        description={toast.text}
+        onDismiss={onDismiss}
+      />
+    );
+  }
   return (
-    <div
-      role={isSuccess ? 'status' : 'alert'}
-      aria-live="polite"
-      className={`p-3.5 rounded-2xl border text-xs font-medium flex items-start sm:items-center justify-between gap-3 shadow-sm ${
-        isSuccess
-          ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-          : 'bg-rose-50 border-rose-200 text-rose-900'
-      }`}
-    >
-      <div className="flex items-start sm:items-center gap-2 min-w-0">
-        {isSuccess ? (
-          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5 sm:mt-0" />
-        ) : (
-          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5 sm:mt-0" />
-        )}
-        <span className="break-words leading-relaxed">{toast.text}</span>
-      </div>
-      {onDismiss && (
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="p-1 rounded-lg hover:bg-black/5 shrink-0 transition"
-          aria-label="Tutup notifikasi"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      )}
-    </div>
+    <ErrorState
+      compact
+      title="Perhatian"
+      message={toast.text}
+    />
   );
 }
 
 export function AkademikLoading({ label = 'Memuat data...' }: { label?: string }) {
   return (
-    <div className="max-w-7xl mx-auto glass-card rounded-3xl p-8 sm:p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2.5">
-      <Loader2 className="w-4 h-4 animate-spin text-emerald-600 shrink-0" />
-      <span>{label}</span>
+    <div className="max-w-7xl mx-auto">
+      <LoadingState
+        variant="card"
+        title={label}
+        description="Sistem sedang menyiapkan data akademik terbaru."
+      />
     </div>
   );
 }
@@ -106,25 +101,12 @@ export function AkademikErrorBanner({
 }) {
   if (!error) return null;
   return (
-    <div
-      role="alert"
-      className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-    >
-      <div className="flex items-start sm:items-center gap-2 min-w-0">
-        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
-        <span className="break-words leading-relaxed">{error}</span>
-      </div>
-      {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-rose-200 hover:bg-rose-100 text-rose-800 font-semibold shrink-0 transition"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Coba Lagi
-        </button>
-      )}
-    </div>
+    <ErrorState
+      compact
+      title="Gagal Memuat Data"
+      message={error}
+      onRetry={onRetry}
+    />
   );
 }
 
@@ -138,14 +120,12 @@ export function AkademikEmptyState({
   compact?: boolean;
 }) {
   return (
-    <div
-      className={`rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2 ${
-        compact ? 'py-6 px-4' : 'py-10 px-6'
-      }`}
-    >
-      {icon && <div className="text-slate-400">{icon}</div>}
-      <p className="max-w-md leading-relaxed">{message}</p>
-    </div>
+    <EmptyState
+      icon={icon}
+      title="Belum Ada Data"
+      description={message}
+      compact={compact}
+    />
   );
 }
 

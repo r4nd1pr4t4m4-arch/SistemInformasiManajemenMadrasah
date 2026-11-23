@@ -127,6 +127,7 @@ export function PenilaianConfirmModal({
           </button>
           <button
             type="button"
+            aria-busy={loading || undefined}
             disabled={loading}
             onClick={onConfirm}
             className={`w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-xs font-semibold shadow-sm transition disabled:opacity-50 ${
