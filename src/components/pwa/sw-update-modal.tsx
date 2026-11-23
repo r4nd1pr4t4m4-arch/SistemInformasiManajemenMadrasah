@@ -32,7 +32,7 @@ export function SwUpdateModal({ open, updating, onReload }: SwUpdateModalProps) 
               Versi Baru Aplikasi Tersedia
             </h2>
             <p id="sw-update-desc" className="text-xs text-slate-600 leading-relaxed">
-              Pembaruan sistem SIMMS telah siap dipasang. Untuk menjaga keamanan data dan
+              Pembaruan sistem SiM-M telah siap dipasang. Untuk menjaga keamanan data dan
               kestabilan fitur, aplikasi wajib dimuat ulang sekarang.
             </p>
           </div>

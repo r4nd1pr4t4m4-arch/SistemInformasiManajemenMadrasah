@@ -2036,7 +2036,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         mode="mandatory"
         platform={pwa.platform}
         canInstallPrompt={pwa.canInstallPrompt}
-        institutionName={school.short_name || school.name || 'SIMMS'}
+        institutionName="SiM-M"
         onTriggerInstall={pwa.triggerInstallPrompt}
         onLogout={() => void handleLogout()}
       />
@@ -2045,7 +2045,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         mode="guide"
         platform={pwa.platform}
         canInstallPrompt={pwa.canInstallPrompt}
-        institutionName={school.short_name || school.name || 'SIMMS'}
+        institutionName="SiM-M"
         onTriggerInstall={pwa.triggerInstallPrompt}
         onClose={() => setInstallGuideOpen(false)}
       />

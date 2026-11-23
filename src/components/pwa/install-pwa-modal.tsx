@@ -69,7 +69,7 @@ export function InstallPwaModal({
 
   if (!open) return null;
 
-  const appLabel = institutionName?.trim() || 'SIMMS';
+  const appLabel = institutionName?.trim() || 'SiM-M';
   const isMandatory = mode === 'mandatory';
 
   const handleInstallClick = async () => {

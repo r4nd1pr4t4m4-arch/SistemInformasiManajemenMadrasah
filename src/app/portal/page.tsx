@@ -1679,23 +1679,23 @@ export default function PortalDashboardPage() {
       )}
 
       {/* 7. PANEL PERPUSTAKAAN DIGITAL (E-LIBRARY) & TRACER ALUMNI */}
-      <div className="grid lg:grid-cols-12 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {library && (
           <div
             className={`${
               alumni ? 'lg:col-span-7' : 'lg:col-span-12'
-            } glass-card rounded-3xl p-6 space-y-4`}
+            } glass-card rounded-3xl p-4 sm:p-6 space-y-4 min-w-0 max-w-full overflow-hidden`}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center">
+            <div className="flex flex-wrap items-start sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0">
                   <BookOpen className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 break-words">
                     Perpustakaan Digital (E-Library)
                   </h3>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 break-words">
                     {library.totalBookTitles} Judul Koleksi • {library.totalCopiesAvailable}{' '}
                     Eksemplar Tersedia • {library.activeLoansCount} Dipinjam
                   </p>
@@ -1703,37 +1703,37 @@ export default function PortalDashboardPage() {
               </div>
               <Link
                 href="/portal/layanan/perpustakaan/katalog"
-                className="text-xs font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1"
+                className="text-xs font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1 shrink-0"
               >
-                Buka E-Library <ArrowUpRight className="w-3.5 h-3.5" />
+                Buka E-Library <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
               </Link>
             </div>
 
             {data?.libraryMember && (
-              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-800 to-teal-900 text-white flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2.5">
-                  <CreditCard className="w-4 h-4 text-emerald-300" />
-                  <span>
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-800 to-teal-900 text-white flex flex-wrap items-center justify-between gap-2 text-xs min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <CreditCard className="w-4 h-4 text-emerald-300 shrink-0" />
+                  <span className="break-words min-w-0">
                     Kartu Anggota E-Library Anda: <strong>{data.libraryMember.member_code}</strong> (
                     {data.libraryMember.member_type})
                   </span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-white/15 text-emerald-100 text-[10px] font-semibold">
+                <span className="px-2 py-0.5 rounded-full bg-white/15 text-emerald-100 text-[10px] font-semibold shrink-0">
                   Status: {data.libraryMember.status}
                 </span>
               </div>
             )}
 
-            <div className="grid sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
               {library.recentBooks.slice(0, 4).map((b) => (
                 <div
                   key={b.id}
-                  className="modular-card rounded-xl p-3 flex items-center justify-between text-xs"
+                  className="modular-card rounded-xl p-3 flex items-center justify-between gap-2 text-xs min-w-0 overflow-hidden"
                 >
-                  <div className="truncate pr-2">
+                  <div className="min-w-0 flex-1">
                     <p className="font-bold text-slate-900 truncate">{b.title}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {b.author} • {b.book_format}
+                    <p className="text-[11px] text-slate-500 truncate">
+                      {b.author} • {formatEnum(b.book_format)}
                     </p>
                   </div>
                   <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold shrink-0">
@@ -1749,52 +1749,54 @@ export default function PortalDashboardPage() {
           <div
             className={`${
               library ? 'lg:col-span-5' : 'lg:col-span-12'
-            } glass-card rounded-3xl p-6 space-y-4`}
+            } glass-card rounded-3xl p-4 sm:p-6 space-y-4 min-w-0 max-w-full overflow-hidden`}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-sky-50 border border-sky-200 text-sky-700 flex items-center justify-center">
+            <div className="flex flex-wrap items-start sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="w-10 h-10 rounded-2xl bg-sky-50 border border-sky-200 text-sky-700 flex items-center justify-center shrink-0">
                   <GraduationCap className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Sebaran Tracer Study Alumni</h3>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 break-words">
+                    Sebaran Tracer Study Alumni
+                  </h3>
                   <p className="text-xs text-slate-500">{alumni.totalTracers} Alumni Terdata</p>
                 </div>
               </div>
               <Link
                 href="/portal/layanan/alumni"
-                className="text-xs font-semibold text-emerald-700 hover:underline"
+                className="text-xs font-semibold text-emerald-700 hover:underline shrink-0"
               >
                 Detail →
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-              <div className="modular-card rounded-xl p-2.5">
-                <p className="text-[10px] text-slate-500">Kuliah</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs min-w-0">
+              <div className="modular-card rounded-xl p-2.5 min-w-0">
+                <p className="text-[10px] text-slate-500 truncate">Kuliah</p>
                 <p className="font-extrabold text-slate-900 text-base">{alumni.kuliahCount}</p>
               </div>
-              <div className="modular-card rounded-xl p-2.5">
-                <p className="text-[10px] text-slate-500">Bekerja</p>
+              <div className="modular-card rounded-xl p-2.5 min-w-0">
+                <p className="text-[10px] text-slate-500 truncate">Bekerja</p>
                 <p className="font-extrabold text-slate-900 text-base">{alumni.bekerjaCount}</p>
               </div>
-              <div className="modular-card rounded-xl p-2.5">
-                <p className="text-[10px] text-slate-500">Wirausaha</p>
+              <div className="modular-card rounded-xl p-2.5 min-w-0">
+                <p className="text-[10px] text-slate-500 truncate">Wirausaha</p>
                 <p className="font-extrabold text-slate-900 text-base">{alumni.wirausahaCount}</p>
               </div>
-              <div className="modular-card rounded-xl p-2.5">
-                <p className="text-[10px] text-slate-500">Pesantren</p>
+              <div className="modular-card rounded-xl p-2.5 min-w-0">
+                <p className="text-[10px] text-slate-500 truncate">Pesantren</p>
                 <p className="font-extrabold text-slate-900 text-base">{alumni.pesantrenCount}</p>
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               {alumni.recentTracers.slice(0, 3).map((a) => (
                 <div
                   key={a.id}
-                  className="modular-card rounded-xl p-2.5 flex items-center justify-between text-xs"
+                  className="modular-card rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs min-w-0 overflow-hidden"
                 >
-                  <div className="truncate pr-2">
+                  <div className="min-w-0 flex-1">
                     <p className="font-bold text-slate-900 truncate">
                       {a.full_name} ({a.graduation_year})
                     </p>
@@ -1802,8 +1804,8 @@ export default function PortalDashboardPage() {
                       {a.institution_or_company || '-'}
                     </p>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-semibold text-[11px] shrink-0">
-                    {a.current_activity}
+                  <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-semibold text-[11px] shrink-0 max-w-[45%] truncate">
+                    {formatEnum(a.current_activity)}
                   </span>
                 </div>
               ))}

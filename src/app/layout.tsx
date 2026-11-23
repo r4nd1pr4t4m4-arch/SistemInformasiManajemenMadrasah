@@ -29,10 +29,10 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "SIMMS",
+    title: "SiM-M",
   },
   icons: {
-    apple: "/api/pwa/icon?size=apple",
+    apple: "/icons/apple-touch-icon.png",
   },
 };
 

@@ -36,7 +36,7 @@ function syncGlobalWebsiteUrl(url?: string | null) {
 function syncBrowserFavicon(logoUrl?: string | null) {
   if (typeof document === 'undefined') return;
   const href = logoUrl?.trim() || '/favicon.ico';
-  const rels = ['icon', 'shortcut icon', 'apple-touch-icon'];
+  const rels = ['icon', 'shortcut icon'];
   for (const rel of rels) {
     let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
     if (!link) {

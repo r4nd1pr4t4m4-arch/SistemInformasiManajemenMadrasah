@@ -1,5 +1,5 @@
 /* SIMMS Native Service Worker — Offline-First & Background Sync */
-const SW_VERSION = 'simms-pwa-v1';
+const SW_VERSION = 'simms-pwa-v2';
 const STATIC_CACHE = `simms-static-${SW_VERSION}`;
 const PAGES_CACHE = `simms-pages-${SW_VERSION}`;
 const PUBLIC_API_CACHE = `simms-public-api-${SW_VERSION}`;
@@ -9,6 +9,8 @@ const ACTIVE_CACHES = [STATIC_CACHE, PAGES_CACHE, PUBLIC_API_CACHE, AUTH_CACHE];
 const OFFLINE_URL = '/offline';
 const PRECACHE_URLS = [
   OFFLINE_URL,
+  '/icons/icon.svg',
+  '/icons/icon-maskable.svg',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
   '/favicon.ico',
