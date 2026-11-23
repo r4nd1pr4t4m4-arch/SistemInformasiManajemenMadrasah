@@ -34,7 +34,6 @@ import {
   Loader2,
   LogOut,
   MapPin,
-  Menu,
   Newspaper,
   Percent,
   PiggyBank,
@@ -69,6 +68,8 @@ interface TeacherOperationalAssignments {
   isHomeroomTeacher: boolean;
   isGuruWali: boolean;
   isPicketTeacher: boolean;
+  isPicketToday?: boolean;
+  hasActiveExamPeriodToday?: boolean;
   isExamSupervisor: boolean;
   isExamCommittee: boolean;
 }
@@ -1863,14 +1864,6 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         {/* Top Portal Navbar */}
         <header className="sticky top-0 z-30 glass-nav h-16 px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-xl bg-white/80 hover:bg-white hover:border-slate-300 border border-slate-200/80 text-slate-700 transition"
-              aria-label="Buka Menu"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
             <div className="truncate">
               <p className="font-bold text-slate-900 text-sm sm:text-base truncate">
                 {pageTitle}
@@ -1983,6 +1976,8 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         <PortalMobileNav
           pathname={normalizedPath}
           userRoles={userRoles}
+          isPicketToday={Boolean(user?.teacherAssignments?.isPicketToday)}
+          hasActiveExamPeriodToday={Boolean(user?.teacherAssignments?.hasActiveExamPeriodToday)}
           onOpenMenu={() => setSidebarOpen(true)}
         />
       )}

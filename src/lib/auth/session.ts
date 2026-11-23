@@ -16,6 +16,8 @@ export interface TeacherOperationalAssignments {
   isHomeroomTeacher: boolean;
   isGuruWali: boolean;
   isPicketTeacher: boolean;
+  isPicketToday: boolean;
+  hasActiveExamPeriodToday: boolean;
   isExamSupervisor: boolean;
   isExamCommittee: boolean;
 }
@@ -93,6 +95,21 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
         schedulesQuery = schedulesQuery.eq('academic_year_id', activeYearId);
       }
 
+      const wibNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
+      const todayWib = wibNow.toISOString().slice(0, 10);
+      const rawWibDay = wibNow.getUTCDay();
+      const todayDayOfWeek = rawWibDay === 0 ? 7 : rawWibDay;
+
+      let picketTodayQuery = db
+        .from('picket_schedules')
+        .select('id')
+        .eq('teacher_id', teacherId)
+        .eq('day_of_week', todayDayOfWeek)
+        .limit(1);
+      if (activeYearId) {
+        picketTodayQuery = picketTodayQuery.eq('academic_year_id', activeYearId);
+      }
+
       const [
         { data: dutyRows },
         { data: homeroomRows },
@@ -100,6 +117,9 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
         { data: guruWaliRows },
         { data: picketRows },
         { data: picketDelegationRows },
+        { data: picketTodayRows },
+        { data: picketDelegationTodayRows },
+        { data: activeExamPeriodRows },
         { data: examSupRows },
         { data: examComRows },
       ] = await Promise.all([
@@ -117,6 +137,22 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
           .select('id')
           .eq('substitute_teacher_id', teacherId)
           .eq('delegation_type', 'PIKET')
+          .limit(1),
+        picketTodayQuery,
+        db
+          .from('teacher_delegations')
+          .select('id')
+          .eq('substitute_teacher_id', teacherId)
+          .eq('delegation_type', 'PIKET')
+          .eq('delegation_date', todayWib)
+          .eq('status', 'APPROVED')
+          .limit(1),
+        db
+          .from('exam_periods')
+          .select('id')
+          .eq('is_active', true)
+          .lte('start_date', todayWib)
+          .gte('end_date', todayWib)
           .limit(1),
         db.from('exam_supervisors').select('id').eq('teacher_id', teacherId).limit(1),
         db.from('exam_committees').select('id').eq('teacher_id', teacherId).limit(1),
@@ -160,6 +196,9 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
 
       const isPicketTeacher =
         (picketRows || []).length > 0 || (picketDelegationRows || []).length > 0;
+      const isPicketToday =
+        (picketTodayRows || []).length > 0 || (picketDelegationTodayRows || []).length > 0;
+      const hasActiveExamPeriodToday = (activeExamPeriodRows || []).length > 0;
       const isExamSupervisor = (examSupRows || []).length > 0;
       const isExamCommittee = (examComRows || []).length > 0;
 
@@ -249,6 +288,8 @@ export async function getCurrentUserWithRoles(): Promise<AuthenticatedSession | 
         isHomeroomTeacher,
         isGuruWali,
         isPicketTeacher,
+        isPicketToday,
+        hasActiveExamPeriodToday,
         isExamSupervisor,
         isExamCommittee,
       };
