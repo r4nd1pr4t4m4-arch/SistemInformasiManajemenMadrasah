@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   NoInternetState,
@@ -41,7 +41,7 @@ function getRequestUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
-export function AppStateMonitor() {
+function AppStateMonitorInner() {
   const pathname = usePathname() || '/';
   const [isOffline, setIsOffline] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
@@ -281,5 +281,13 @@ export function AppStateMonitor() {
         onDismiss={() => setSessionExpired(false)}
       />
     </>
+  );
+}
+
+export function AppStateMonitor() {
+  return (
+    <Suspense fallback={null}>
+      <AppStateMonitorInner />
+    </Suspense>
   );
 }
