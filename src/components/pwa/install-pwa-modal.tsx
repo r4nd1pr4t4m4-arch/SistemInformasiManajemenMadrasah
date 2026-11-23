@@ -154,29 +154,28 @@ export function InstallPwaModal({
 
         {/* Tombol 1-Klik Install jika beforeinstallprompt tersedia */}
         {canInstallPrompt && (
-          <div className="space-y-2">
-            <button
-              type="button"
-              disabled={installing}
-              aria-busy={installing || undefined}
-              onClick={() => void handleInstallClick()}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-sm transition"
-            >
-              <Download className="w-4 h-4" />
-              <span>
-                {installing ? 'Membuka Dialog Instalasi...' : `Instal ${appLabel} Sekarang`}
-              </span>
-            </button>
-            {installDoneHint && (
-              <div className="rounded-xl bg-teal-50 border border-teal-200 p-3 flex items-start gap-2 text-xs text-teal-900">
-                <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-                <p>
-                  Instalasi sedang diproses oleh perangkat Anda. Setelah ikon{' '}
-                  <strong>{appLabel}</strong> muncul di Home Screen, tutup browser ini lalu buka
-                  aplikasi melalui ikon tersebut.
-                </p>
-              </div>
-            )}
+          <button
+            type="button"
+            disabled={installing}
+            aria-busy={installing || undefined}
+            onClick={() => void handleInstallClick()}
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-sm transition"
+          >
+            <Download className="w-4 h-4" />
+            <span>
+              {installing ? 'Membuka Dialog Instalasi...' : `Instal ${appLabel} Sekarang`}
+            </span>
+          </button>
+        )}
+
+        {installDoneHint && (
+          <div className="rounded-xl bg-teal-50 border border-teal-200 p-3 flex items-start gap-2 text-xs text-teal-900">
+            <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+            <p>
+              Instalasi sedang diproses oleh perangkat Anda. Setelah ikon{' '}
+              <strong>{appLabel}</strong> muncul di Home Screen, tutup browser ini lalu buka
+              aplikasi melalui ikon tersebut.
+            </p>
           </div>
         )}
 

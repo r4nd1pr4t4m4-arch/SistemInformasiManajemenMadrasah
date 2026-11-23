@@ -1392,8 +1392,9 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
 
   const needsMandatoryMobilePwa =
     authLoaded &&
+    pwa.ready &&
     Boolean(user) &&
-    pwa.isMobileViewport &&
+    pwa.isMobileDevice &&
     !pwa.isStandalone &&
     userRoles.some((role) => MANDATORY_MOBILE_PWA_ROLES.includes(role));
 
@@ -1871,6 +1872,24 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
     </div>
   );
 
+  // Blokir penuh akses portal di browser mobile bagi peran yang wajib menggunakan PWA:
+  // Jangan me-render konten portal, sidebar, navbar, ataupun query halaman di balik modal.
+  if (needsMandatoryMobilePwa) {
+    return (
+      <div className="min-h-screen simms-ambient">
+        <InstallPwaModal
+          open
+          mode="mandatory"
+          platform={pwa.platform}
+          canInstallPrompt={pwa.canInstallPrompt}
+          institutionName="SiM-M"
+          onTriggerInstall={pwa.triggerInstallPrompt}
+          onLogout={() => void handleLogout()}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen simms-ambient flex">
       {/* Desktop Sticky Sidebar */}
@@ -1970,7 +1989,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
 
         {/* Page Content */}
         <main id="main-content" className="flex-1 p-4 sm:p-6">
-          {!authLoaded ? (
+          {!authLoaded || !pwa.ready ? (
             <LoadingState
               variant="page"
               title="Memverifikasi Hak Akses..."
@@ -2030,18 +2049,9 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      {/* Modal Install PWA Wajib (Mobile — Guru, Siswa, Orang Tua) & Panduan Desktop */}
+      {/* Modal Panduan Install PWA Desktop */}
       <InstallPwaModal
-        open={needsMandatoryMobilePwa}
-        mode="mandatory"
-        platform={pwa.platform}
-        canInstallPrompt={pwa.canInstallPrompt}
-        institutionName="SiM-M"
-        onTriggerInstall={pwa.triggerInstallPrompt}
-        onLogout={() => void handleLogout()}
-      />
-      <InstallPwaModal
-        open={installGuideOpen && !needsMandatoryMobilePwa}
+        open={installGuideOpen}
         mode="guide"
         platform={pwa.platform}
         canInstallPrompt={pwa.canInstallPrompt}

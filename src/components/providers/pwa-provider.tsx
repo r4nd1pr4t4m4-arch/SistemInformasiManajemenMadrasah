@@ -35,8 +35,10 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 interface PwaContextValue {
+  ready: boolean;
   isStandalone: boolean;
   isMobileViewport: boolean;
+  isMobileDevice: boolean;
   platform: PwaPlatform;
   canInstallPrompt: boolean;
   updateAvailable: boolean;
@@ -45,8 +47,10 @@ interface PwaContextValue {
 }
 
 const PwaContext = createContext<PwaContextValue>({
+  ready: false,
   isStandalone: false,
   isMobileViewport: false,
+  isMobileDevice: false,
   platform: 'other',
   canInstallPrompt: false,
   updateAvailable: false,
@@ -82,13 +86,32 @@ function detectStandalone(): boolean {
   return mediaMatch || iosStandalone;
 }
 
+function detectMobileDevice(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const isSmallViewport =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 1023px)').matches;
+  const ua = navigator.userAgent || '';
+  const isMobileUa =
+    /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  // Mencegah bypass dengan mode "Desktop site" di browser HP/tablet
+  const isCoarseTouch =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(pointer: coarse)').matches &&
+    navigator.maxTouchPoints > 0;
+  return isSmallViewport || isMobileUa || isCoarseTouch;
+}
+
 function PwaProviderInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || '/';
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  const [ready, setReady] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
   const [platform, setPlatform] = useState<PwaPlatform>('other');
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
@@ -96,7 +119,7 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
   const [updatingSw, setUpdatingSw] = useState(false);
   const reloadingRef = useRef(false);
 
-  // 1. Deteksi mode standalone, platform, dan viewport mobile (< 1024px)
+  // 1. Deteksi mode standalone, platform, viewport mobile (< 1024px), dan perangkat mobile (anti-bypass Desktop Site)
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -104,20 +127,25 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
       setIsStandalone(detectStandalone());
       setPlatform(detectPlatform());
       setIsMobileViewport(window.matchMedia('(max-width: 1023px)').matches);
+      setIsMobileDevice(detectMobileDevice());
+      setReady(true);
     };
 
     syncDeviceState();
 
     const mqStandalone = window.matchMedia('(display-mode: standalone)');
     const mqMobile = window.matchMedia('(max-width: 1023px)');
+    const mqCoarse = window.matchMedia('(pointer: coarse)');
 
     mqStandalone.addEventListener('change', syncDeviceState);
     mqMobile.addEventListener('change', syncDeviceState);
+    mqCoarse.addEventListener('change', syncDeviceState);
     window.addEventListener('appinstalled', syncDeviceState);
 
     return () => {
       mqStandalone.removeEventListener('change', syncDeviceState);
       mqMobile.removeEventListener('change', syncDeviceState);
+      mqCoarse.removeEventListener('change', syncDeviceState);
       window.removeEventListener('appinstalled', syncDeviceState);
     };
   }, []);
@@ -131,7 +159,7 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
     };
     const handleAppInstalled = () => {
       setDeferredPrompt(null);
-      setIsStandalone(true);
+      setIsStandalone(detectStandalone());
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
@@ -353,8 +381,10 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
 
   const contextValue = useMemo<PwaContextValue>(
     () => ({
+      ready,
       isStandalone,
       isMobileViewport,
+      isMobileDevice,
       platform,
       canInstallPrompt: Boolean(deferredPrompt),
       updateAvailable: Boolean(waitingWorker),
@@ -362,8 +392,10 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
       applySwUpdate,
     }),
     [
+      ready,
       isStandalone,
       isMobileViewport,
+      isMobileDevice,
       platform,
       deferredPrompt,
       waitingWorker,
