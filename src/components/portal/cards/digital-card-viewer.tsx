@@ -429,7 +429,8 @@ export function DigitalLibraryCard({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [downloading, setDownloading] = useState<'front' | 'back' | 'both' | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const hasProfilePhoto = Boolean(member.avatar_url?.trim() || member.photo_url?.trim());
+  const profilePhotoUrl = member.avatar_url?.trim() || member.photo_url?.trim() || '';
+  const hasProfilePhoto = Boolean(profilePhotoUrl);
   const requiresProfilePhoto = member.member_type !== 'UMUM';
   const canDownloadCard = !requiresProfilePhoto || hasProfilePhoto;
 
@@ -609,8 +610,16 @@ export function DigitalLibraryCard({
 
               <div className="p-4 flex gap-3.5 items-start">
                 <div className="shrink-0 space-y-1.5">
-                  <div className="w-16 h-18 rounded-xl bg-gradient-to-br from-blue-900 to-sky-600 text-white font-bold text-lg flex items-center justify-center shadow-inner">
-                    {getInitials(member.full_name)}
+                  <div className="w-16 h-18 rounded-xl bg-gradient-to-br from-blue-900 to-sky-600 text-white font-bold text-lg flex items-center justify-center overflow-hidden border border-sky-200 shadow-inner">
+                    {profilePhotoUrl ? (
+                      <img
+                        src={profilePhotoUrl}
+                        alt={member.full_name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      getInitials(member.full_name)
+                    )}
                   </div>
                   <span className="block text-center px-1.5 py-0.5 rounded-lg bg-sky-100 text-sky-800 font-mono text-[9px] font-bold">
                     {member.member_code}

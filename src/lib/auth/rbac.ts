@@ -505,9 +505,6 @@ export const PERMISSIONS = {
   GURU_WALI_ASSIGN: [
     'SUPERADMIN',
     'OPERATOR',
-    'WAKA_KESISWAAN',
-    'KEPALA_TU',
-    'STAF_TU',
   ] as AppRole[],
   GURU_WALI_LOG: [
     'SUPERADMIN',
@@ -537,6 +534,9 @@ export const PERMISSIONS = {
   // Portal Siswa
   SISWA_BIODATA_VIEW: [
     'SISWA',
+    'ORANG_TUA',
+    'WALI_KELAS',
+    'GURU_WALI',
     'SUPERADMIN',
     'OPERATOR',
     'KEPALA_LEMBAGA',
@@ -793,6 +793,7 @@ const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
   '/portal/siswa/spp': ['SISWA'],
   '/portal/siswa/ujian': ['SISWA'],
   '/portal/siswa/bk': ['SISWA'],
+  '/portal/siswa/guru-wali': ['SISWA'],
   '/portal/siswa/nilai': PERMISSIONS.SISWA_NILAI_VIEW,
   '/portal/orang-tua/jadwal-pelajaran': ['ORANG_TUA'],
   '/portal/orang-tua/jadwal-piket': ['ORANG_TUA'],
@@ -800,6 +801,7 @@ const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
   '/portal/orang-tua/absensi': ['ORANG_TUA'],
   '/portal/orang-tua/spp': ['ORANG_TUA'],
   '/portal/orang-tua/bk': ['ORANG_TUA'],
+  '/portal/orang-tua/guru-wali': ['ORANG_TUA'],
   '/portal/orang-tua/nilai': PERMISSIONS.ORTU_NILAI_VIEW,
   '/portal/gtk/jadwal-mengajar': PERMISSIONS.GTK_PERSONAL_VIEW,
   '/portal/gtk/jadwal-piket': PERMISSIONS.GTK_PERSONAL_VIEW,
@@ -810,7 +812,7 @@ const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
   '/portal/keuangan/tabungan/buka-rekening': PERMISSIONS.TABUNGAN_MANAGE,
   '/portal/keuangan/tabungan/transaksi': PERMISSIONS.TABUNGAN_MANAGE,
   '/portal/keuangan/tabungan/aturan-fee': PERMISSIONS.TABUNGAN_MANAGE,
-  '/portal/layanan/perpustakaan/anggota': PERMISSIONS.PERPUSTAKAAN_ANGGOTA_VIEW,
+  '/portal/layanan/perpustakaan/anggota': PERMISSIONS.PERPUSTAKAAN_VIEW,
   '/portal/cms/ppdb': PERMISSIONS.CMS_PPDB_VIEW,
   '/portal/cms/manajemen-ppdb': PERMISSIONS.CMS_PPDB_VIEW,
   '/portal/cms/sarana-prasarana': PERMISSIONS.CMS_SARPRAS_VIEW,

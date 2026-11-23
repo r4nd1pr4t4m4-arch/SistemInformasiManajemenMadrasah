@@ -20,6 +20,30 @@ const AddBookSchema = z.object({
   total_pages: z.number().int().min(1).default(20),
 });
 
+const UpdateBookSchema = z.object({
+  action: z.literal('UPDATE_BOOK'),
+  book_id: z.string().uuid(),
+  title: z.string().min(2),
+  author: z.string().min(2),
+  category: z.string().optional().nullable(),
+  book_format: z.enum(['FISIK', 'EBOOK', 'KEDUANYA']).default('FISIK'),
+  total_copies: z.number().int().min(1).default(1),
+  ebook_file_url: z.string().optional().nullable(),
+  cover_url: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+  is_premium: z.boolean().default(false),
+});
+
+const DeleteBookSchema = z.object({
+  action: z.literal('DELETE_BOOK'),
+  book_id: z.string().uuid(),
+});
+
+const DeleteBooksBatchSchema = z.object({
+  action: z.literal('DELETE_BOOKS_BATCH'),
+  book_ids: z.array(z.string().uuid()).min(1).max(200),
+});
+
 const ToggleBookPremiumSchema = z.object({
   action: z.literal('TOGGLE_BOOK_PREMIUM'),
   book_id: z.string().uuid(),
@@ -83,7 +107,7 @@ export async function GET(request: NextRequest) {
       : supabase
           .from('library_members')
           .select(
-            '*, profile:profiles(avatar_url), student:students(photo_url), teacher:teachers_staff(photo_url)'
+            '*, profile:profiles(avatar_url), student:students(photo_url, profile:profiles(avatar_url)), teacher:teachers_staff(photo_url, profile:profiles(avatar_url))'
           )
           .order('joined_at', { ascending: false })
           .limit(100),
@@ -169,9 +193,19 @@ export async function GET(request: NextRequest) {
     const prof = Array.isArray(m.profile) ? m.profile[0] : m.profile;
     const stud = Array.isArray(m.student) ? m.student[0] : m.student;
     const teach = Array.isArray(m.teacher) ? m.teacher[0] : m.teacher;
+    const studProf = stud?.profile ? (Array.isArray(stud.profile) ? stud.profile[0] : stud.profile) : null;
+    const teachProf = teach?.profile ? (Array.isArray(teach.profile) ? teach.profile[0] : teach.profile) : null;
+    const resolvedPhoto =
+      prof?.avatar_url ||
+      studProf?.avatar_url ||
+      teachProf?.avatar_url ||
+      stud?.photo_url ||
+      teach?.photo_url ||
+      null;
     return {
       ...m,
-      avatar_url: prof?.avatar_url || stud?.photo_url || teach?.photo_url || null,
+      avatar_url: resolvedPhoto,
+      photo_url: resolvedPhoto,
     };
   });
 
@@ -243,6 +277,117 @@ export async function POST(request: Request) {
         .single();
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ book: data });
+    }
+
+    if (body.action === 'UPDATE_BOOK') {
+      const guard = await requireApiRoles(PERMISSIONS.PERPUSTAKAAN_MANAGE);
+      if (guard.errorResponse) return guard.errorResponse;
+      const parsed = UpdateBookSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Data pembaruan buku tidak valid.' }, { status: 400 });
+      }
+      const { book_id, ...fields } = parsed.data;
+      const { data: existingBook, error: fetchErr } = await supabase
+        .from('library_books')
+        .select('id, total_copies, available_copies')
+        .eq('id', book_id)
+        .maybeSingle();
+
+      if (fetchErr || !existingBook) {
+        return NextResponse.json({ error: 'Buku tidak ditemukan.' }, { status: 404 });
+      }
+
+      const borrowedCount = Math.max(
+        0,
+        Number(existingBook.total_copies ?? 0) - Number(existingBook.available_copies ?? 0)
+      );
+      const nextAvailable = Math.max(0, fields.total_copies - borrowedCount);
+
+      const { data, error } = await supabase
+        .from('library_books')
+        .update({
+          title: fields.title.trim(),
+          author: fields.author.trim(),
+          category: fields.category?.trim() || null,
+          book_format: fields.book_format,
+          total_copies: fields.total_copies,
+          available_copies: nextAvailable,
+          ebook_file_url: fields.book_format === 'FISIK' ? null : fields.ebook_file_url?.trim() || null,
+          cover_url: fields.cover_url?.trim() || null,
+          description: fields.description?.trim() || null,
+          is_premium: fields.is_premium,
+        })
+        .eq('id', book_id)
+        .select('*')
+        .single();
+
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      return NextResponse.json({ book: data });
+    }
+
+    if (body.action === 'DELETE_BOOK') {
+      const guard = await requireApiRoles(PERMISSIONS.PERPUSTAKAAN_MANAGE);
+      if (guard.errorResponse) return guard.errorResponse;
+      const parsed = DeleteBookSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'ID buku tidak valid.' }, { status: 400 });
+      }
+      const { data: activeLoans } = await supabase
+        .from('library_loans')
+        .select('id')
+        .eq('book_id', parsed.data.book_id)
+        .eq('status', 'DIPINJAM')
+        .limit(1);
+
+      if (activeLoans && activeLoans.length > 0) {
+        return NextResponse.json(
+          { error: 'Buku masih memiliki peminjaman aktif sehingga tidak dapat dihapus.' },
+          { status: 400 }
+        );
+      }
+
+      await supabase.from('ebook_access_grants').delete().eq('book_id', parsed.data.book_id);
+      await supabase.from('library_loans').delete().eq('book_id', parsed.data.book_id);
+      const { error } = await supabase
+        .from('library_books')
+        .delete()
+        .eq('id', parsed.data.book_id);
+
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      return NextResponse.json({ deleted: true });
+    }
+
+    if (body.action === 'DELETE_BOOKS_BATCH') {
+      const guard = await requireApiRoles(PERMISSIONS.PERPUSTAKAAN_MANAGE);
+      if (guard.errorResponse) return guard.errorResponse;
+      const parsed = DeleteBooksBatchSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Daftar ID buku untuk dihapus tidak valid.' }, { status: 400 });
+      }
+      const uniqueIds = Array.from(new Set(parsed.data.book_ids));
+
+      const { data: activeLoans } = await supabase
+        .from('library_loans')
+        .select('book_id')
+        .in('book_id', uniqueIds)
+        .eq('status', 'DIPINJAM');
+
+      if (activeLoans && activeLoans.length > 0) {
+        const blockedCount = new Set(activeLoans.map((l) => l.book_id)).size;
+        return NextResponse.json(
+          {
+            error: `${blockedCount} buku yang dipilih masih memiliki peminjaman aktif. Batalkan pilihan buku tersebut atau selesaikan pengembalian terlebih dahulu.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      await supabase.from('ebook_access_grants').delete().in('book_id', uniqueIds);
+      await supabase.from('library_loans').delete().in('book_id', uniqueIds);
+      const { error } = await supabase.from('library_books').delete().in('id', uniqueIds);
+
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      return NextResponse.json({ deletedCount: uniqueIds.length });
     }
 
     if (body.action === 'REGISTER_PUBLIC_MEMBER') {

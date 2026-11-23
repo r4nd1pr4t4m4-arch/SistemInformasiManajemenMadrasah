@@ -54,9 +54,13 @@ export async function GET() {
   }
 
   const supabase = createSupabaseAdminClient();
-  const [{ data: students }, { data: teachers }, { data: activeProfiles }, { data: libMembers }] =
+  const [{ data: rawStudents }, { data: teachers }, { data: activeProfiles }, { data: libMembers }] =
     await Promise.all([
-      supabase.from('students').select('*').order('full_name').limit(200),
+      supabase
+        .from('students')
+        .select('*, profile:profiles(avatar_url)')
+        .order('full_name')
+        .limit(200),
       supabase
         .from('teachers_staff')
         .select('*, employment_histories(*)')
@@ -73,6 +77,15 @@ export async function GET() {
         .select('id, profile_id, student_id, teacher_id, member_code, member_type')
         .limit(500),
     ]);
+
+  const students = (rawStudents || []).map((s) => {
+    const prof = Array.isArray(s.profile) ? s.profile[0] : s.profile;
+    const avatarUrl = (prof as { avatar_url?: string | null } | null)?.avatar_url || null;
+    return {
+      ...s,
+      photo_url: avatarUrl || s.photo_url || null,
+    };
+  });
 
   const studentProfileIds = new Set(
     (students || []).map((s) => s.profile_id).filter(Boolean) as string[]

@@ -15,6 +15,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Download,
+  HeartHandshake,
   Loader2,
   RefreshCw,
   RotateCcw,
@@ -39,6 +40,7 @@ export type PersonalSection =
   | 'spp'
   | 'ujian'
   | 'bk'
+  | 'guru-wali'
   | 'honorarium';
 
 const DAY_NAMES: Record<number, string> = {
@@ -218,6 +220,18 @@ interface PersonalPayload {
       period?: { name?: string | null; start_date?: string | null; end_date?: string | null } | null;
     } | null;
   }>;
+  guruWaliTeacher?: { full_name?: string | null } | null;
+  guruWaliLogs?: Array<{
+    id: string;
+    mentoring_date: string;
+    topic: string;
+    aspect?: string | null;
+    notes: string;
+    recommendation?: string | null;
+    assignment?: {
+      teacher?: { full_name?: string | null } | null;
+    } | null;
+  }>;
 }
 
 export function PersonalWorkspace({
@@ -255,6 +269,10 @@ export function PersonalWorkspace({
     'ALL' | 'KONSULTASI' | 'PRESTASI' | 'PELANGGARAN'
   >('ALL');
   const [bkSearch, setBkSearch] = useState('');
+  const [gwAspectFilter, setGwAspectFilter] = useState<
+    'ALL' | 'AKADEMIK' | 'IBADAH_KARAKTER' | 'SETORAN_HAFALAN' | 'SOSIAL' | 'KESEHATAN' | 'LAINNYA'
+  >('ALL');
+  const [gwSearch, setGwSearch] = useState('');
   const [activeSlip, setActiveSlip] = useState<SavingsSlipData | null>(null);
   const [activeSppSlip, setActiveSppSlip] = useState<SppSlipData | null>(null);
   const [activeHonorSlip, setActiveHonorSlip] = useState<HonorariumSlipData | null>(null);
@@ -3036,6 +3054,217 @@ export function PersonalWorkspace({
                               {rec.counselor?.full_name && (
                                 <p className="text-[11px] text-slate-500 break-words">
                                   Guru BK: {rec.counselor.full_name}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* 9. REKAM JEJAK BIMBINGAN GURU WALI */}
+          {section === 'guru-wali' && (() => {
+            if (scope === 'orang-tua' && !data.student) {
+              return (
+                <EmptyState
+                  icon={<HeartHandshake className="w-8 h-8 text-slate-300" />}
+                  title="Belum ada data putra/putri terhubung"
+                  description="Akun Anda belum terhubung dengan data siswa. Silakan hubungi bagian Tata Usaha atau Operator Madrasah."
+                />
+              );
+            }
+
+            const ASPECT_LABELS: Record<string, string> = {
+              AKADEMIK: 'Akademik',
+              IBADAH_KARAKTER: 'Ibadah & Karakter',
+              SETORAN_HAFALAN: 'Setoran Hafalan',
+              SOSIAL: 'Sosial',
+              KESEHATAN: 'Kesehatan',
+              LAINNYA: 'Lainnya',
+            };
+
+            const allLogs = data.guruWaliLogs || [];
+            const q = gwSearch.trim().toLowerCase();
+            const filteredLogs = allLogs.filter((log) => {
+              const asp = String(log.aspect || 'AKADEMIK').toUpperCase();
+              if (gwAspectFilter !== 'ALL' && asp !== gwAspectFilter) return false;
+              if (q) {
+                const teacherName = log.assignment?.teacher?.full_name || '';
+                const haystack = `${asp} ${ASPECT_LABELS[asp] || ''} ${log.topic || ''} ${
+                  log.notes || ''
+                } ${log.recommendation || ''} ${teacherName} ${log.mentoring_date || ''} ${formatDateId(
+                  log.mentoring_date
+                )}`.toLowerCase();
+                if (!haystack.includes(q)) return false;
+              }
+              return true;
+            });
+
+            const hafalanCount = allLogs.filter(
+              (l) => String(l.aspect || '').toUpperCase() === 'SETORAN_HAFALAN'
+            ).length;
+            const akademikCount = allLogs.filter(
+              (l) => String(l.aspect || '').toUpperCase() === 'AKADEMIK'
+            ).length;
+            const hasFilter = gwSearch.trim().length > 0 || gwAspectFilter !== 'ALL';
+
+            return (
+              <div className="space-y-4">
+                {data.guruWaliTeacher?.full_name && (
+                  <div className="glass-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 border border-emerald-200/70 bg-emerald-50/40">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                        <HeartHandshake className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">
+                          Guru Wali Pendamping Aktif
+                        </p>
+                        <p className="text-sm font-bold text-slate-900 truncate">
+                          {data.guruWaliTeacher.full_name}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {allLogs.length === 0 ? (
+                  <EmptyState
+                    icon={<HeartHandshake className="w-8 h-8 text-slate-300" />}
+                    title="Belum ada rekam jejak bimbingan Guru Wali"
+                    description={
+                      scope === 'orang-tua'
+                        ? 'Belum ada catatan bimbingan atau setoran hafalan Guru Wali yang tercatat untuk putra/putri Anda.'
+                        : 'Belum ada catatan bimbingan atau setoran hafalan Guru Wali yang tercatat untuk akun Anda.'
+                    }
+                  />
+                ) : (
+                  <>
+                    <div className="grid grid-cols-3 gap-3">
+                      <StatCard label="Total Bimbingan" value={String(allLogs.length)} tone="slate" />
+                      <StatCard label="Setoran Hafalan" value={String(hafalanCount)} tone="emerald" />
+                      <StatCard label="Akademik" value={String(akademikCount)} tone="amber" />
+                    </div>
+
+                    <div className="glass-card rounded-2xl p-3.5 sm:p-4 space-y-3">
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                        <div className="relative flex-1 min-w-0">
+                          <label htmlFor="personal-gw-search" className="sr-only">
+                            Cari rekam jejak bimbingan Guru Wali
+                          </label>
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            id="personal-gw-search"
+                            type="text"
+                            value={gwSearch}
+                            onChange={(e) => setGwSearch(e.target.value)}
+                            placeholder="Cari topik, hafalan, catatan, rekomendasi, atau tanggal..."
+                            className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                          />
+                          {gwSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setGwSearch('')}
+                              aria-label="Hapus pencarian bimbingan Guru Wali"
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap sm:overflow-visible -mx-1 px-1 shrink-0">
+                          {(
+                            [
+                              { key: 'ALL', label: 'Semua' },
+                              { key: 'SETORAN_HAFALAN', label: 'Setoran Hafalan' },
+                              { key: 'AKADEMIK', label: 'Akademik' },
+                              { key: 'IBADAH_KARAKTER', label: 'Ibadah & Karakter' },
+                              { key: 'SOSIAL', label: 'Sosial' },
+                              { key: 'KESEHATAN', label: 'Kesehatan' },
+                              { key: 'LAINNYA', label: 'Lainnya' },
+                            ] as const
+                          ).map((tab) => (
+                            <button
+                              key={tab.key}
+                              type="button"
+                              onClick={() => setGwAspectFilter(tab.key)}
+                              className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition shrink-0 whitespace-nowrap ${
+                                gwAspectFilter === tab.key
+                                  ? 'bg-slate-900 text-white'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {tab.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {filteredLogs.length === 0 ? (
+                      <div className="glass-card rounded-2xl p-8 text-center space-y-2">
+                        <p className="text-xs font-semibold text-slate-700">
+                          Tidak ada rekam jejak bimbingan yang cocok dengan filter.
+                        </p>
+                        {hasFilter && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGwSearch('');
+                              setGwAspectFilter('ALL');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-semibold"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {filteredLogs.map((log) => {
+                          const aspKey = String(log.aspect || 'AKADEMIK').toUpperCase();
+                          const aspLabel = ASPECT_LABELS[aspKey] || aspKey;
+                          const isHafalan = aspKey === 'SETORAN_HAFALAN';
+                          return (
+                            <div
+                              key={log.id}
+                              className="glass-card rounded-2xl p-4 sm:p-5 space-y-2.5 border border-slate-200/80"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                    isHafalan
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                      : 'bg-sky-50 text-sky-800 border-sky-200'
+                                  }`}
+                                >
+                                  {aspLabel}
+                                </span>
+                                <span className="text-[11px] font-mono text-slate-500">
+                                  {formatDateId(log.mentoring_date)}
+                                </span>
+                              </div>
+                              <p className="text-sm font-bold text-slate-900 break-words">
+                                {isHafalan ? `Hafalan: ${log.topic}` : log.topic}
+                              </p>
+                              <p className="text-xs sm:text-[13px] text-slate-700 break-words leading-relaxed">
+                                {log.notes}
+                              </p>
+                              {log.recommendation && (
+                                <p className="text-[11px] text-emerald-800 bg-emerald-50/70 border border-emerald-100 rounded-xl px-3 py-2 break-words">
+                                  <span className="font-semibold">Rekomendasi:</span>{' '}
+                                  {log.recommendation}
+                                </p>
+                              )}
+                              {log.assignment?.teacher?.full_name && (
+                                <p className="text-[11px] text-slate-500 break-words">
+                                  Guru Wali: {log.assignment.teacher.full_name}
                                 </p>
                               )}
                             </div>

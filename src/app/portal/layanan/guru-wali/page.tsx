@@ -3,13 +3,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
+  BookOpen,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   HeartHandshake,
   Loader2,
+  Pencil,
+  Plus,
   RefreshCw,
   Save,
   Search,
   ShieldAlert,
+  Trash2,
+  Users,
+  X,
 } from 'lucide-react';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
@@ -22,8 +30,12 @@ interface Opt {
 
 interface AssignmentRow {
   id: string;
-  teacher?: { full_name: string } | null;
-  student?: { full_name: string; nis?: string | null } | null;
+  teacher_id?: string;
+  student_id?: string;
+  classroom_name?: string | null;
+  is_my_mentee?: boolean;
+  teacher?: { id?: string; full_name: string } | null;
+  student?: { id?: string; full_name: string; nis?: string | null } | null;
 }
 
 interface MentoringLogRow {
@@ -39,16 +51,29 @@ interface MentoringLogRow {
   } | null;
 }
 
+interface HafalanItem {
+  id: string;
+  title: string;
+  category?: string | null;
+}
+
 interface ToastState {
   type: 'success' | 'error';
   message: string;
 }
 
-type MentoringAspect = 'AKADEMIK' | 'IBADAH_KARAKTER' | 'SOSIAL' | 'KESEHATAN' | 'LAINNYA';
+type MentoringAspect =
+  | 'AKADEMIK'
+  | 'IBADAH_KARAKTER'
+  | 'SETORAN_HAFALAN'
+  | 'SOSIAL'
+  | 'KESEHATAN'
+  | 'LAINNYA';
 
 const ASPECT_LABELS: Record<MentoringAspect, string> = {
   AKADEMIK: 'Akademik',
   IBADAH_KARAKTER: 'Ibadah & Karakter',
+  SETORAN_HAFALAN: 'Setoran Hafalan',
   SOSIAL: 'Sosial',
   KESEHATAN: 'Kesehatan',
   LAINNYA: 'Lainnya',
@@ -72,9 +97,17 @@ export default function GuruWaliPage() {
   const [students, setStudents] = useState<Opt[]>([]);
   const [teachers, setTeachers] = useState<Opt[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
+  const [menteeDirectory, setMenteeDirectory] = useState<AssignmentRow[]>([]);
+  const [canViewMenteeDirectory, setCanViewMenteeDirectory] = useState(false);
+  const [directorySearch, setDirectorySearch] = useState('');
   const [logs, setLogs] = useState<MentoringLogRow[]>([]);
+  const [hafalanItems, setHafalanItems] = useState<HafalanItem[]>([]);
   const [logSearch, setLogSearch] = useState('');
   const [aspectFilter, setAspectFilter] = useState<'ALL' | MentoringAspect>('ALL');
+  const [showHafalanPanel, setShowHafalanPanel] = useState(false);
+  const [hafalanForm, setHafalanForm] = useState({ title: '', category: '' });
+  const [editingHafalan, setEditingHafalan] = useState<HafalanItem | null>(null);
+  const [editHafalanForm, setEditHafalanForm] = useState({ title: '', category: '' });
 
   const [assignForm, setAssignForm] = useState({ teacher_id: '', student_id: '' });
   const [logForm, setLogForm] = useState(() => ({
@@ -124,7 +157,10 @@ export default function GuruWaliPage() {
       students: (bi.students || []) as Opt[],
       teachers: (bi.teachers || []) as Opt[],
       assignments: (gw.assignments || []) as AssignmentRow[],
+      menteeDirectory: (gw.menteeDirectory || []) as AssignmentRow[],
+      canViewMenteeDirectory: Boolean(gw.canViewMenteeDirectory),
       logs: (gw.logs || []) as MentoringLogRow[],
+      hafalanItems: (gw.hafalanItems || []) as HafalanItem[],
     };
   }, []);
 
@@ -136,7 +172,10 @@ export default function GuruWaliPage() {
         setStudents(data.students);
         setTeachers(data.teachers);
         setAssignments(data.assignments);
+        setMenteeDirectory(data.menteeDirectory);
+        setCanViewMenteeDirectory(data.canViewMenteeDirectory);
         setLogs(data.logs);
+        setHafalanItems(data.hafalanItems);
         setLoadError(null);
       } catch (err) {
         const message =
@@ -163,7 +202,10 @@ export default function GuruWaliPage() {
           setStudents(data.students);
           setTeachers(data.teachers);
           setAssignments(data.assignments);
+          setMenteeDirectory(data.menteeDirectory);
+          setCanViewMenteeDirectory(data.canViewMenteeDirectory);
           setLogs(data.logs);
+          setHafalanItems(data.hafalanItems);
           setLoadError(null);
         }
       } catch (err) {
@@ -259,6 +301,94 @@ export default function GuruWaliPage() {
       setLogForm((prev) => ({ ...prev, topic: '', notes: '', recommendation: '' }));
     }
   }
+
+  async function handleAddHafalan(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canAssign || submittingAction) return;
+    const title = hafalanForm.title.trim();
+    if (title.length < 2) {
+      showToast('Nama hafalan minimal 2 karakter.', 'error');
+      return;
+    }
+    const ok = await postGw(
+      {
+        action: 'ADD_HAFALAN_ITEM',
+        title,
+        category: hafalanForm.category.trim() || null,
+      },
+      'Daftar hafalan berhasil ditambahkan.'
+    );
+    if (ok) {
+      setHafalanForm({ title: '', category: '' });
+    }
+  }
+
+  async function handleUpdateHafalan(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canAssign || !editingHafalan || submittingAction) return;
+    const title = editHafalanForm.title.trim();
+    if (title.length < 2) {
+      showToast('Nama hafalan minimal 2 karakter.', 'error');
+      return;
+    }
+    const ok = await postGw(
+      {
+        action: 'UPDATE_HAFALAN_ITEM',
+        id: editingHafalan.id,
+        title,
+        category: editHafalanForm.category.trim() || null,
+      },
+      'Daftar hafalan berhasil diperbarui.'
+    );
+    if (ok) {
+      setEditingHafalan(null);
+    }
+  }
+
+  async function handleDeleteHafalan(item: HafalanItem) {
+    if (!canAssign || submittingAction) return;
+    await postGw(
+      { action: 'DELETE_HAFALAN_ITEM', id: item.id },
+      `Hafalan "${item.title}" berhasil dihapus.`
+    );
+  }
+
+  // Guru Wali hanya dapat mencatat bimbingan untuk siswa binaannya sendiri; Admin dapat memilih semua
+  const loggableAssignments = useMemo(() => {
+    if (canAssign) return assignments;
+    return assignments.filter((a) => a.is_my_mentee);
+  }, [assignments, canAssign]);
+
+  const groupedMenteeDirectory = useMemo(() => {
+    const q = directorySearch.trim().toLowerCase();
+    const map = new Map<
+      string,
+      { teacherName: string; students: AssignmentRow[] }
+    >();
+    for (const a of menteeDirectory) {
+      const teacherName = a.teacher?.full_name || 'Guru Wali';
+      const studentName = a.student?.full_name || 'Siswa';
+      const nis = a.student?.nis || '';
+      const cls = a.classroom_name || '';
+      if (q) {
+        const haystack = `${teacherName} ${studentName} ${nis} ${cls}`.toLowerCase();
+        if (!haystack.includes(q)) continue;
+      }
+      const key = a.teacher_id || teacherName;
+      if (!map.has(key)) {
+        map.set(key, { teacherName, students: [] });
+      }
+      map.get(key)!.students.push(a);
+    }
+    return Array.from(map.values())
+      .map((g) => ({
+        ...g,
+        students: [...g.students].sort((x, y) =>
+          (x.student?.full_name || '').localeCompare(y.student?.full_name || '')
+        ),
+      }))
+      .sort((a, b) => a.teacherName.localeCompare(b.teacherName));
+  }, [directorySearch, menteeDirectory]);
 
   const filteredLogs = useMemo(() => {
     const q = logSearch.trim().toLowerCase();
@@ -474,13 +604,19 @@ export default function GuruWaliPage() {
                       className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
                     >
                       <option value="">-- Pilih Siswa Bimbingan --</option>
-                      {assignments.map((a) => (
+                      {loggableAssignments.map((a) => (
                         <option key={a.id} value={a.id}>
-                          {a.student?.full_name || 'Siswa'} (Wali:{' '}
+                          {a.student?.full_name || 'Siswa'}
+                          {a.classroom_name ? ` — ${a.classroom_name}` : ''} (Wali:{' '}
                           {a.teacher?.full_name || 'Guru'})
                         </option>
                       ))}
                     </select>
+                    {loggableAssignments.length === 0 && (
+                      <p className="text-[11px] text-amber-700">
+                        Belum ada siswa binaan yang ditugaskan kepada Anda.
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -495,9 +631,17 @@ export default function GuruWaliPage() {
                         id="gw-log-aspect"
                         disabled={submittingAction === 'ADD_MENTORING_LOG'}
                         value={logForm.aspect}
-                        onChange={(e) =>
-                          setLogForm({ ...logForm, aspect: e.target.value as MentoringAspect })
-                        }
+                        onChange={(e) => {
+                          const nextAspect = e.target.value as MentoringAspect;
+                          setLogForm((prev) => ({
+                            ...prev,
+                            aspect: nextAspect,
+                            topic:
+                              nextAspect === 'SETORAN_HAFALAN' || prev.aspect === 'SETORAN_HAFALAN'
+                                ? ''
+                                : prev.topic,
+                          }));
+                        }}
                         className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
                       >
                         {Object.entries(ASPECT_LABELS).map(([key, label]) => (
@@ -532,18 +676,46 @@ export default function GuruWaliPage() {
                       htmlFor="gw-log-topic"
                       className="block text-[11px] font-semibold text-slate-700"
                     >
-                      Topik Bimbingan
+                      {logForm.aspect === 'SETORAN_HAFALAN' ? 'Hafalan' : 'Topik Bimbingan'}
                     </label>
-                    <input
-                      id="gw-log-topic"
-                      required
-                      minLength={2}
-                      disabled={submittingAction === 'ADD_MENTORING_LOG'}
-                      placeholder="Topik Bimbingan"
-                      value={logForm.topic}
-                      onChange={(e) => setLogForm({ ...logForm, topic: e.target.value })}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
-                    />
+                    {logForm.aspect === 'SETORAN_HAFALAN' ? (
+                      <>
+                        <select
+                          id="gw-log-topic"
+                          required
+                          disabled={submittingAction === 'ADD_MENTORING_LOG'}
+                          value={logForm.topic}
+                          onChange={(e) => setLogForm({ ...logForm, topic: e.target.value })}
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                        >
+                          <option value="">-- Pilih Hafalan --</option>
+                          {hafalanItems.map((item) => (
+                            <option key={item.id} value={item.title}>
+                              {item.title}
+                              {item.category ? ` (${item.category})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {hafalanItems.length === 0 && (
+                          <p className="text-[11px] text-amber-700">
+                            {canAssign
+                              ? 'Belum ada daftar hafalan di database. Tambahkan opsi melalui kartu Master Daftar Hafalan.'
+                              : 'Belum ada daftar hafalan di database. Hubungi Admin untuk menambahkan opsi hafalan.'}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <input
+                        id="gw-log-topic"
+                        required
+                        minLength={2}
+                        disabled={submittingAction === 'ADD_MENTORING_LOG'}
+                        placeholder="Topik Bimbingan"
+                        value={logForm.topic}
+                        onChange={(e) => setLogForm({ ...logForm, topic: e.target.value })}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                      />
+                    )}
                   </div>
 
                   <div className="space-y-1">
@@ -585,7 +757,7 @@ export default function GuruWaliPage() {
 
                   <button
                     type="submit"
-                    disabled={Boolean(submittingAction) || assignments.length === 0}
+                    disabled={Boolean(submittingAction) || loggableAssignments.length === 0}
                     className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition disabled:opacity-60"
                   >
                     {submittingAction === 'ADD_MENTORING_LOG' ? (
@@ -596,6 +768,201 @@ export default function GuruWaliPage() {
                     <span>Simpan Log Bimbingan</span>
                   </button>
                 </form>
+              </div>
+            )}
+
+            {/* Menu Input & Kelola Master Daftar Hafalan (Khusus Admin) */}
+            {canAssign && (
+              <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-0.5 min-w-0">
+                    <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-emerald-700 shrink-0" />
+                      <span>Master Daftar Hafalan ({hafalanItems.length})</span>
+                    </h2>
+                    <p className="text-[11px] text-slate-500">
+                      Input dan kelola opsi hafalan untuk aspek bimbingan Setoran Hafalan.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowHafalanPanel((prev) => !prev)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-semibold shrink-0 transition"
+                  >
+                    {showHafalanPanel ? (
+                      <>
+                        <ChevronUp className="w-3.5 h-3.5" />
+                        <span>Sembunyikan</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-3.5 h-3.5" />
+                        <span>Kelola</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {showHafalanPanel && (
+                  <div className="space-y-4">
+                    <form onSubmit={handleAddHafalan} className="space-y-2.5">
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="gw-hafalan-title"
+                          className="block text-[11px] font-semibold text-slate-700"
+                        >
+                          Nama Hafalan
+                        </label>
+                        <input
+                          id="gw-hafalan-title"
+                          required
+                          minLength={2}
+                          disabled={submittingAction === 'ADD_HAFALAN_ITEM'}
+                          placeholder="mis. Q.S. An-Naba 1-20, Doa Sebelum Belajar"
+                          value={hafalanForm.title}
+                          onChange={(e) =>
+                            setHafalanForm({ ...hafalanForm, title: e.target.value })
+                          }
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="gw-hafalan-category"
+                          className="block text-[11px] font-semibold text-slate-700"
+                        >
+                          Kategori (Opsional)
+                        </label>
+                        <input
+                          id="gw-hafalan-category"
+                          disabled={submittingAction === 'ADD_HAFALAN_ITEM'}
+                          placeholder="mis. Juz 30, Doa Harian, Hadits Pilihan"
+                          value={hafalanForm.category}
+                          onChange={(e) =>
+                            setHafalanForm({ ...hafalanForm, category: e.target.value })
+                          }
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={Boolean(submittingAction)}
+                        className="w-full inline-flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-emerald-700 text-white font-semibold py-2 px-3.5 rounded-xl text-xs transition disabled:opacity-60"
+                      >
+                        {submittingAction === 'ADD_HAFALAN_ITEM' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5" />
+                        )}
+                        <span>Tambah Hafalan</span>
+                      </button>
+                    </form>
+
+                    {hafalanItems.length === 0 ? (
+                      <p className="text-[11px] text-slate-400 italic text-center py-3">
+                        Belum ada daftar hafalan tersimpan.
+                      </p>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-0.5">
+                        {hafalanItems.map((item) => {
+                          const isEditing = editingHafalan?.id === item.id;
+                          if (isEditing) {
+                            return (
+                              <form
+                                key={item.id}
+                                onSubmit={handleUpdateHafalan}
+                                className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-2.5 space-y-2"
+                              >
+                                <input
+                                  required
+                                  minLength={2}
+                                  value={editHafalanForm.title}
+                                  onChange={(e) =>
+                                    setEditHafalanForm({
+                                      ...editHafalanForm,
+                                      title: e.target.value,
+                                    })
+                                  }
+                                  className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                                />
+                                <input
+                                  placeholder="Kategori (opsional)"
+                                  value={editHafalanForm.category}
+                                  onChange={(e) =>
+                                    setEditHafalanForm({
+                                      ...editHafalanForm,
+                                      category: e.target.value,
+                                    })
+                                  }
+                                  className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                                />
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingHafalan(null)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[11px] font-semibold text-slate-600"
+                                  >
+                                    <X className="w-3 h-3" /> Batal
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    disabled={Boolean(submittingAction)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-semibold disabled:opacity-60"
+                                  >
+                                    <Save className="w-3 h-3" /> Simpan
+                                  </button>
+                                </div>
+                              </form>
+                            );
+                          }
+                          return (
+                            <div
+                              key={item.id}
+                              className="modular-card rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div className="min-w-0">
+                                <p className="font-semibold text-slate-900 truncate">
+                                  {item.title}
+                                </p>
+                                {item.category && (
+                                  <p className="text-[10px] text-slate-500 truncate">
+                                    {item.category}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={Boolean(submittingAction)}
+                                  onClick={() => {
+                                    setEditingHafalan(item);
+                                    setEditHafalanForm({
+                                      title: item.title,
+                                      category: item.category || '',
+                                    });
+                                  }}
+                                  aria-label={`Edit hafalan ${item.title}`}
+                                  className="p-1.5 rounded-lg text-sky-700 bg-sky-50 hover:bg-sky-100 disabled:opacity-60"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={Boolean(submittingAction)}
+                                  onClick={() => void handleDeleteHafalan(item)}
+                                  aria-label={`Hapus hafalan ${item.title}`}
+                                  className="p-1.5 rounded-lg text-rose-700 bg-rose-50 hover:bg-rose-100 disabled:opacity-60"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -716,6 +1083,105 @@ export default function GuruWaliPage() {
           )}
         </div>
       </div>
+
+      {/* Daftar Siswa Binaan per Guru Wali (Hanya Admin, Wali Kelas, & Guru Wali) */}
+      {canViewMenteeDirectory && (
+        <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>Daftar Siswa Binaan per Guru Wali ({menteeDirectory.length})</span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {canAssign
+                  ? 'Menampilkan seluruh daftar siswa binaan yang dikelompokkan per Guru Wali.'
+                  : 'Menampilkan daftar siswa binaan sesuai kelas perwalian atau siswa binaan Anda.'}
+              </p>
+            </div>
+
+            <div className="relative w-full sm:w-72 shrink-0">
+              <label htmlFor="gw-directory-search" className="sr-only">
+                Cari Guru Wali, siswa, NIS, atau kelas
+              </label>
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                id="gw-directory-search"
+                type="search"
+                value={directorySearch}
+                onChange={(e) => setDirectorySearch(e.target.value)}
+                placeholder="Cari Guru Wali, siswa, NIS, atau kelas..."
+                className="w-full rounded-xl border border-slate-300 bg-white pl-8 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+              />
+            </div>
+          </div>
+
+          {groupedMenteeDirectory.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center space-y-1">
+              <p className="text-xs font-semibold text-slate-700">
+                {menteeDirectory.length === 0
+                  ? 'Belum ada data siswa binaan Guru Wali yang tersedia.'
+                  : 'Tidak ada data siswa binaan yang cocok dengan pencarian.'}
+              </p>
+              {directorySearch && (
+                <button
+                  type="button"
+                  onClick={() => setDirectorySearch('')}
+                  className="text-[11px] font-semibold text-emerald-700 hover:underline"
+                >
+                  Reset pencarian
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {groupedMenteeDirectory.map((group) => (
+                <div
+                  key={group.teacherName}
+                  className="rounded-2xl border border-slate-200/90 bg-white p-4 space-y-3 min-w-0 shadow-xs"
+                >
+                  <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-slate-100">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                        Guru Wali
+                      </p>
+                      <h3 className="text-sm font-bold text-slate-900 break-words">
+                        {group.teacherName}
+                      </h3>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold shrink-0">
+                      {group.students.length} siswa
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
+                    {group.students.map((st, idx) => (
+                      <div
+                        key={st.id}
+                        className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2 flex items-center justify-between gap-2 text-xs min-w-0"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900 truncate">
+                            {idx + 1}. {st.student?.full_name || 'Siswa'}
+                          </p>
+                          <p className="text-[11px] text-slate-500 font-mono truncate">
+                            NIS: {st.student?.nis || '-'}
+                          </p>
+                        </div>
+                        {st.classroom_name && (
+                          <span className="px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-800 text-[10px] font-semibold shrink-0">
+                            {st.classroom_name}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

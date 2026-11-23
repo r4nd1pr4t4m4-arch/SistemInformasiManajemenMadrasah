@@ -132,6 +132,18 @@ function emptyToNull<T extends Record<string, unknown>>(obj: T): T {
   return out as T;
 }
 
+function enrichStudentWithProfileAvatar<
+  T extends { photo_url?: string | null; profile?: unknown }
+>(row: T | null): T | null {
+  if (!row) return null;
+  const prof = Array.isArray(row.profile) ? row.profile[0] : row.profile;
+  const avatarUrl = (prof as { avatar_url?: string | null } | null)?.avatar_url || null;
+  return {
+    ...row,
+    photo_url: avatarUrl || row.photo_url || null,
+  };
+}
+
 async function resolveTargetStudent(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   session: AuthenticatedSession,
@@ -142,10 +154,10 @@ async function resolveTargetStudent(
   if (requestedStudentId && isStaff) {
     const { data } = await supabase
       .from('students')
-      .select('*')
+      .select('*, profile:profiles(avatar_url)')
       .eq('id', requestedStudentId)
       .maybeSingle();
-    return data;
+    return enrichStudentWithProfileAvatar(data);
   }
 
   const scopedStudentIds = await getAllowedStudentIdsForScopedRole(supabase, session);
@@ -156,23 +168,23 @@ async function resolveTargetStudent(
         : scopedStudentIds[0];
     const { data } = await supabase
       .from('students')
-      .select('*')
+      .select('*, profile:profiles(avatar_url)')
       .eq('id', targetId)
       .maybeSingle();
-    if (data) return data;
+    if (data) return enrichStudentWithProfileAvatar(data);
   }
 
   const { data: byProfile } = await supabase
     .from('students')
-    .select('*')
+    .select('*, profile:profiles(avatar_url)')
     .eq('profile_id', session.userId)
     .maybeSingle();
-  if (byProfile) return byProfile;
+  if (byProfile) return enrichStudentWithProfileAvatar(byProfile);
 
   if (session.email) {
     const { data: byEmail } = await supabase
       .from('students')
-      .select('*')
+      .select('*, profile:profiles(avatar_url)')
       .ilike('email', session.email)
       .is('profile_id', null)
       .maybeSingle();
@@ -181,7 +193,16 @@ async function resolveTargetStudent(
         .from('students')
         .update({ profile_id: session.userId, updated_at: new Date().toISOString() })
         .eq('id', byEmail.id);
-      return { ...byEmail, profile_id: session.userId };
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', session.userId)
+        .maybeSingle();
+      return {
+        ...byEmail,
+        profile_id: session.userId,
+        photo_url: prof?.avatar_url || byEmail.photo_url || null,
+      };
     }
   }
 

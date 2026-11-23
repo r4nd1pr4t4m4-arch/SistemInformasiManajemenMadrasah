@@ -5,17 +5,23 @@ import {
   AlertCircle,
   BookOpen,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   CreditCard,
   Crown,
   Loader2,
   Lock,
+  Pencil,
+  Plus,
   RefreshCw,
   Save,
   Search,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   Users,
+  X,
   XCircle,
 } from 'lucide-react';
 import { PERMISSIONS } from '@/lib/auth/rbac';
@@ -29,6 +35,7 @@ interface BookRow {
   author: string;
   category?: string | null;
   cover_url?: string | null;
+  ebook_file_url?: string | null;
   description?: string | null;
   book_format: string;
   available_copies: number;
@@ -81,6 +88,7 @@ export type PerpustakaanSection = 'katalog' | 'anggota';
 export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSection }) {
   const { hasPermission } = usePortalSession();
   const canManage = hasPermission(PERMISSIONS.PERPUSTAKAAN_MANAGE);
+  const canViewAllMembers = hasPermission(PERMISSIONS.PERPUSTAKAAN_ANGGOTA_VIEW);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -99,6 +107,24 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
   const [bookFilter, setBookFilter] = useState<'ALL' | 'EBOOK' | 'FISIK' | 'PREMIUM'>('ALL');
   const [memberSearch, setMemberSearch] = useState('');
   const [memberFilter, setMemberFilter] = useState<'ALL' | 'AUTO' | 'UMUM'>('ALL');
+  const [showAddBookForm, setShowAddBookForm] = useState(true);
+  const [showGrantForm, setShowGrantForm] = useState(true);
+  const [selectedBookIds, setSelectedBookIds] = useState<string[]>([]);
+  const [editingBook, setEditingBook] = useState<BookRow | null>(null);
+  const [editBookForm, setEditBookForm] = useState({
+    title: '',
+    author: '',
+    category: '',
+    book_format: 'KEDUANYA' as 'FISIK' | 'EBOOK' | 'KEDUANYA',
+    total_copies: 1,
+    ebook_file_url: '',
+    cover_url: '',
+    description: '',
+    is_premium: false,
+  });
+  const [deleteTarget, setDeleteTarget] = useState<
+    { mode: 'single'; book: BookRow } | { mode: 'batch'; ids: string[] } | null
+  >(null);
 
   const [bookForm, setBookForm] = useState({
     title: '',
@@ -162,6 +188,10 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
       setMembers(data.members);
       setGrants(data.grants);
       setUsers(data.users);
+      setSelectedBookIds((prev) => {
+        const validIds = new Set(data.books.map((b) => b.id));
+        return prev.filter((id) => validIds.has(id));
+      });
       setNowMs(Date.now());
       setLoadError(null);
     },
@@ -369,6 +399,107 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
     }
   }
 
+  function openEditBookModal(book: BookRow) {
+    setEditingBook(book);
+    setEditBookForm({
+      title: book.title || '',
+      author: book.author || '',
+      category: book.category || '',
+      book_format: (book.book_format === 'FISIK' || book.book_format === 'EBOOK'
+        ? book.book_format
+        : 'KEDUANYA') as 'FISIK' | 'EBOOK' | 'KEDUANYA',
+      total_copies: Math.max(1, Number(book.total_copies || 1)),
+      ebook_file_url: book.ebook_file_url || '',
+      cover_url: book.cover_url || '',
+      description: book.description || '',
+      is_premium: Boolean(book.is_premium),
+    });
+  }
+
+  async function handleUpdateBook(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canManage || !editingBook || submittingAction) return;
+    const title = editBookForm.title.trim();
+    const author = editBookForm.author.trim();
+    if (title.length < 2) {
+      showToast('Judul buku minimal 2 karakter.', 'error');
+      return;
+    }
+    if (author.length < 2) {
+      showToast('Nama penulis minimal 2 karakter.', 'error');
+      return;
+    }
+    const copies = Number.isFinite(editBookForm.total_copies)
+      ? Math.max(1, Math.round(editBookForm.total_copies))
+      : 1;
+
+    const ok = await postLib(
+      {
+        action: 'UPDATE_BOOK',
+        book_id: editingBook.id,
+        title,
+        author,
+        category: editBookForm.category.trim() || null,
+        book_format: editBookForm.book_format,
+        total_copies: copies,
+        ebook_file_url: editBookForm.ebook_file_url.trim() || null,
+        cover_url: editBookForm.cover_url.trim() || null,
+        description: editBookForm.description.trim() || null,
+        is_premium: editBookForm.is_premium,
+      },
+      'Data koleksi buku berhasil diperbarui.'
+    );
+    if (ok) {
+      setEditingBook(null);
+    }
+  }
+
+  async function handleConfirmDeleteBook() {
+    if (!canManage || !deleteTarget || submittingAction) return;
+    if (deleteTarget.mode === 'single') {
+      const ok = await postLib(
+        { action: 'DELETE_BOOK', book_id: deleteTarget.book.id },
+        `Buku "${deleteTarget.book.title}" berhasil dihapus dari katalog.`
+      );
+      if (ok) {
+        setDeleteTarget(null);
+      }
+      return;
+    }
+
+    const ok = await postLib(
+      { action: 'DELETE_BOOKS_BATCH', book_ids: deleteTarget.ids },
+      `${deleteTarget.ids.length} buku berhasil dihapus dari katalog.`
+    );
+    if (ok) {
+      setSelectedBookIds([]);
+      setDeleteTarget(null);
+    }
+  }
+
+  function toggleBookSelection(bookId: string) {
+    setSelectedBookIds((prev) =>
+      prev.includes(bookId) ? prev.filter((id) => id !== bookId) : [...prev, bookId]
+    );
+  }
+
+  const allFilteredSelected =
+    filteredBooks.length > 0 &&
+    filteredBooks.every((b) => selectedBookIds.includes(b.id));
+
+  function toggleSelectAllFiltered() {
+    if (allFilteredSelected) {
+      const filteredSet = new Set(filteredBooks.map((b) => b.id));
+      setSelectedBookIds((prev) => prev.filter((id) => !filteredSet.has(id)));
+    } else {
+      setSelectedBookIds((prev) => {
+        const merged = new Set(prev);
+        for (const b of filteredBooks) merged.add(b.id);
+        return Array.from(merged);
+      });
+    }
+  }
+
   async function handleGrantPremium(e: React.FormEvent) {
     e.preventDefault();
     if (!canManage || submittingAction) return;
@@ -495,15 +626,26 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
           </div>
 
           <div className="grid lg:grid-cols-12 gap-6 items-start">
-            {canManage && (
+            {canManage && showAddBookForm && (
               <div className="lg:col-span-5 glass-card rounded-3xl p-5 sm:p-6 space-y-4">
-                <div className="space-y-0.5">
-                  <h2 className="text-sm font-bold text-slate-900">
-                    Tambah Koleksi Buku / E-Book
-                  </h2>
-                  <p className="text-[11px] text-slate-500">
-                    Tambahkan buku fisik, e-book PDF, atau keduanya ke katalog perpustakaan.
-                  </p>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-0.5 min-w-0">
+                    <h2 className="text-sm font-bold text-slate-900">
+                      Tambah Koleksi Buku / E-Book
+                    </h2>
+                    <p className="text-[11px] text-slate-500">
+                      Tambahkan buku fisik, e-book PDF, atau keduanya ke katalog perpustakaan.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddBookForm(false)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-[11px] font-semibold shrink-0 transition"
+                    title="Sembunyikan form tambah koleksi"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                    <span>Sembunyikan</span>
+                  </button>
                 </div>
                 <form onSubmit={handleAddBook} className="space-y-3">
                   <div className="space-y-1">
@@ -697,13 +839,25 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
             )}
 
             <div
-              className={`${canManage ? 'lg:col-span-7' : 'lg:col-span-12'
+              className={`${canManage && showAddBookForm ? 'lg:col-span-7' : 'lg:col-span-12'
                 } glass-card rounded-3xl p-5 sm:p-6 space-y-4`}
             >
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                  Katalog Buku &amp; E-Book ({filteredBooks.length})
-                </h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-sm sm:text-base font-bold text-slate-900">
+                    Katalog Buku &amp; E-Book ({filteredBooks.length})
+                  </h2>
+                  {canManage && !showAddBookForm && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAddBookForm(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Tampilkan Form Tambah</span>
+                    </button>
+                  )}
+                </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {(
@@ -744,6 +898,48 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                 />
               </div>
 
+              {canManage && filteredBooks.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs">
+                  <label className="inline-flex items-center gap-2 font-semibold text-slate-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAllFiltered}
+                      className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span>
+                      Pilih Semua ({filteredBooks.length})
+                    </span>
+                  </label>
+
+                  {selectedBookIds.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[11px] font-semibold text-slate-600">
+                        {selectedBookIds.length} dipilih
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBookIds([])}
+                        className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-[11px] font-semibold transition"
+                      >
+                        Batal Pilih
+                      </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(submittingAction)}
+                        onClick={() =>
+                          setDeleteTarget({ mode: 'batch', ids: selectedBookIds })
+                        }
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold transition disabled:opacity-60"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus Terpilih ({selectedBookIds.length})</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {filteredBooks.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center space-y-1">
                   <p className="text-xs font-semibold text-slate-700">
@@ -765,91 +961,218 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                   )}
                 </div>
               ) : (
-                <div className="space-y-2.5 max-h-[34rem] overflow-y-auto pr-0.5">
+                <div
+                  className={`grid gap-3.5 max-h-[42rem] overflow-y-auto pr-1 ${
+                    canManage && showAddBookForm
+                      ? 'grid-cols-1 xl:grid-cols-2'
+                      : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+                  }`}
+                >
                   {filteredBooks.map((b) => {
                     const isEbook = b.book_format === 'EBOOK' || b.book_format === 'KEDUANYA';
+                    const isSelected = selectedBookIds.includes(b.id);
+                    const formatLabel =
+                      b.book_format === 'KEDUANYA'
+                        ? 'Fisik & E-Book'
+                        : b.book_format === 'EBOOK'
+                        ? 'E-Book'
+                        : 'Fisik';
+                    const formatBadgeClass =
+                      b.book_format === 'EBOOK'
+                        ? 'bg-sky-50 text-sky-700 border-sky-200'
+                        : b.book_format === 'KEDUANYA'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-100 text-slate-700 border-slate-200';
+                    const inStock = b.available_copies > 0;
+
                     return (
-                      <div
+                      <article
                         key={b.id}
-                        className="modular-card rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs"
+                        className={`group rounded-2xl bg-white p-4 flex flex-col justify-between gap-3.5 text-xs border transition shadow-xs hover:shadow-md min-w-0 ${
+                          isSelected
+                            ? 'border-rose-300 bg-rose-50/30 ring-1 ring-rose-200'
+                            : 'border-slate-200/90 hover:border-emerald-300/80'
+                        }`}
                       >
-                        <div className="flex items-start gap-3 min-w-0">
-                          {b.cover_url ? (
-                            <img
-                              src={b.cover_url}
-                              alt={b.title}
-                              className="w-10 h-14 rounded-lg object-cover border border-slate-200 shrink-0"
-                            />
-                          ) : (
-                            <div className="w-10 h-14 rounded-lg bg-emerald-900 text-white text-[9px] font-bold flex items-center justify-center p-1 text-center shrink-0">
-                              BUKU
-                            </div>
-                          )}
-                          <div className="min-w-0 space-y-0.5">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <p className="font-bold text-slate-900 break-words">{b.title}</p>
-                              {b.is_premium && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold shrink-0">
-                                  <Crown className="w-3 h-3" /> PREMIUM
+                        {/* Top: Cover + Metadata */}
+                        <div className="flex items-start gap-3.5 min-w-0">
+                          <div className="relative shrink-0">
+                            {b.cover_url ? (
+                              <img
+                                src={b.cover_url}
+                                alt={b.title}
+                                className="w-16 h-24 sm:w-[72px] sm:h-28 rounded-xl object-cover border border-slate-200 shadow-sm bg-slate-100"
+                              />
+                            ) : (
+                              <div className="w-16 h-24 sm:w-[72px] sm:h-28 rounded-xl bg-gradient-to-br from-emerald-800 via-emerald-900 to-teal-950 text-white flex flex-col items-center justify-center p-2 text-center shadow-sm border border-emerald-700/40">
+                                <BookOpen className="w-5 h-5 text-emerald-200 mb-1" />
+                                <span className="text-[9px] font-bold tracking-wider uppercase text-emerald-100 leading-tight">
+                                  {b.book_format === 'EBOOK' ? 'E-BOOK' : 'KOLEKSI'}
                                 </span>
+                              </div>
+                            )}
+                            {b.is_premium && (
+                              <span
+                                title="Buku Premium"
+                                className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-amber-400 text-amber-950 border-2 border-white shadow-xs flex items-center justify-center"
+                              >
+                                <Crown className="w-3 h-3" />
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0 space-y-1.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                <span
+                                  className={`px-2 py-0.5 rounded-md border text-[10px] font-bold ${formatBadgeClass}`}
+                                >
+                                  {formatLabel}
+                                </span>
+                                {b.category && (
+                                  <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-semibold truncate max-w-[120px]">
+                                    {b.category}
+                                  </span>
+                                )}
+                                {b.is_premium && (
+                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
+                                    Premium
+                                  </span>
+                                )}
+                              </div>
+                              {canManage && (
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Pilih buku ${b.title}`}
+                                  checked={isSelected}
+                                  onChange={() => toggleBookSelection(b.id)}
+                                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 shrink-0 cursor-pointer"
+                                />
                               )}
                             </div>
-                            <p className="text-[11px] text-slate-500 break-words">
-                              {b.author} • {b.book_format}
-                              {b.category ? ` • ${b.category}` : ''}
-                              {b.grant_expires_at
-                                ? ` • Izin s/d ${new Date(b.grant_expires_at).toLocaleString('id-ID')}`
-                                : ''}
-                            </p>
+
+                            <div>
+                              <h3
+                                className="text-sm font-bold text-slate-900 leading-snug line-clamp-2 break-words"
+                                title={b.title}
+                              >
+                                {b.title}
+                              </h3>
+                              <p className="text-xs text-slate-600 font-medium truncate mt-0.5">
+                                {b.author}
+                              </p>
+                            </div>
+
+                            {b.description && (
+                              <p className="text-[11px] text-slate-500 leading-relaxed line-clamp-2 break-words">
+                                {b.description}
+                              </p>
+                            )}
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 flex-wrap shrink-0">
-                          <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[11px]">
-                            Tersedia: {b.available_copies}/{b.total_copies}
+                        {/* Middle: Info & Status Bar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 text-[11px]">
+                          <span
+                            className={`inline-flex items-center gap-1.5 font-semibold ${
+                              inStock ? 'text-emerald-700' : 'text-rose-700'
+                            }`}
+                          >
+                            <span
+                              className={`w-2 h-2 rounded-full ${
+                                inStock ? 'bg-emerald-500' : 'bg-rose-500'
+                              }`}
+                            />
+                            Tersedia {b.available_copies}/{b.total_copies} eks.
                           </span>
-                          {canManage && isEbook && (
-                            <button
-                              type="button"
-                              aria-busy={submittingAction === 'TOGGLE_BOOK_PREMIUM' || undefined}
-                              disabled={Boolean(submittingAction)}
-                              onClick={() =>
-                                void postLib(
-                                  {
-                                    action: 'TOGGLE_BOOK_PREMIUM',
-                                    book_id: b.id,
-                                    is_premium: !b.is_premium,
-                                  },
-                                  b.is_premium
-                                    ? 'Status buku premium dinonaktifkan.'
-                                    : 'Buku ditandai sebagai Buku Premium.'
-                                )
-                              }
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[11px] transition disabled:opacity-60"
-                            >
-                              {submittingAction === 'TOGGLE_BOOK_PREMIUM' && (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              )}
-                              <span>{b.is_premium ? 'Hapus Premium' : 'Set Premium'}</span>
-                            </button>
-                          )}
+
+                          {b.grant_expires_at ? (
+                            <span className="inline-flex items-center gap-1 text-amber-700 font-semibold">
+                              <Clock className="w-3 h-3 shrink-0" />
+                              Izin s/d {new Date(b.grant_expires_at).toLocaleDateString('id-ID')}
+                            </span>
+                          ) : isEbook && !b.has_ebook ? (
+                            <span className="text-slate-400 italic">PDF belum ditautkan</span>
+                          ) : isEbook && b.has_ebook ? (
+                            <span className="text-sky-700 font-semibold">Flipbook Siap Baca</span>
+                          ) : null}
+                        </div>
+
+                        {/* Bottom: Actions */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 mt-auto">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {canManage && isEbook && (
+                              <button
+                                type="button"
+                                aria-busy={submittingAction === 'TOGGLE_BOOK_PREMIUM' || undefined}
+                                disabled={Boolean(submittingAction)}
+                                onClick={() =>
+                                  void postLib(
+                                    {
+                                      action: 'TOGGLE_BOOK_PREMIUM',
+                                      book_id: b.id,
+                                      is_premium: !b.is_premium,
+                                    },
+                                    b.is_premium
+                                      ? 'Status buku premium dinonaktifkan.'
+                                      : 'Buku ditandai sebagai Buku Premium.'
+                                  )
+                                }
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[11px] transition disabled:opacity-60"
+                                title={b.is_premium ? 'Hapus status premium' : 'Tandai sebagai buku premium'}
+                              >
+                                {submittingAction === 'TOGGLE_BOOK_PREMIUM' ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Crown className="w-3 h-3" />
+                                )}
+                                <span>{b.is_premium ? 'Non-Premium' : 'Set Premium'}</span>
+                              </button>
+                            )}
+                            {canManage && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={Boolean(submittingAction)}
+                                  onClick={() => openEditBookModal(b)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-700 font-semibold text-[11px] transition disabled:opacity-60"
+                                  title="Edit buku"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                  <span>Edit</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={Boolean(submittingAction)}
+                                  onClick={() => setDeleteTarget({ mode: 'single', book: b })}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-[11px] transition disabled:opacity-60"
+                                  title="Hapus buku"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Hapus</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
+
                           {isEbook && b.has_ebook && (
                             b.has_premium_access ? (
                               <button
                                 type="button"
                                 onClick={() => setReadingBook(b)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                                className="ml-auto inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] shadow-xs transition"
                               >
-                                <BookOpen className="w-3 h-3" /> Baca Buku
+                                <BookOpen className="w-3.5 h-3.5" />
+                                <span>Baca E-Book</span>
                               </button>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-semibold text-[11px]">
+                              <span className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-semibold text-[11px]">
                                 <Lock className="w-3 h-3 text-amber-600" /> Butuh Izin Admin
                               </span>
                             )
                           )}
                         </div>
-                      </div>
+                      </article>
                     );
                   })}
                 </div>
@@ -860,21 +1183,41 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
           {/* Manajemen Izin Baca Buku Premium (Khusus Admin / Pustakawan) */}
           {canManage && (
             <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
-              <div>
-                <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Izin Baca Buku Premium (Berdurasi)</span>
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Berikan izin membaca buku premium kepada pengguna tertentu dengan durasi waktu
-                  (Jam atau Hari) yang dapat diatur oleh Admin.
-                </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Izin Baca Buku Premium (Berdurasi)</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Berikan izin membaca buku premium kepada pengguna tertentu dengan durasi waktu
+                    (Jam atau Hari) yang dapat diatur oleh Admin.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowGrantForm((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shrink-0 transition"
+                >
+                  {showGrantForm ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span>Sembunyikan Form</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                      <span>Tampilkan Form</span>
+                    </>
+                  )}
+                </button>
               </div>
 
-              <form
-                onSubmit={handleGrantPremium}
-                className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end bg-slate-50/80 p-4 rounded-2xl border border-slate-200/70"
-              >
+              {showGrantForm && (
+                <form
+                  onSubmit={handleGrantPremium}
+                  className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end bg-slate-50/80 p-4 rounded-2xl border border-slate-200/70"
+                >
                 <div className="min-w-0">
                   <label
                     htmlFor="lib-grant-book"
@@ -1001,7 +1344,8 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                   )}
                   <span>Berikan Izin</span>
                 </button>
-              </form>
+                </form>
+              )}
 
               {grants.length > 0 && (
                 <>
@@ -1141,25 +1485,6 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
               )}
             </div>
           )}
-
-          {selectedMember && (
-            <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-sky-700" /> Kartu Anggota E-Library Saya
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    Pratinjau sisi depan &amp; belakang kartu anggota perpustakaan Anda, siap diunduh
-                    sebagai file PNG.
-                  </p>
-                </div>
-              </div>
-              <div className="max-w-xl">
-                <DigitalLibraryCard member={selectedMember} />
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -1170,35 +1495,44 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                   <Users className="w-5 h-5 text-sky-700 shrink-0" />
-                  <span>Keanggotaan &amp; Kartu E-Library</span>
+                  <span>
+                    {canViewAllMembers
+                      ? 'Keanggotaan & Kartu E-Library'
+                      : 'Kartu Anggota E-Library Saya'}
+                  </span>
                 </h1>
-                {!canManage && (
+                {canViewAllMembers && !canManage && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-semibold">
                     <ShieldAlert className="w-3 h-3" /> Mode Lihat Saja
                   </span>
                 )}
               </div>
               <p className="text-xs text-slate-500">
-                Kelola pendaftaran anggota umum E-Library serta pratinjau dan unduh kartu anggota
-                perpustakaan digital.
+                {canViewAllMembers
+                  ? 'Kelola pendaftaran anggota umum E-Library serta pratinjau dan unduh kartu anggota perpustakaan digital.'
+                  : 'Pratinjau dan unduh kartu anggota perpustakaan digital pribadi Anda sebagai file PNG.'}
               </p>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap shrink-0">
-              <div className="px-3 py-1.5 rounded-xl bg-sky-50 border border-sky-200/80 text-[11px]">
-                <span className="text-slate-500">Otomatis: </span>
-                <span className="font-bold text-sky-800">{memberSummary.autoCount}</span>
-              </div>
-              <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-[11px]">
-                <span className="text-slate-500">Umum: </span>
-                <span className="font-bold text-emerald-800">{memberSummary.umumCount}</span>
-              </div>
+              {canViewAllMembers && (
+                <>
+                  <div className="px-3 py-1.5 rounded-xl bg-sky-50 border border-sky-200/80 text-[11px]">
+                    <span className="text-slate-500">Otomatis: </span>
+                    <span className="font-bold text-sky-800">{memberSummary.autoCount}</span>
+                  </div>
+                  <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-[11px]">
+                    <span className="text-slate-500">Umum: </span>
+                    <span className="font-bold text-emerald-800">{memberSummary.umumCount}</span>
+                  </div>
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => void loadData('refresh')}
                 disabled={refreshing || Boolean(submittingAction)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition disabled:opacity-60"
-                title="Muat ulang daftar anggota perpustakaan"
+                title="Muat ulang data kartu anggota perpustakaan"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">Segarkan</span>
@@ -1206,7 +1540,8 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
             </div>
           </div>
 
-          <div className="grid lg:grid-cols-12 gap-6 items-start">
+          {canViewAllMembers && (
+            <div className="grid lg:grid-cols-12 gap-6 items-start">
             {canManage && (
               <div className="lg:col-span-5 glass-card rounded-3xl p-5 sm:p-6 space-y-4">
                 <div className="space-y-0.5">
@@ -1396,6 +1731,20 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
               )}
             </div>
           </div>
+          )}
+
+          {!canViewAllMembers && members.length === 0 && (
+            <div className="glass-card rounded-3xl p-8 text-center space-y-2">
+              <CreditCard className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-sm font-bold text-slate-800">
+                Kartu Anggota E-Library Belum Tersedia
+              </p>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Akun Anda belum terdaftar sebagai anggota perpustakaan. Hubungi Pustakawan atau Tata
+                Usaha jika Anda memerlukan kartu anggota E-Library.
+              </p>
+            </div>
+          )}
 
           {selectedMember && (
             <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
@@ -1406,32 +1755,342 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
                     <span>Pratinjau &amp; Unduh Kartu Perpustakaan (PNG)</span>
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Klik salah satu anggota di atas untuk menampilkan kartu depan &amp; belakangnya.
+                    {canViewAllMembers
+                      ? 'Klik salah satu anggota di atas untuk menampilkan kartu depan & belakangnya.'
+                      : 'Gunakan tombol di bawah untuk melihat sisi depan/belakang atau mengunduh kartu Anda sebagai file PNG.'}
                   </p>
                 </div>
-                <div className="w-full sm:w-auto min-w-0">
-                  <label htmlFor="lib-member-preview-select" className="sr-only">
-                    Pilih anggota untuk pratinjau kartu
-                  </label>
-                  <select
-                    id="lib-member-preview-select"
-                    value={selectedMember.id}
-                    onChange={(e) => setSelectedMemberId(e.target.value)}
-                    className="w-full sm:w-72 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium"
-                  >
-                    {members.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.full_name} ({m.member_code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {members.length > 1 && (
+                  <div className="w-full sm:w-auto min-w-0">
+                    <label htmlFor="lib-member-preview-select" className="sr-only">
+                      Pilih anggota untuk pratinjau kartu
+                    </label>
+                    <select
+                      id="lib-member-preview-select"
+                      value={selectedMember.id}
+                      onChange={(e) => setSelectedMemberId(e.target.value)}
+                      className="w-full sm:w-72 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium"
+                    >
+                      {members.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.full_name} ({m.member_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
               <div className="max-w-xl">
                 <DigitalLibraryCard member={selectedMember} />
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal Edit Buku */}
+      {canManage && editingBook && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-book-modal-title"
+          onClick={() => {
+            if (submittingAction !== 'UPDATE_BOOK') setEditingBook(null);
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="edit-book-modal-title" className="text-base font-bold text-slate-900">
+                  Edit Koleksi Buku / E-Book
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Perbarui informasi katalog buku yang dipilih.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={submittingAction === 'UPDATE_BOOK'}
+                onClick={() => setEditingBook(null)}
+                aria-label="Tutup modal edit buku"
+                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateBook} className="space-y-3">
+              <div className="space-y-1">
+                <label
+                  htmlFor="edit-book-title"
+                  className="block text-[11px] font-semibold text-slate-700"
+                >
+                  Judul Buku / E-Book
+                </label>
+                <input
+                  id="edit-book-title"
+                  required
+                  minLength={2}
+                  disabled={submittingAction === 'UPDATE_BOOK'}
+                  value={editBookForm.title}
+                  onChange={(e) => setEditBookForm({ ...editBookForm, title: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="edit-book-author"
+                  className="block text-[11px] font-semibold text-slate-700"
+                >
+                  Penulis / Pengarang
+                </label>
+                <input
+                  id="edit-book-author"
+                  required
+                  minLength={2}
+                  disabled={submittingAction === 'UPDATE_BOOK'}
+                  value={editBookForm.author}
+                  onChange={(e) => setEditBookForm({ ...editBookForm, author: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label
+                    htmlFor="edit-book-format"
+                    className="block text-[11px] font-semibold text-slate-700"
+                  >
+                    Format Buku
+                  </label>
+                  <select
+                    id="edit-book-format"
+                    disabled={submittingAction === 'UPDATE_BOOK'}
+                    value={editBookForm.book_format}
+                    onChange={(e) =>
+                      setEditBookForm({
+                        ...editBookForm,
+                        book_format: e.target.value as typeof editBookForm.book_format,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                  >
+                    <option value="KEDUANYA">Fisik &amp; E-Book</option>
+                    <option value="FISIK">Fisik Saja</option>
+                    <option value="EBOOK">E-Book Saja</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="edit-book-copies"
+                    className="block text-[11px] font-semibold text-slate-700"
+                  >
+                    Jumlah Eksemplar
+                  </label>
+                  <input
+                    id="edit-book-copies"
+                    type="number"
+                    min={1}
+                    required
+                    disabled={submittingAction === 'UPDATE_BOOK'}
+                    value={editBookForm.total_copies}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setEditBookForm({
+                        ...editBookForm,
+                        total_copies: Number.isFinite(val) ? Math.max(1, val) : 1,
+                      });
+                    }}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="edit-book-category"
+                  className="block text-[11px] font-semibold text-slate-700"
+                >
+                  Kategori (Opsional)
+                </label>
+                <input
+                  id="edit-book-category"
+                  disabled={submittingAction === 'UPDATE_BOOK'}
+                  placeholder="mis. Pelajaran, Fiksi, Referensi"
+                  value={editBookForm.category}
+                  onChange={(e) => setEditBookForm({ ...editBookForm, category: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="edit-book-cover"
+                  className="block text-[11px] font-semibold text-slate-700"
+                >
+                  URL Cover Buku (Opsional)
+                </label>
+                <input
+                  id="edit-book-cover"
+                  disabled={submittingAction === 'UPDATE_BOOK'}
+                  placeholder="https://..."
+                  value={editBookForm.cover_url}
+                  onChange={(e) => setEditBookForm({ ...editBookForm, cover_url: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                />
+              </div>
+
+              {editBookForm.book_format !== 'FISIK' && (
+                <div className="space-y-1">
+                  <label
+                    htmlFor="edit-book-ebook"
+                    className="block text-[11px] font-semibold text-slate-700"
+                  >
+                    URL E-Book PDF
+                  </label>
+                  <input
+                    id="edit-book-ebook"
+                    disabled={submittingAction === 'UPDATE_BOOK'}
+                    placeholder="https://..."
+                    value={editBookForm.ebook_file_url}
+                    onChange={(e) =>
+                      setEditBookForm({ ...editBookForm, ebook_file_url: e.target.value })
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="edit-book-desc"
+                  className="block text-[11px] font-semibold text-slate-700"
+                >
+                  Deskripsi Singkat (Opsional)
+                </label>
+                <textarea
+                  id="edit-book-desc"
+                  rows={2}
+                  disabled={submittingAction === 'UPDATE_BOOK'}
+                  value={editBookForm.description}
+                  onChange={(e) =>
+                    setEditBookForm({ ...editBookForm, description: e.target.value })
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-xs text-slate-700 font-medium py-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  disabled={submittingAction === 'UPDATE_BOOK'}
+                  checked={editBookForm.is_premium}
+                  onChange={(e) =>
+                    setEditBookForm({ ...editBookForm, is_premium: e.target.checked })
+                  }
+                  className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                />
+                <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Tandai sebagai Buku Premium (Butuh Izin Admin)</span>
+              </label>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200/80">
+                <button
+                  type="button"
+                  disabled={submittingAction === 'UPDATE_BOOK'}
+                  onClick={() => setEditingBook(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={Boolean(submittingAction)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition disabled:opacity-60"
+                >
+                  {submittingAction === 'UPDATE_BOOK' ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5" />
+                  )}
+                  <span>Simpan Perubahan</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Konfirmasi Hapus Buku (Satuan / Batch) */}
+      {canManage && deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-book-modal-title"
+          onClick={() => {
+            if (!submittingAction) setDeleteTarget(null);
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h2 id="delete-book-modal-title" className="text-base font-bold text-slate-900">
+                  {deleteTarget.mode === 'single'
+                    ? 'Hapus Koleksi Buku?'
+                    : `Hapus ${deleteTarget.ids.length} Buku Terpilih?`}
+                </h2>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {deleteTarget.mode === 'single' ? (
+                    <>
+                      Buku <strong>{deleteTarget.book.title}</strong> akan dihapus permanen dari
+                      katalog perpustakaan beserta riwayat izin akses premiumnya.
+                    </>
+                  ) : (
+                    <>
+                      Sebanyak <strong>{deleteTarget.ids.length} buku</strong> yang dipilih akan
+                      dihapus permanen dari katalog perpustakaan beserta riwayat izin akses
+                      premiumnya.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200/80">
+              <button
+                type="button"
+                disabled={Boolean(submittingAction)}
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(submittingAction)}
+                onClick={() => void handleConfirmDeleteBook()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition disabled:opacity-60"
+              >
+                {(submittingAction === 'DELETE_BOOK' ||
+                  submittingAction === 'DELETE_BOOKS_BATCH') && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                )}
+                <span>Ya, Hapus Permanen</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

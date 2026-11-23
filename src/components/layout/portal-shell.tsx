@@ -786,9 +786,8 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
           {
             href: '/portal/layanan/perpustakaan/anggota',
             path: '/portal/layanan/perpustakaan/anggota',
-            label: 'Anggota & Kartu E-Library',
+            label: 'Kartu & Anggota E-Library',
             icon: <Users className="w-3 h-3" />,
-            allowedRoles: PERMISSIONS.PERPUSTAKAAN_ANGGOTA_VIEW,
           },
         ],
       },
@@ -877,6 +876,13 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         allowedRoles: ['SISWA'],
       },
       {
+        href: '/portal/siswa/guru-wali',
+        path: '/portal/siswa/guru-wali',
+        label: 'Bimbingan Guru Wali',
+        icon: <HeartHandshake className="w-3.5 h-3.5" />,
+        allowedRoles: ['SISWA'],
+      },
+      {
         href: '/portal/siswa/nilai',
         path: '/portal/siswa/nilai',
         label: 'Nilai & Penilaian',
@@ -930,6 +936,13 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
         path: '/portal/orang-tua/bk',
         label: 'Catatan BK Anak',
         icon: <ShieldAlert className="w-3.5 h-3.5" />,
+        allowedRoles: ['ORANG_TUA'],
+      },
+      {
+        href: '/portal/orang-tua/guru-wali',
+        path: '/portal/orang-tua/guru-wali',
+        label: 'Bimbingan Guru Wali Anak',
+        icon: <HeartHandshake className="w-3.5 h-3.5" />,
         allowedRoles: ['ORANG_TUA'],
       },
       {
@@ -1106,17 +1119,9 @@ const ACCORDION_GROUPS: AccordionGroup[] = [
       },
       {
         id: 'siswa-biodata-dokumen',
-        label: 'Biodata & Dokumen Siswa',
+        label: 'Biodata & Kartu Siswa',
         icon: <GraduationCap className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SISWA',
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'KEPALA_TU',
-          'STAF_TU',
-          'WAKA_KESISWAAN',
-        ],
+        allowedRoles: PERMISSIONS.SISWA_BIODATA_VIEW,
         children: [
           {
             href: '/portal/siswa/biodata-dokumen/biodata',
@@ -1258,6 +1263,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/portal/siswa/spp': 'Tagihan & Pembayaran SPP',
   '/portal/siswa/ujian': 'Jadwal & Ruang Ujian',
   '/portal/siswa/bk': 'Catatan Bimbingan Konseling (BK)',
+  '/portal/siswa/guru-wali': 'Rekam Jejak Bimbingan Guru Wali',
   '/portal/gtk/biodata-dokumen': 'Biodata & Dokumen GTK',
   '/portal/gtk/biodata-dokumen/biodata': 'Biodata Lengkap GTK',
   '/portal/gtk/biodata-dokumen/dokumen': 'Scan Dokumen Pribadi GTK',
@@ -1275,6 +1281,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/portal/orang-tua/absensi': 'Riwayat Absensi Anak',
   '/portal/orang-tua/spp': 'Tagihan & Pembayaran SPP Anak',
   '/portal/orang-tua/bk': 'Catatan BK Anak',
+  '/portal/orang-tua/guru-wali': 'Rekam Jejak Bimbingan Guru Wali Anak',
   '/portal/akademik/kelas-jadwal/piket-kelas': 'Manajemen Jadwal Piket Kelas',
   '/portal/akademik/kkm': 'Pengaturan Nilai Minimal Ketuntasan (KKM)',
   '/portal/penilaian/monitoring': 'Monitoring Penilaian Seluruh Mapel',
@@ -1553,14 +1560,25 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
     };
   });
 
+  function canAccessMenuHref(href?: string): boolean {
+    if (!authLoaded || !user || userRoles.length === 0 || !href) return false;
+    const cleanPath = href.split('?')[0].replace(/\/$/, '') || '/portal';
+    return canAccessCurrentView(cleanPath);
+  }
+
   const visibleGroups = [
     ...ACCORDION_GROUPS.map((group) => ({
       ...group,
       items: group.items
-        .filter(hasRoleAccess)
+        .filter((item) => hasRoleAccess(item) && (!item.href || canAccessMenuHref(item.href)))
         .map((item) =>
           item.children
-            ? { ...item, children: item.children.filter(hasRoleAccess) }
+            ? {
+                ...item,
+                children: item.children.filter(
+                  (ch) => hasRoleAccess(ch) && (!ch.href || canAccessMenuHref(ch.href))
+                ),
+              }
             : item
         )
         .filter((item) => !item.children || item.children.length > 0),
@@ -1568,33 +1586,48 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
     ...dynamicPenilaianGroups,
   ];
 
-  const commandItems: CommandPaletteItem[] = [
-    { href: '/portal', label: 'Dashboard Portal', group: 'Utama', keywords: 'beranda home ringkasan' },
-    ...visibleGroups.flatMap((grp) =>
-      grp.items.flatMap((it) => {
-        if (it.children && it.children.length > 0) {
-          return it.children
-            .filter((ch) => Boolean(ch.href))
-            .map((ch) => ({
-              href: ch.href!,
-              label: ch.label,
-              group: `${grp.label} • ${it.label}`,
-              keywords: `${grp.label} ${it.label} ${ch.label}`,
-            }));
-        }
-        return it.href
-          ? [
-              {
-                href: it.href,
-                label: it.label,
-                group: grp.label,
-                keywords: `${grp.label} ${it.label}`,
-              },
-            ]
-          : [];
-      })
-    ),
-  ];
+  const commandItems: CommandPaletteItem[] = (() => {
+    if (!authLoaded || !user || userRoles.length === 0) return [];
+    const seen = new Set<string>();
+    const raw: CommandPaletteItem[] = [
+      {
+        href: '/portal',
+        label: 'Dashboard Portal',
+        group: 'Utama',
+        keywords: 'beranda home ringkasan',
+      },
+      ...visibleGroups.flatMap((grp) =>
+        grp.items.flatMap((it) => {
+          if (it.children && it.children.length > 0) {
+            return it.children
+              .filter((ch) => Boolean(ch.href) && canAccessMenuHref(ch.href))
+              .map((ch) => ({
+                href: ch.href!,
+                label: ch.label,
+                group: `${grp.label} • ${it.label}`,
+                keywords: `${grp.label} ${it.label} ${ch.label}`,
+              }));
+          }
+          return it.href && canAccessMenuHref(it.href)
+            ? [
+                {
+                  href: it.href,
+                  label: it.label,
+                  group: grp.label,
+                  keywords: `${grp.label} ${it.label}`,
+                },
+              ]
+            : [];
+        })
+      ),
+    ];
+
+    return raw.filter((item) => {
+      if (seen.has(item.href)) return false;
+      seen.add(item.href);
+      return true;
+    });
+  })();
 
   const normalizedSearch = menuSearch.trim().toLowerCase();
   const filteredVisibleGroups = useMemo(() => {
@@ -2033,7 +2066,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
 
       {/* Command Palette (Ctrl+K / Cmd+K) */}
       <PortalCommandPalette
-        open={commandOpen}
+        open={commandOpen && authLoaded && Boolean(user)}
         onClose={() => setCommandOpen(false)}
         items={commandItems}
       />

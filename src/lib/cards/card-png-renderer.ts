@@ -384,7 +384,7 @@ export async function renderStudentCardFrontCanvas(
 
   ctx.fillStyle = '#0f172a';
   ctx.font = 'bold 34px "Segoe UI", system-ui, sans-serif';
-  ctx.fillText(student.full_name.toUpperCase(), infoX, 224, 510);
+  ctx.fillText(student.full_name, infoX, 224, 510);
 
   // Divider
   ctx.fillStyle = '#e2e8f0';
@@ -572,8 +572,9 @@ export async function renderLibraryCardFrontCanvas(
   canvas.height = CARD_HEIGHT;
   const ctx = canvas.getContext('2d')!;
 
-  const [logoImg, qrImg] = await Promise.all([
+  const [logoImg, photoImg, qrImg] = await Promise.all([
     loadImageSafe(institution.logo_url),
+    loadImageSafe(member.avatar_url || member.photo_url),
     generateQrImage(
       buildVerificationUrl({
         ref: member.member_code,
@@ -637,23 +638,35 @@ export async function renderLibraryCardFrontCanvas(
   ctx.fillText(member.member_type.toUpperCase(), 884, 66);
   ctx.restore();
 
-  // Avatar badge left
+  // Avatar badge / photo left
   const avX = 44;
   const avY = 198;
   const avW = 192;
   const avH = 220;
   ctx.save();
   drawRoundedRect(ctx, avX, avY, avW, avH, 24);
-  const avGrad = ctx.createLinearGradient(avX, avY, avX + avW, avY + avH);
-  avGrad.addColorStop(0, '#1e3a8a');
-  avGrad.addColorStop(1, '#0284c7');
-  ctx.fillStyle = avGrad;
-  ctx.fill();
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 64px "Segoe UI", system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(getInitials(member.full_name), avX + avW / 2, avY + avH / 2);
+  ctx.clip();
+  if (photoImg) {
+    ctx.drawImage(photoImg, avX, avY, avW, avH);
+  } else {
+    const avGrad = ctx.createLinearGradient(avX, avY, avX + avW, avY + avH);
+    avGrad.addColorStop(0, '#1e3a8a');
+    avGrad.addColorStop(1, '#0284c7');
+    ctx.fillStyle = avGrad;
+    ctx.fillRect(avX, avY, avW, avH);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 64px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(getInitials(member.full_name), avX + avW / 2, avY + avH / 2);
+  }
+  ctx.restore();
+
+  ctx.save();
+  drawRoundedRect(ctx, avX, avY, avW, avH, 24);
+  ctx.strokeStyle = '#bae6fd';
+  ctx.lineWidth = 3;
+  ctx.stroke();
   ctx.restore();
 
   // Member code pill under avatar
@@ -682,7 +695,7 @@ export async function renderLibraryCardFrontCanvas(
 
   ctx.fillStyle = '#0f172a';
   ctx.font = 'bold 34px "Segoe UI", system-ui, sans-serif';
-  ctx.fillText(member.full_name.toUpperCase(), infoX, 226, 510);
+  ctx.fillText(member.full_name, infoX, 226, 510);
 
   ctx.fillStyle = '#e2e8f0';
   ctx.fillRect(infoX, 276, 490, 2);

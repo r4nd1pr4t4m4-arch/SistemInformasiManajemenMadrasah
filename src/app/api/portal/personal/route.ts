@@ -32,6 +32,8 @@ export async function GET(request: NextRequest) {
       honorariums: [],
       bkRecords: [],
       examRooms: [],
+      guruWaliTeacher: null,
+      guruWaliLogs: [],
     });
   }
 
@@ -357,6 +359,49 @@ export async function GET(request: NextRequest) {
     examRooms = data || [];
   }
 
+  // 10. Rekam Jejak Bimbingan Guru Wali (siswa / orang-tua)
+  let guruWaliTeacher: { full_name?: string | null } | null = null;
+  let guruWaliLogs: Array<Record<string, unknown>> = [];
+  if (wants('guru-wali') && (scope === 'siswa' || scope === 'orang-tua') && activeStudent?.id) {
+    const { data: assignRows } = await supabase
+      .from('guru_wali_assignments')
+      .select(
+        'id, teacher:teachers_staff(full_name), academic_year:academic_years(name, is_active)'
+      )
+      .eq('student_id', activeStudent.id as string)
+      .order('created_at', { ascending: false });
+
+    const assigns = assignRows || [];
+    if (assigns.length > 0) {
+      const activeAssign =
+        assigns.find((a) => {
+          const ay = (Array.isArray(a.academic_year) ? a.academic_year[0] : a.academic_year) as
+            | { is_active?: boolean }
+            | null
+            | undefined;
+          return Boolean(ay?.is_active);
+        }) || assigns[0];
+
+      const t = (Array.isArray(activeAssign.teacher)
+        ? activeAssign.teacher[0]
+        : activeAssign.teacher) as { full_name?: string | null } | null | undefined;
+      if (t?.full_name) {
+        guruWaliTeacher = { full_name: t.full_name };
+      }
+
+      const assignIds = assigns.map((a) => a.id as string);
+      const { data: logRows } = await supabase
+        .from('guru_wali_mentoring_logs')
+        .select(
+          'id, mentoring_date, topic, aspect, notes, recommendation, assignment:guru_wali_assignments(teacher:teachers_staff(full_name))'
+        )
+        .in('assignment_id', assignIds)
+        .order('mentoring_date', { ascending: false })
+        .limit(100);
+      guruWaliLogs = logRows || [];
+    }
+  }
+
   return NextResponse.json({
     scope,
     profile: {
@@ -379,5 +424,7 @@ export async function GET(request: NextRequest) {
     honorariums,
     bkRecords,
     examRooms,
+    guruWaliTeacher,
+    guruWaliLogs,
   });
 }
