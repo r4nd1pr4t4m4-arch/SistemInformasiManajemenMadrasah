@@ -6,6 +6,11 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { InstitutionLogo } from '@/components/ui/institution-logo';
 import { LoadingState, PermissionDeniedState } from '@/components/ui/state-views';
+import {
+  PortalCommandPalette,
+  type CommandPaletteItem,
+} from '@/components/layout/portal-command-palette';
+import { PortalMobileNav } from '@/components/layout/portal-mobile-nav';
 import { useFocusTrap } from '@/lib/hooks/use-focus-trap';
 import {
   Award,
@@ -1275,8 +1280,21 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [menuSearch, setMenuSearch] = useState('');
+  const [commandOpen, setCommandOpen] = useState(false);
   const logoutDialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(logoutDialogRef, logoutModalOpen);
+
+  // Pintasan keyboard global Ctrl+K / Cmd+K untuk Command Palette
+  useEffect(() => {
+    const onShortcut = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onShortcut);
+    return () => window.removeEventListener('keydown', onShortcut);
+  }, []);
 
   // Track user manual accordion toggles; active route groups auto-open unless manually collapsed
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -1508,6 +1526,34 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         .filter((item) => !item.children || item.children.length > 0),
     })).filter((g) => g.items.length > 0),
     ...dynamicPenilaianGroups,
+  ];
+
+  const commandItems: CommandPaletteItem[] = [
+    { href: '/portal', label: 'Dashboard Portal', group: 'Utama', keywords: 'beranda home ringkasan' },
+    ...visibleGroups.flatMap((grp) =>
+      grp.items.flatMap((it) => {
+        if (it.children && it.children.length > 0) {
+          return it.children
+            .filter((ch) => Boolean(ch.href))
+            .map((ch) => ({
+              href: ch.href!,
+              label: ch.label,
+              group: `${grp.label} • ${it.label}`,
+              keywords: `${grp.label} ${it.label} ${ch.label}`,
+            }));
+        }
+        return it.href
+          ? [
+              {
+                href: it.href,
+                label: it.label,
+                group: grp.label,
+                keywords: `${grp.label} ${it.label}`,
+              },
+            ]
+          : [];
+      })
+    ),
   ];
 
   const normalizedSearch = menuSearch.trim().toLowerCase();
@@ -1836,6 +1882,19 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setCommandOpen(true)}
+              aria-label="Buka pencarian cepat menu (Ctrl+K)"
+              title="Pencarian Cepat Menu (Ctrl+K)"
+              className="hidden md:inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/85 hover:bg-white border border-slate-200/80 text-xs font-medium text-slate-600 transition"
+            >
+              <Search className="w-3.5 h-3.5 text-slate-500" />
+              <span>Cari menu...</span>
+              <kbd className="px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-500">
+                Ctrl K
+              </kbd>
+            </button>
             {user && (
               <Link
                 href="/portal/akun/profil"
@@ -1896,7 +1955,7 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         </main>
 
         {/* Portal Footer */}
-        <footer className="border-t border-slate-200/70 bg-white/70 backdrop-blur px-4 sm:px-6 py-4 text-[11px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
+        <footer className="border-t border-slate-200/70 bg-white/70 backdrop-blur px-4 sm:px-6 pt-4 pb-20 lg:pb-4 text-[11px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
           <span>© {currentYear} SIMMS — Sistem Informasi Manajemen Madrasah &amp; Sekolah</span>
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 font-medium">
             <Link href="/" className="hover:text-emerald-700 transition">
@@ -1911,6 +1970,22 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
           </div>
         </footer>
       </div>
+
+      {/* Command Palette (Ctrl+K / Cmd+K) */}
+      <PortalCommandPalette
+        open={commandOpen}
+        onClose={() => setCommandOpen(false)}
+        items={commandItems}
+      />
+
+      {/* Mobile Bottom Navigation Bar */}
+      {authLoaded && (
+        <PortalMobileNav
+          pathname={normalizedPath}
+          userRoles={userRoles}
+          onOpenMenu={() => setSidebarOpen(true)}
+        />
+      )}
 
       {/* Modal Konfirmasi Logout */}
       {logoutModalOpen && (
