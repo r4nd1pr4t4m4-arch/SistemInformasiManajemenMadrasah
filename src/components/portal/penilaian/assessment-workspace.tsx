@@ -1,20 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AlertTriangle,
-  BookOpen,
-  FileSpreadsheet,
-  FileText,
-  Loader2,
-  Pencil,
-  Plus,
-  Save,
-  Search,
-  Settings2,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import {
   AkademikErrorBanner,
   AkademikLoading,
@@ -23,67 +10,41 @@ import {
 } from '@/components/portal/akademik/akademik-ui';
 import { PenilaianConfirmModal } from '@/components/portal/penilaian/confirm-modal';
 import {
-  computeAverageScore,
-  computeExamEffectiveScore,
   formatChapterLabel,
   sortClassroomsAsc,
   type AssessmentCategory,
   type AssessmentExamType,
-  type AssessmentMenuType,
   type ColumnNamingMode,
-  type TaughtClassroomSummary,
 } from '@/lib/domain/penilaian';
 import {
   exportAssessmentToPdf,
   exportAssessmentToXlsx,
 } from '@/lib/domain/penilaian-export';
-
-interface StudentRow {
-  id: string;
-  nis: string | null;
-  nisn: string | null;
-  full_name: string;
-  gender: string | null;
-}
-
-interface ChapterRow {
-  id: string;
-  chapter_number: number;
-  title: string | null;
-  sort_order: number;
-}
-
-interface ColumnRow {
-  id: string;
-  category: AssessmentCategory;
-  chapter_id: string | null;
-  naming_mode: ColumnNamingMode;
-  label: string;
-  sort_order: number;
-}
-
-interface ExamScoreState {
-  score: string;
-  remedial_score: string;
-  enrichment_score: string;
-  notes: string;
-}
-
-interface AssessmentWorkspaceProps {
-  subjectId: string;
-  type: Exclude<AssessmentMenuType, 'RAPORT'>;
-  initialChapterId?: string | null;
-  initialClassroomId?: string | null;
-  classrooms: TaughtClassroomSummary[];
-  onChaptersChanged?: () => void;
-}
-
-function parseNumericInput(val: string): number | null {
-  const trimmed = val.trim();
-  if (!trimmed) return null;
-  const num = Number(trimmed);
-  return Number.isNaN(num) ? null : num;
-}
+import {
+  AssessmentHeader,
+  ChapterManagementCard,
+  ColumnManagementCard,
+  StudentSearchBar,
+} from './assessment/assessment-controls';
+import { ColumnScoreSection } from './assessment/column-score-section';
+import { ExamColumnToggles, ExamScoreSection } from './assessment/exam-score-section';
+import {
+  EMPTY_EXAM_ROW,
+  buildAssessmentExportData,
+  computeValidationErrors,
+  parseNumericInput,
+  type AcademicYearInfo,
+  type AssessmentWorkspaceProps,
+  type ChapterRow,
+  type ClassroomInfo,
+  type ColumnRow,
+  type ConfirmModalState,
+  type ExamConfig,
+  type ExamScoreState,
+  type KkmInfo,
+  type StudentRow,
+  type SubjectInfo,
+} from './assessment/types';
 
 export function AssessmentWorkspace({
   subjectId,
@@ -100,9 +61,7 @@ export function AssessmentWorkspace({
   const [selectedClassroomId, setSelectedClassroomId] = useState<string>(
     initialClassroomId || sortedClassrooms[0]?.id || ''
   );
-  const [selectedChapterId, setSelectedChapterId] = useState<string | null>(
-    initialChapterId
-  );
+  const [selectedChapterId, setSelectedChapterId] = useState<string | null>(initialChapterId);
 
   const effectiveClassroomId = sortedClassrooms.some((c) => c.id === selectedClassroomId)
     ? selectedClassroomId
@@ -114,36 +73,33 @@ export function AssessmentWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [studentSearch, setStudentSearch] = useState('');
 
-  const [academicYear, setAcademicYear] = useState<{ name: string; semester: string } | null>(null);
-  const [subjectInfo, setSubjectInfo] = useState<{ code: string; name: string } | null>(null);
-  const [classroomInfo, setClassroomInfo] = useState<{ id: string; name: string; grade_level: string } | null>(null);
-  const [kkm, setKkm] = useState<{ mode: string; minScore: number }>({
-    mode: 'PER_GRADE',
-    minScore: 75,
-  });
+  const [academicYear, setAcademicYear] = useState<AcademicYearInfo | null>(null);
+  const [subjectInfo, setSubjectInfo] = useState<SubjectInfo | null>(null);
+  const [classroomInfo, setClassroomInfo] = useState<ClassroomInfo | null>(null);
+  const [kkm, setKkm] = useState<KkmInfo>({ mode: 'PER_GRADE', minScore: 75 });
   const [canEdit, setCanEdit] = useState(false);
 
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [chapters, setChapters] = useState<ChapterRow[]>([]);
   const [columns, setColumns] = useState<ColumnRow[]>([]);
-  // key: `${columnId}::${studentId}` -> string
   const [columnScoresMap, setColumnScoresMap] = useState<Record<string, string>>({});
   const [initialColumnScoresMap, setInitialColumnScoresMap] = useState<Record<string, string>>({});
 
   // STS / SAS states
-  const [examConfig, setExamConfig] = useState({
+  const [examConfig, setExamConfig] = useState<ExamConfig>({
     enable_remedial: false,
     enable_enrichment: false,
     enable_notes: false,
   });
-  const [initialExamConfig, setInitialExamConfig] = useState({
+  const [initialExamConfig, setInitialExamConfig] = useState<ExamConfig>({
     enable_remedial: false,
     enable_enrichment: false,
     enable_notes: false,
   });
-  // key: studentId -> ExamScoreState
   const [examScoresMap, setExamScoresMap] = useState<Record<string, ExamScoreState>>({});
-  const [initialExamScoresMap, setInitialExamScoresMap] = useState<Record<string, ExamScoreState>>({});
+  const [initialExamScoresMap, setInitialExamScoresMap] = useState<Record<string, ExamScoreState>>(
+    {}
+  );
 
   // Chapter management form
   const [showChapterForm, setShowChapterForm] = useState(false);
@@ -159,36 +115,21 @@ export function AssessmentWorkspace({
   const [editingColMode, setEditingColMode] = useState<ColumnNamingMode>('AUTO');
   const [editingColLabel, setEditingColLabel] = useState('');
 
-  // Custom Confirmation Modal state
-  const [confirmModal, setConfirmModal] = useState<{
-    open: boolean;
-    title: string;
-    description: string;
-    details?: string[];
-    variant: 'danger' | 'warning';
-    confirmLabel: string;
-    onConfirm: () => void | Promise<void>;
-  } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
 
   const isExam = type === 'STS' || type === 'SAS';
 
   const applyWorkspaceData = useCallback((data: Record<string, unknown>) => {
-    setAcademicYear(data.academicYear as { name: string; semester: string } | null);
-    setSubjectInfo(data.subject as { code: string; name: string } | null);
-    setClassroomInfo(
-      data.classroom as { id: string; name: string; grade_level: string } | null
-    );
-    setKkm(data.kkm as { mode: string; minScore: number });
+    setAcademicYear(data.academicYear as AcademicYearInfo | null);
+    setSubjectInfo(data.subject as SubjectInfo | null);
+    setClassroomInfo(data.classroom as ClassroomInfo | null);
+    setKkm(data.kkm as KkmInfo);
     setCanEdit(Boolean(data.canEdit));
     const studentList = (data.students as StudentRow[]) || [];
     setStudents(studentList);
 
     if (data.type === 'STS' || data.type === 'SAS') {
-      const cfg = (data.examConfig as {
-        enable_remedial: boolean;
-        enable_enrichment: boolean;
-        enable_notes: boolean;
-      }) || {
+      const cfg = (data.examConfig as ExamConfig) || {
         enable_remedial: false,
         enable_enrichment: false,
         enable_notes: false,
@@ -354,85 +295,25 @@ export function AssessmentWorkspace({
     const q = studentSearch.trim().toLowerCase();
     if (!q) return students;
     return students.filter(
-      (s) =>
-        s.full_name.toLowerCase().includes(q) ||
-        (s.nis || '').toLowerCase().includes(q)
+      (s) => s.full_name.toLowerCase().includes(q) || (s.nis || '').toLowerCase().includes(q)
     );
   }, [students, studentSearch]);
 
-  // Validation checks
-  const validationErrors = useMemo(() => {
-    const errors: string[] = [];
-    if (!isExam) {
-      for (const st of students) {
-        for (const col of columns) {
-          const raw = columnScoresMap[`${col.id}::${st.id}`] ?? '';
-          const num = parseNumericInput(raw);
-          if (raw.trim() !== '' && num === null) {
-            errors.push(`${st.full_name} (${col.label}): nilai harus berupa angka.`);
-          } else if (num !== null && (num < 0 || num > 100)) {
-            errors.push(`${st.full_name} (${col.label}): nilai harus 0–100.`);
-          } else if (
-            num !== null &&
-            (type === 'FORMATIF' || type === 'SUMATIF') &&
-            num < kkm.minScore
-          ) {
-            errors.push(
-              `${st.full_name} (${col.label}): nilai ${num} tidak boleh di bawah KKM (${kkm.minScore}).`
-            );
-          }
-        }
-      }
-    } else {
-      for (const st of students) {
-        const row = examScoresMap[st.id];
-        if (!row) continue;
-        const score = parseNumericInput(row.score);
-        const rem = parseNumericInput(row.remedial_score);
-        const enr = parseNumericInput(row.enrichment_score);
+  const validationErrors = useMemo(
+    () =>
+      computeValidationErrors({
+        isExam,
+        type,
+        students,
+        columns,
+        columnScoresMap,
+        examScoresMap,
+        kkmMinScore: kkm.minScore,
+      }),
+    [isExam, students, columns, columnScoresMap, examScoresMap, type, kkm.minScore]
+  );
 
-        if (row.score.trim() !== '' && (score === null || score < 0 || score > 100)) {
-          errors.push(`${st.full_name}: nilai utama harus 0–100.`);
-        }
-        if (
-          row.remedial_score.trim() !== '' &&
-          (rem === null || rem < 0 || rem > 100)
-        ) {
-          errors.push(`${st.full_name}: nilai remedial harus 0–100.`);
-        }
-        if (
-          row.enrichment_score.trim() !== '' &&
-          (enr === null || enr < 0 || enr > 100)
-        ) {
-          errors.push(`${st.full_name}: nilai pengayaan harus 0–100.`);
-        }
-        if (score !== null && score < kkm.minScore && rem === null) {
-          errors.push(
-            `${st.full_name}: nilai (${score}) di bawah KKM (${kkm.minScore}), kolom Remedial wajib diisi.`
-          );
-        }
-        if (((score !== null && score < kkm.minScore) || rem !== null) && enr !== null) {
-          errors.push(
-            `${st.full_name}: tidak dapat mengisi Pengayaan jika memiliki/wajib Remedial.`
-          );
-        }
-        if (rem !== null) {
-          const finalRem = score !== null ? Math.round(((score + rem) / 2) * 100) / 100 : rem;
-          if (finalRem < kkm.minScore) {
-            errors.push(
-              `${st.full_name}: nilai akhir (${finalRem}) masih di bawah KKM (${kkm.minScore}). Naikkan nilai Remedial agar nilai akhir >= ${kkm.minScore}.`
-            );
-          }
-        }
-      }
-    }
-    return errors;
-  }, [isExam, students, columns, columnScoresMap, examScoresMap, type, kkm.minScore]);
-
-  function runWithDirtyCheck(
-    actionLabel: string,
-    proceed: () => void | Promise<void>
-  ) {
+  function runWithDirtyCheck(actionLabel: string, proceed: () => void | Promise<void>) {
     if (!hasUnsavedChanges) {
       void proceed();
       return;
@@ -672,7 +553,8 @@ export function AssessmentWorkspace({
     setSaving(true);
     try {
       if (!isExam) {
-        const scoresPayload: Array<{ column_id: string; student_id: string; score: number | null }> = [];
+        const scoresPayload: Array<{ column_id: string; student_id: string; score: number | null }> =
+          [];
         for (const st of students) {
           for (const col of columns) {
             const raw = columnScoresMap[`${col.id}::${st.id}`] ?? '';
@@ -698,12 +580,7 @@ export function AssessmentWorkspace({
         if (!res.ok) throw new Error(data.error || 'Gagal menyimpan nilai.');
       } else {
         const scoresPayload = students.map((st) => {
-          const row = examScoresMap[st.id] || {
-            score: '',
-            remedial_score: '',
-            enrichment_score: '',
-            notes: '',
-          };
+          const row = examScoresMap[st.id] || EMPTY_EXAM_ROW;
           return {
             student_id: st.id,
             score: parseNumericInput(row.score),
@@ -736,71 +613,22 @@ export function AssessmentWorkspace({
     }
   }
 
-  function buildExportData() {
-    const activeChapter = chapters.find((c) => c.id === selectedChapterId);
-    const typeTitleMap: Record<Exclude<AssessmentMenuType, 'RAPORT'>, string> = {
-      FORMATIF: activeChapter
-        ? `Formatif (${formatChapterLabel(activeChapter.chapter_number, activeChapter.title)})`
-        : 'Formatif (Lingkup BAB)',
-      SUMATIF: 'Sumatif (Lingkup Materi)',
-      STS: 'STS (Sumatif Tengah Semester)',
-      SAS: 'SAS (Sumatif Akhir Semester)',
-      PRAKTIK: 'Praktik',
-    };
-
-    const title = `Penilaian ${subjectInfo?.name || ''} — ${typeTitleMap[type]}`;
-    const subtitle = `Kelas ${classroomInfo?.name || ''} | TA ${academicYear?.name || ''} (${academicYear?.semester || ''}) | KKM: ${kkm.minScore}`;
-    const safeName = `nilai-${subjectInfo?.code || 'mapel'}-${classroomInfo?.name || 'kelas'}-${type.toLowerCase()}`
-      .replace(/[^a-zA-Z0-9-_]/g, '_');
-
-    if (!isExam) {
-      const headers = ['No', 'NIS', 'Nama Siswa', ...columns.map((c) => c.label), 'Rata-rata'];
-      const rows = students.map((st, idx) => {
-        const vals = columns.map((col) => parseNumericInput(columnScoresMap[`${col.id}::${st.id}`] ?? ''));
-        const avg = computeAverageScore(vals);
-        return [
-          idx + 1,
-          st.nis || '-',
-          st.full_name,
-          ...vals.map((v) => (v !== null ? v : '-')),
-          avg !== null ? avg : '-',
-        ];
-      });
-      return { fileName: safeName, title, subtitle, headers, rows };
-    }
-
-    const showRem =
-      examConfig.enable_remedial ||
-      students.some((st) => {
-        const sc = parseNumericInput(examScoresMap[st.id]?.score ?? '');
-        return sc !== null && sc < kkm.minScore;
-      });
-    const headers = ['No', 'NIS', 'Nama Siswa', `Nilai ${type}`];
-    if (showRem) headers.push('Remedial');
-    if (examConfig.enable_enrichment) headers.push('Pengayaan');
-    if (examConfig.enable_notes) headers.push('Catatan');
-    headers.push('Nilai Akhir');
-
-    const rows = students.map((st, idx) => {
-      const row = examScoresMap[st.id];
-      const sc = parseNumericInput(row?.score ?? '');
-      const rem = parseNumericInput(row?.remedial_score ?? '');
-      const enr = parseNumericInput(row?.enrichment_score ?? '');
-      const effective = computeExamEffectiveScore(sc, rem, enr);
-      const base: Array<string | number> = [
-        idx + 1,
-        st.nis || '-',
-        st.full_name,
-        sc ?? '-',
-      ];
-      if (showRem) base.push(rem ?? '-');
-      if (examConfig.enable_enrichment) base.push(enr ?? '-');
-      if (examConfig.enable_notes) base.push(row?.notes.trim() || '-');
-      base.push(effective ?? '-');
-      return base;
+  function getExportData() {
+    return buildAssessmentExportData({
+      type,
+      isExam,
+      chapters,
+      selectedChapterId,
+      subjectInfo,
+      classroomInfo,
+      academicYear,
+      kkm,
+      students,
+      columns,
+      columnScoresMap,
+      examConfig,
+      examScoresMap,
     });
-
-    return { fileName: safeName, title, subtitle, headers, rows };
   }
 
   if (sortedClassrooms.length === 0) {
@@ -823,442 +651,105 @@ export function AssessmentWorkspace({
       <AkademikToast toast={toast} onDismiss={dismissToast} />
       <AkademikErrorBanner error={error} onRetry={loadWorkspace} />
 
-      {/* Header Card */}
-      <div className="glass-card rounded-3xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">
-              <BookOpen className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate max-w-[200px] sm:max-w-none">
-                {subjectInfo?.name || 'Mata Pelajaran'}
-              </span>
-            </span>
-            {academicYear && (
-              <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700">
-                TA {academicYear.name} ({academicYear.semester})
-              </span>
-            )}
-            <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800">
-              KKM: {kkm.minScore} ({kkm.mode === 'PER_SUBJECT_GRADE' ? 'Per Mapel & Tingkat' : 'Per Tingkat'})
-            </span>
-            {!canEdit && (
-              <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-800">
-                Mode Lihat (Read-Only)
-              </span>
-            )}
-            {hasUnsavedChanges && (
-              <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800">
-                Nilai belum disimpan
-              </span>
-            )}
-          </div>
-          <h2 className="text-base sm:text-lg font-bold text-slate-900">
-            {type === 'FORMATIF' && 'Formatif (Lingkup BAB)'}
-            {type === 'SUMATIF' && 'Sumatif (Lingkup Materi)'}
-            {type === 'STS' && 'STS (Sumatif Tengah Semester)'}
-            {type === 'SAS' && 'SAS (Sumatif Akhir Semester)'}
-            {type === 'PRAKTIK' && 'Penilaian Praktik'}
-          </h2>
-          <p className="text-xs text-slate-500 leading-relaxed">
-            {(type === 'FORMATIF' || type === 'SUMATIF') &&
-              `Aturan KKM: Nilai yang diinput tidak boleh kurang dari ${kkm.minScore}.`}
-            {isExam &&
-              `Aturan KKM: Jika nilai di bawah ${kkm.minScore}, kolom Remedial wajib diisi.`}
-            {type === 'PRAKTIK' &&
-              'Skala nilai 0–100. Guru dapat menambah kolom praktik sesuai kebutuhan.'}
-          </p>
-        </div>
+      <AssessmentHeader
+        type={type}
+        isExam={isExam}
+        subjectInfo={subjectInfo}
+        academicYear={academicYear}
+        kkm={kkm}
+        canEdit={canEdit}
+        hasUnsavedChanges={hasUnsavedChanges}
+        effectiveClassroomId={effectiveClassroomId}
+        sortedClassrooms={sortedClassrooms}
+        loading={loading}
+        saving={saving}
+        studentsCount={students.length}
+        columnsCount={columns.length}
+        validationErrorCount={validationErrors.length}
+        onSelectClassroom={(nextClassroomId) => {
+          runWithDirtyCheck('berpindah kelas', () => {
+            setLoading(true);
+            setSelectedChapterId(null);
+            setEditingColId(null);
+            setShowAddColumn(false);
+            setStudentSearch('');
+            setSelectedClassroomId(nextClassroomId);
+          });
+        }}
+        onExportPdf={() => exportAssessmentToPdf(getExportData())}
+        onExportXlsx={() => exportAssessmentToXlsx(getExportData())}
+        onSaveScores={handleSaveScores}
+      />
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
-          <select
-            value={effectiveClassroomId}
-            aria-label="Pilih kelas"
-            onChange={(e) => {
-              const nextClassroomId = e.target.value;
-              runWithDirtyCheck('berpindah kelas', () => {
-                setLoading(true);
-                setSelectedChapterId(null);
-                setEditingColId(null);
-                setShowAddColumn(false);
-                setStudentSearch('');
-                setSelectedClassroomId(nextClassroomId);
-              });
-            }}
-            className="w-full sm:w-auto px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          >
-            {sortedClassrooms.map((c) => (
-              <option key={c.id} value={c.id}>
-                Kelas {c.name} (Tingkat {c.gradeLevel})
-              </option>
-            ))}
-          </select>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => exportAssessmentToPdf(buildExportData())}
-              disabled={loading || students.length === 0 || (!isExam && columns.length === 0)}
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>PDF</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => exportAssessmentToXlsx(buildExportData())}
-              disabled={loading || students.length === 0 || (!isExam && columns.length === 0)}
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>XLSX</span>
-            </button>
-
-            {canEdit && (
-              <button
-                type="button"
-                onClick={handleSaveScores}
-                disabled={
-                  saving ||
-                  loading ||
-                  students.length === 0 ||
-                  validationErrors.length > 0 ||
-                  (!isExam && columns.length === 0)
-                }
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {saving ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Save className="w-3.5 h-3.5" />
-                )}
-                <span>{saving ? 'Menyimpan...' : 'Simpan Nilai'}</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* BAB Selector & Management for FORMATIF */}
       {type === 'FORMATIF' && (
-        <div className="glass-card rounded-3xl p-4 sm:p-5 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-bold text-slate-700">
-                Lingkup BAB (Tingkat {classroomInfo?.grade_level || '-'}):
-              </span>
-              {chapters.map((ch) => {
-                const isSelected = ch.id === selectedChapterId;
-                return (
-                  <div key={ch.id} className="inline-flex items-center gap-1 max-w-full">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (ch.id === selectedChapterId) return;
-                        runWithDirtyCheck('berpindah BAB', () => {
-                          setLoading(true);
-                          setSelectedChapterId(ch.id);
-                        });
-                      }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition text-left break-words ${
-                        isSelected
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'bg-white border border-slate-200 text-slate-700 hover:border-emerald-300'
-                      }`}
-                    >
-                      {formatChapterLabel(ch.chapter_number, ch.title)}
-                    </button>
-                    {canEdit && isSelected && (
-                      <>
-                        <button
-                          type="button"
-                          disabled={mutatingMeta}
-                          onClick={() => {
-                            setEditingChapterId(ch.id);
-                            setEditingChapterTitle(ch.title || '');
-                          }}
-                          title="Edit judul BAB"
-                          aria-label="Edit judul BAB"
-                          className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-50"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={mutatingMeta}
-                          onClick={() => handleDeleteChapter(ch)}
-                          title="Hapus BAB"
-                          aria-label="Hapus BAB"
-                          className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 disabled:opacity-50"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-              {chapters.length === 0 && (
-                <span className="text-xs text-slate-500 italic">Belum ada BAB.</span>
-              )}
-            </div>
-
-            {canEdit && (
-              <button
-                type="button"
-                disabled={mutatingMeta}
-                onClick={() => setShowChapterForm((v) => !v)}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shrink-0 disabled:opacity-50"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Tambah BAB</span>
-              </button>
-            )}
-          </div>
-
-          {showChapterForm && canEdit && (
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <input
-                type="text"
-                value={newChapterTitle}
-                onChange={(e) => setNewChapterTitle(e.target.value)}
-                placeholder="Judul tambahan BAB (opsional, misal: Interaksi Sosial)"
-                className="w-full sm:flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  aria-busy={mutatingMeta || undefined}
-                  disabled={mutatingMeta}
-                  onClick={handleAddChapter}
-                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 transition"
-                >
-                  {mutatingMeta && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Simpan BAB</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowChapterForm(false)}
-                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 transition"
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
-          )}
-
-          {editingChapterId && canEdit && (
-            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <input
-                type="text"
-                value={editingChapterTitle}
-                onChange={(e) => setEditingChapterTitle(e.target.value)}
-                placeholder="Judul tambahan BAB (kosongkan jika hanya BAB X)"
-                className="w-full sm:flex-1 min-w-0 px-3 py-2 rounded-xl border border-amber-300 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  aria-busy={mutatingMeta || undefined}
-                  disabled={mutatingMeta}
-                  onClick={() => handleUpdateChapter(editingChapterId)}
-                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-50 transition"
-                >
-                  {mutatingMeta && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Perbarui Judul</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditingChapterId(null)}
-                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 transition"
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <ChapterManagementCard
+          classroomInfo={classroomInfo}
+          chapters={chapters}
+          selectedChapterId={selectedChapterId}
+          canEdit={canEdit}
+          mutatingMeta={mutatingMeta}
+          showChapterForm={showChapterForm}
+          newChapterTitle={newChapterTitle}
+          editingChapterId={editingChapterId}
+          editingChapterTitle={editingChapterTitle}
+          onSelectChapter={(chapterId) => {
+            if (chapterId === selectedChapterId) return;
+            runWithDirtyCheck('berpindah BAB', () => {
+              setLoading(true);
+              setSelectedChapterId(chapterId);
+            });
+          }}
+          onToggleChapterForm={() => setShowChapterForm((v) => !v)}
+          onCloseChapterForm={() => setShowChapterForm(false)}
+          onNewChapterTitleChange={setNewChapterTitle}
+          onAddChapter={handleAddChapter}
+          onStartEditChapter={(ch) => {
+            setEditingChapterId(ch.id);
+            setEditingChapterTitle(ch.title || '');
+          }}
+          onCancelEditChapter={() => setEditingChapterId(null)}
+          onEditingChapterTitleChange={setEditingChapterTitle}
+          onUpdateChapter={handleUpdateChapter}
+          onDeleteChapter={handleDeleteChapter}
+        />
       )}
 
-      {/* Column Management for FORMATIF, SUMATIF, PRAKTIK */}
       {!isExam && canEdit && (type !== 'FORMATIF' || selectedChapterId) && (
-        <div className="glass-card rounded-3xl p-4 sm:p-5 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-              <Settings2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Kolom Penilaian ({columns.length} kolom aktif)</span>
-            </div>
-            <button
-              type="button"
-              disabled={mutatingMeta}
-              onClick={() => setShowAddColumn((v) => !v)}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition disabled:opacity-50"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Kolom Penilaian</span>
-            </button>
-          </div>
-
-          {showAddColumn && (
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              <select
-                value={newColNamingMode}
-                onChange={(e) => setNewColNamingMode(e.target.value as ColumnNamingMode)}
-                className="w-full sm:w-auto px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold"
-              >
-                <option value="AUTO">Otomatis bernomor urut</option>
-                <option value="CUSTOM">Buat nama custom</option>
-              </select>
-              {newColNamingMode === 'CUSTOM' && (
-                <input
-                  type="text"
-                  value={newColLabel}
-                  onChange={(e) => setNewColLabel(e.target.value)}
-                  placeholder={
-                    type === 'PRAKTIK'
-                      ? 'Misal: Praktik - Membaca'
-                      : type === 'SUMATIF'
-                      ? 'Misal: LM - Ekonomi'
-                      : 'Misal: TP - Diskusi'
-                  }
-                  className="w-full sm:flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs"
-                />
-              )}
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  aria-busy={mutatingMeta || undefined}
-                  disabled={mutatingMeta}
-                  onClick={handleAddColumn}
-                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 transition"
-                >
-                  {mutatingMeta && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Tambahkan</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddColumn(false)}
-                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 transition"
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
-          )}
-
-          {editingColId && (
-            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <select
-                value={editingColMode}
-                onChange={(e) => setEditingColMode(e.target.value as ColumnNamingMode)}
-                className="w-full sm:w-auto px-3 py-2 rounded-xl border border-amber-300 bg-white text-xs font-semibold"
-              >
-                <option value="AUTO">Otomatis bernomor urut</option>
-                <option value="CUSTOM">Nama custom</option>
-              </select>
-              {editingColMode === 'CUSTOM' && (
-                <input
-                  type="text"
-                  value={editingColLabel}
-                  onChange={(e) => setEditingColLabel(e.target.value)}
-                  className="w-full sm:flex-1 min-w-0 px-3 py-2 rounded-xl border border-amber-300 bg-white text-xs"
-                />
-              )}
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  aria-busy={mutatingMeta || undefined}
-                  disabled={mutatingMeta}
-                  onClick={() => handleUpdateColumn(editingColId)}
-                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold disabled:opacity-50 transition"
-                >
-                  {mutatingMeta && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Simpan Nama</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditingColId(null)}
-                  className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 transition"
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <ColumnManagementCard
+          type={type}
+          columnsCount={columns.length}
+          mutatingMeta={mutatingMeta}
+          showAddColumn={showAddColumn}
+          newColNamingMode={newColNamingMode}
+          newColLabel={newColLabel}
+          editingColId={editingColId}
+          editingColMode={editingColMode}
+          editingColLabel={editingColLabel}
+          onToggleAddColumn={() => setShowAddColumn((v) => !v)}
+          onCloseAddColumn={() => setShowAddColumn(false)}
+          onNewColNamingModeChange={setNewColNamingMode}
+          onNewColLabelChange={setNewColLabel}
+          onAddColumn={handleAddColumn}
+          onEditingColModeChange={setEditingColMode}
+          onEditingColLabelChange={setEditingColLabel}
+          onUpdateColumn={handleUpdateColumn}
+          onCancelEditColumn={() => setEditingColId(null)}
+        />
       )}
 
-      {/* Optional Column Toggles for STS & SAS */}
       {isExam && canEdit && (
-        <div className="glass-card rounded-3xl p-4 sm:p-5 flex flex-wrap items-center gap-4">
-          <span className="text-xs font-bold text-slate-700">Kolom Opsional {type}:</span>
-          <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={examConfig.enable_remedial}
-              onChange={(e) =>
-                setExamConfig((prev) => ({ ...prev, enable_remedial: e.target.checked }))
-              }
-              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-            />
-            <span>Tampilkan Kolom Remedial</span>
-          </label>
-          <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={examConfig.enable_enrichment}
-              onChange={(e) =>
-                setExamConfig((prev) => ({ ...prev, enable_enrichment: e.target.checked }))
-              }
-              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-            />
-            <span>Tampilkan Kolom Pengayaan</span>
-          </label>
-          <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={examConfig.enable_notes}
-              onChange={(e) =>
-                setExamConfig((prev) => ({ ...prev, enable_notes: e.target.checked }))
-              }
-              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-            />
-            <span>Tampilkan Kolom Catatan</span>
-          </label>
-        </div>
+        <ExamColumnToggles type={type} examConfig={examConfig} onChange={setExamConfig} />
       )}
 
-      {/* Student Search Bar */}
       {!loading && students.length > 5 && (
-        <div className="glass-card rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="relative flex-1 min-w-0">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={studentSearch}
-              onChange={(e) => setStudentSearch(e.target.value)}
-              placeholder="Cari nama atau NIS siswa..."
-              aria-label="Cari siswa"
-              className="w-full pl-8 pr-8 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-            {studentSearch && (
-              <button
-                type="button"
-                onClick={() => setStudentSearch('')}
-                aria-label="Hapus pencarian"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-          <span className="text-[11px] font-medium text-slate-500 shrink-0">
-            Menampilkan {filteredStudents.length} dari {students.length} siswa
-          </span>
-        </div>
+        <StudentSearchBar
+          studentSearch={studentSearch}
+          filteredCount={filteredStudents.length}
+          totalCount={students.length}
+          onChange={setStudentSearch}
+        />
       )}
 
-      {/* Validation Warning Banner */}
       {!loading && validationErrors.length > 0 && canEdit && (
         <div
           role="alert"
@@ -1266,594 +757,52 @@ export function AssessmentWorkspace({
         >
           <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
           <div className="space-y-0.5 min-w-0">
-            <p className="font-bold">Perhatian Validasi Nilai ({validationErrors.length} item):</p>
+            <p className="font-bold">
+              Perhatian Validasi Nilai ({validationErrors.length} item):
+            </p>
             <p className="break-words">{validationErrors[0]}</p>
           </div>
         </div>
       )}
 
-      {/* Main Content: Mobile Cards + Desktop Table */}
       {loading ? (
         <AkademikLoading label="Memuat tabel penilaian..." />
+      ) : !isExam ? (
+        <ColumnScoreSection
+          type={type}
+          selectedChapterId={selectedChapterId}
+          studentsCount={students.length}
+          filteredStudents={filteredStudents}
+          studentSearch={studentSearch}
+          columns={columns}
+          columnScoresMap={columnScoresMap}
+          kkmMinScore={kkm.minScore}
+          canEdit={canEdit}
+          onScoreChange={(key, value) =>
+            setColumnScoresMap((prev) => ({ ...prev, [key]: value }))
+          }
+          onStartEditColumn={(col) => {
+            setEditingColId(col.id);
+            setEditingColMode(col.naming_mode);
+            setEditingColLabel(col.label);
+          }}
+          onDeleteColumn={handleDeleteColumn}
+        />
       ) : (
-        <div className="glass-card rounded-3xl overflow-hidden">
-          {filteredStudents.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-500">
-              {students.length === 0
-                ? 'Belum ada siswa terdaftar di kelas ini pada tahun ajaran aktif.'
-                : `Tidak ada siswa yang cocok dengan pencarian "${studentSearch}".`}
-            </div>
-          ) : (
-            <>
-              {/* Mobile Card View (< md) — Zero Horizontal Overflow */}
-              <div className="md:hidden divide-y divide-slate-100">
-                {filteredStudents.map((st, idx) => {
-                  if (!isExam) {
-                    const rowNums = columns.map((c) =>
-                      parseNumericInput(columnScoresMap[`${c.id}::${st.id}`] ?? '')
-                    );
-                    const avg = computeAverageScore(rowNums);
-
-                    return (
-                      <div key={st.id} className="p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-slate-900 break-words">
-                              {idx + 1}. {st.full_name}
-                            </p>
-                            <p className="text-[11px] font-mono text-slate-400">
-                              NIS: {st.nis || '-'}
-                            </p>
-                          </div>
-                          <span className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 text-[11px] font-bold shrink-0">
-                            Rata: {avg ?? '-'}
-                          </span>
-                        </div>
-
-                        {columns.length > 0 && (
-                          <div className="grid grid-cols-2 gap-2.5">
-                            {columns.map((col) => {
-                              const key = `${col.id}::${st.id}`;
-                              const raw = columnScoresMap[key] ?? '';
-                              const num = parseNumericInput(raw);
-                              const isBelowKkm =
-                                num !== null &&
-                                (type === 'FORMATIF' || type === 'SUMATIF') &&
-                                num < kkm.minScore;
-                              const isInvalidRange =
-                                (raw.trim() !== '' && num === null) ||
-                                (num !== null && (num < 0 || num > 100));
-
-                              return (
-                                <div key={col.id} className="space-y-1">
-                                  <div className="flex items-center justify-between gap-1">
-                                    <label className="text-[11px] font-semibold text-slate-600 truncate">
-                                      {col.label}
-                                    </label>
-                                    {canEdit && (
-                                      <span className="inline-flex items-center gap-0.5 shrink-0">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setEditingColId(col.id);
-                                            setEditingColMode(col.naming_mode);
-                                            setEditingColLabel(col.label);
-                                          }}
-                                          aria-label={`Ubah ${col.label}`}
-                                          className="p-0.5 text-slate-400 hover:text-slate-600"
-                                        >
-                                          <Pencil className="w-2.5 h-2.5" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteColumn(col.id, col.label)}
-                                          aria-label={`Hapus ${col.label}`}
-                                          className="p-0.5 text-rose-400 hover:text-rose-600"
-                                        >
-                                          <Trash2 className="w-2.5 h-2.5" />
-                                        </button>
-                                      </span>
-                                    )}
-                                  </div>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={100}
-                                    step="0.01"
-                                    disabled={!canEdit}
-                                    value={raw}
-                                    onChange={(e) =>
-                                      setColumnScoresMap((prev) => ({
-                                        ...prev,
-                                        [key]: e.target.value,
-                                      }))
-                                    }
-                                    placeholder="0-100"
-                                    className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                      isBelowKkm || isInvalidRange
-                                        ? 'border-rose-400 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                                        : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                                    } disabled:bg-slate-100`}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-
-                  const examRow = examScoresMap[st.id] || {
-                    score: '',
-                    remedial_score: '',
-                    enrichment_score: '',
-                    notes: '',
-                  };
-                  const scoreNum = parseNumericInput(examRow.score);
-                  const remNum = parseNumericInput(examRow.remedial_score);
-                  const enrNum = parseNumericInput(examRow.enrichment_score);
-                  const isScoreInvalid =
-                    (examRow.score.trim() !== '' && scoreNum === null) ||
-                    (scoreNum !== null && (scoreNum < 0 || scoreNum > 100));
-                  const needsRemedial = scoreNum !== null && scoreNum < kkm.minScore;
-                  const missingRequiredRemedial = needsRemedial && remNum === null;
-                  const effectiveExamScore = computeExamEffectiveScore(scoreNum, remNum, enrNum);
-                  const isRemBelowKkm =
-                    remNum !== null && effectiveExamScore !== null && effectiveExamScore < kkm.minScore;
-                  const isRemInvalid =
-                    (examRow.remedial_score.trim() !== '' && remNum === null) ||
-                    (remNum !== null && (remNum < 0 || remNum > 100)) ||
-                    isRemBelowKkm;
-                  const isEnrInvalid =
-                    (examRow.enrichment_score.trim() !== '' && enrNum === null) ||
-                    (enrNum !== null && (enrNum < 0 || enrNum > 100));
-                  const disableScoreInput = !canEdit || remNum !== null || enrNum !== null;
-                  const disableRemedialInput =
-                    !canEdit || scoreNum === null || scoreNum >= kkm.minScore || enrNum !== null;
-                  const disableEnrichmentInput =
-                    !canEdit || scoreNum === null || needsRemedial || remNum !== null;
-
-                  return (
-                    <div key={st.id} className="p-4 space-y-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 break-words">
-                            {idx + 1}. {st.full_name}
-                          </p>
-                          <p className="text-[11px] font-mono text-slate-400">NIS: {st.nis || '-'}</p>
-                        </div>
-                        <span className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 text-[11px] font-bold shrink-0">
-                          Akhir: {effectiveExamScore ?? '-'}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-semibold text-slate-600">
-                            Nilai {type}
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            step="0.01"
-                            disabled={disableScoreInput}
-                            value={examRow.score}
-                            onChange={(e) =>
-                              setExamScoresMap((prev) => ({
-                                ...prev,
-                                [st.id]: { ...examRow, score: e.target.value },
-                              }))
-                            }
-                            placeholder="0-100"
-                            className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                              isScoreInvalid
-                                ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                                : needsRemedial
-                                ? 'border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-500'
-                                : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                            } disabled:bg-slate-100 disabled:text-slate-500`}
-                          />
-                        </div>
-
-                        {showAnyRemedial && (
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-semibold text-slate-600">
-                              Remedial {needsRemedial && <span className="text-rose-600">(Wajib)</span>}
-                            </label>
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step="0.01"
-                              disabled={disableRemedialInput}
-                              value={examRow.remedial_score}
-                              onChange={(e) =>
-                                setExamScoresMap((prev) => ({
-                                  ...prev,
-                                  [st.id]: { ...examRow, remedial_score: e.target.value },
-                                }))
-                              }
-                              placeholder={
-                                scoreNum !== null && scoreNum >= kkm.minScore
-                                  ? 'Tuntas (>= KKM)'
-                                  : enrNum !== null
-                                  ? 'Terkunci (ada Pengayaan)'
-                                  : needsRemedial
-                                  ? 'Wajib'
-                                  : 'Opsional'
-                              }
-                              className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                missingRequiredRemedial || isRemInvalid
-                                  ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                                  : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                              } disabled:bg-slate-100 disabled:text-slate-400`}
-                            />
-                          </div>
-                        )}
-
-                        {examConfig.enable_enrichment && (
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-semibold text-slate-600">
-                              Pengayaan
-                            </label>
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step="0.01"
-                              disabled={disableEnrichmentInput}
-                              value={examRow.enrichment_score}
-                              onChange={(e) =>
-                                setExamScoresMap((prev) => ({
-                                  ...prev,
-                                  [st.id]: { ...examRow, enrichment_score: e.target.value },
-                                }))
-                              }
-                              placeholder={
-                                needsRemedial || remNum !== null
-                                  ? 'Terkunci (Remedial)'
-                                  : 'Opsional'
-                              }
-                              className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                isEnrInvalid
-                                  ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                                  : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                              } disabled:bg-slate-100 disabled:text-slate-400`}
-                            />
-                          </div>
-                        )}
-
-                        {examConfig.enable_notes && (
-                          <div className="space-y-1 col-span-2">
-                            <label className="text-[11px] font-semibold text-slate-600">
-                              Catatan
-                            </label>
-                            <input
-                              type="text"
-                              disabled={!canEdit}
-                              value={examRow.notes}
-                              onChange={(e) =>
-                                setExamScoresMap((prev) => ({
-                                  ...prev,
-                                  [st.id]: { ...examRow, notes: e.target.value },
-                                }))
-                              }
-                              placeholder="Catatan guru..."
-                              className="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Desktop Table View (>= md) with sticky student name */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-50/90 border-b border-slate-200 text-slate-700">
-                    <tr>
-                      <th className="px-4 py-3 font-bold w-10">No</th>
-                      <th className="px-4 py-3 font-bold min-w-[90px]">NIS</th>
-                      <th className="sticky left-0 z-10 bg-slate-50 px-4 py-3 font-bold min-w-[200px]">
-                        Nama Siswa
-                      </th>
-
-                      {!isExam &&
-                        columns.map((col) => (
-                          <th key={col.id} className="px-3 py-3 font-bold min-w-[125px]">
-                            <div className="flex items-center justify-between gap-1">
-                              <span>{col.label}</span>
-                              {canEdit && (
-                                <span className="inline-flex items-center gap-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditingColId(col.id);
-                                      setEditingColMode(col.naming_mode);
-                                      setEditingColLabel(col.label);
-                                    }}
-                                    title="Ubah nama kolom"
-                                    className="p-1 rounded hover:bg-slate-200 text-slate-500"
-                                  >
-                                    <Pencil className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteColumn(col.id, col.label)}
-                                    title="Hapus kolom"
-                                    className="p-1 rounded hover:bg-rose-100 text-rose-500"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                </span>
-                              )}
-                            </div>
-                          </th>
-                        ))}
-
-                      {!isExam && (
-                        <th className="px-4 py-3 font-bold text-center min-w-[90px] bg-emerald-50/60 text-emerald-900">
-                          Rata-rata
-                        </th>
-                      )}
-
-                      {isExam && (
-                        <>
-                          <th className="px-3 py-3 font-bold min-w-[120px]">Nilai {type}</th>
-                          {showAnyRemedial && (
-                            <th className="px-3 py-3 font-bold min-w-[130px]">Remedial</th>
-                          )}
-                          {examConfig.enable_enrichment && (
-                            <th className="px-3 py-3 font-bold min-w-[130px]">Pengayaan</th>
-                          )}
-                          {examConfig.enable_notes && (
-                            <th className="px-3 py-3 font-bold min-w-[220px]">Catatan</th>
-                          )}
-                          <th className="px-4 py-3 font-bold text-center min-w-[100px] bg-emerald-50/60 text-emerald-900">
-                            Nilai Akhir
-                          </th>
-                        </>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredStudents.map((st, idx) => {
-                      if (!isExam) {
-                        const rowNums = columns.map((c) =>
-                          parseNumericInput(columnScoresMap[`${c.id}::${st.id}`] ?? '')
-                        );
-                        const avg = computeAverageScore(rowNums);
-
-                        return (
-                          <tr key={st.id} className="hover:bg-slate-50/70">
-                            <td className="px-4 py-2.5 text-slate-500">{idx + 1}</td>
-                            <td className="px-4 py-2.5 text-slate-600 font-mono">
-                              {st.nis || '-'}
-                            </td>
-                            <td className="sticky left-0 z-10 bg-white px-4 py-2.5 font-semibold text-slate-900">
-                              {st.full_name}
-                            </td>
-                            {columns.map((col) => {
-                              const key = `${col.id}::${st.id}`;
-                              const raw = columnScoresMap[key] ?? '';
-                              const num = parseNumericInput(raw);
-                              const isBelowKkm =
-                                num !== null &&
-                                (type === 'FORMATIF' || type === 'SUMATIF') &&
-                                num < kkm.minScore;
-                              const isInvalidRange =
-                                (raw.trim() !== '' && num === null) ||
-                                (num !== null && (num < 0 || num > 100));
-
-                              return (
-                                <td key={col.id} className="px-3 py-2">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={100}
-                                    step="0.01"
-                                    disabled={!canEdit}
-                                    value={raw}
-                                    onChange={(e) =>
-                                      setColumnScoresMap((prev) => ({
-                                        ...prev,
-                                        [key]: e.target.value,
-                                      }))
-                                    }
-                                    placeholder="0-100"
-                                    className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                      isBelowKkm || isInvalidRange
-                                        ? 'border-rose-400 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                                        : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                                    } disabled:bg-slate-100`}
-                                  />
-                                </td>
-                              );
-                            })}
-                            <td className="px-4 py-2.5 text-center font-bold text-emerald-800 bg-emerald-50/40">
-                              {avg !== null ? avg : '-'}
-                            </td>
-                          </tr>
-                        );
-                      }
-
-                      const examRow = examScoresMap[st.id] || {
-                        score: '',
-                        remedial_score: '',
-                        enrichment_score: '',
-                        notes: '',
-                      };
-                      const scoreNum = parseNumericInput(examRow.score);
-                      const remNum = parseNumericInput(examRow.remedial_score);
-                      const enrNum = parseNumericInput(examRow.enrichment_score);
-                      const isScoreInvalid =
-                        (examRow.score.trim() !== '' && scoreNum === null) ||
-                        (scoreNum !== null && (scoreNum < 0 || scoreNum > 100));
-                      const needsRemedial = scoreNum !== null && scoreNum < kkm.minScore;
-                      const missingRequiredRemedial = needsRemedial && remNum === null;
-                      const effectiveExamScore = computeExamEffectiveScore(
-                        scoreNum,
-                        remNum,
-                        enrNum
-                      );
-                      const isRemBelowKkm =
-                        remNum !== null &&
-                        effectiveExamScore !== null &&
-                        effectiveExamScore < kkm.minScore;
-                      const isRemInvalid =
-                        (examRow.remedial_score.trim() !== '' && remNum === null) ||
-                        (remNum !== null && (remNum < 0 || remNum > 100)) ||
-                        isRemBelowKkm;
-                      const isEnrInvalid =
-                        (examRow.enrichment_score.trim() !== '' && enrNum === null) ||
-                        (enrNum !== null && (enrNum < 0 || enrNum > 100));
-                      const disableScoreInput = !canEdit || remNum !== null || enrNum !== null;
-                      const disableRemedialInput =
-                        !canEdit ||
-                        scoreNum === null ||
-                        scoreNum >= kkm.minScore ||
-                        enrNum !== null;
-                      const disableEnrichmentInput =
-                        !canEdit || scoreNum === null || needsRemedial || remNum !== null;
-
-                      return (
-                        <tr key={st.id} className="hover:bg-slate-50/70">
-                          <td className="px-4 py-2.5 text-slate-500">{idx + 1}</td>
-                          <td className="px-4 py-2.5 text-slate-600 font-mono">
-                            {st.nis || '-'}
-                          </td>
-                          <td className="sticky left-0 z-10 bg-white px-4 py-2.5 font-semibold text-slate-900">
-                            {st.full_name}
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step="0.01"
-                              disabled={disableScoreInput}
-                              value={examRow.score}
-                              onChange={(e) =>
-                                setExamScoresMap((prev) => ({
-                                  ...prev,
-                                  [st.id]: { ...examRow, score: e.target.value },
-                                }))
-                              }
-                              placeholder="0-100"
-                              className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                isScoreInvalid
-                                  ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                                  : needsRemedial
-                                  ? 'border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-500'
-                                  : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                              } disabled:bg-slate-100 disabled:text-slate-500`}
-                            />
-                          </td>
-                          {showAnyRemedial && (
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  max={100}
-                                  step="0.01"
-                                  disabled={disableRemedialInput}
-                                  value={examRow.remedial_score}
-                                  onChange={(e) =>
-                                    setExamScoresMap((prev) => ({
-                                      ...prev,
-                                      [st.id]: { ...examRow, remedial_score: e.target.value },
-                                    }))
-                                  }
-                                  placeholder={
-                                    scoreNum !== null && scoreNum >= kkm.minScore
-                                      ? 'Tuntas'
-                                      : enrNum !== null
-                                      ? 'Terkunci'
-                                      : needsRemedial
-                                      ? 'Wajib'
-                                      : 'Opsional'
-                                  }
-                                  className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                    missingRequiredRemedial || isRemInvalid
-                                      ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                                      : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                                  } disabled:bg-slate-100 disabled:text-slate-400`}
-                                />
-                                {needsRemedial && (
-                                  <span className="text-[10px] font-bold text-rose-600">
-                                    Wajib
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          )}
-                          {examConfig.enable_enrichment && (
-                            <td className="px-3 py-2">
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                step="0.01"
-                                disabled={disableEnrichmentInput}
-                                value={examRow.enrichment_score}
-                                onChange={(e) =>
-                                  setExamScoresMap((prev) => ({
-                                    ...prev,
-                                    [st.id]: { ...examRow, enrichment_score: e.target.value },
-                                  }))
-                                }
-                                placeholder={
-                                  needsRemedial || remNum !== null ? 'Terkunci' : 'Opsional'
-                                }
-                                className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                  isEnrInvalid
-                                    ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                                    : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                                } disabled:bg-slate-100 disabled:text-slate-400`}
-                              />
-                            </td>
-                          )}
-                          {examConfig.enable_notes && (
-                            <td className="px-3 py-2">
-                              <input
-                                type="text"
-                                disabled={!canEdit}
-                                value={examRow.notes}
-                                onChange={(e) =>
-                                  setExamScoresMap((prev) => ({
-                                    ...prev,
-                                    [st.id]: { ...examRow, notes: e.target.value },
-                                  }))
-                                }
-                                placeholder="Catatan guru..."
-                                className="w-full min-w-[180px] px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100"
-                              />
-                            </td>
-                          )}
-                          <td className="px-4 py-2.5 text-center font-bold text-emerald-800 bg-emerald-50/40">
-                            {effectiveExamScore ?? '-'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-
-          {!isExam && columns.length === 0 && (
-            <div className="p-6 text-center text-xs text-slate-500 border-t border-slate-100">
-              {type === 'FORMATIF' && !selectedChapterId
-                ? 'Silakan tambahkan BAB terlebih dahulu untuk mulai menambahkan kolom penilaian TP.'
-                : 'Belum ada kolom penilaian. Klik "Tambah Kolom Penilaian" di atas untuk menambahkan.'}
-            </div>
-          )}
-        </div>
+        <ExamScoreSection
+          type={type}
+          studentsCount={students.length}
+          filteredStudents={filteredStudents}
+          studentSearch={studentSearch}
+          examConfig={examConfig}
+          examScoresMap={examScoresMap}
+          showAnyRemedial={showAnyRemedial}
+          kkmMinScore={kkm.minScore}
+          canEdit={canEdit}
+          onExamRowChange={(studentId, nextRow) =>
+            setExamScoresMap((prev) => ({ ...prev, [studentId]: nextRow }))
+          }
+        />
       )}
 
       {confirmModal && (
