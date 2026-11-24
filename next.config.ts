@@ -82,7 +82,7 @@ function buildAllowedImageRemotePatterns(): RemotePattern[] {
 }
 
 const nextConfig: NextConfig = {
-  distDir: isDev ? ".next-dev" : ".next",
+  distDir: isDev ? ".next-runtime" : ".next",
   transpilePackages: ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner"],
   cacheComponents: true,
   partialPrefetching: true,
