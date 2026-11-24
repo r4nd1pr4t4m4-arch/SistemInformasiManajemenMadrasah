@@ -51,10 +51,29 @@ import {
   type TeacherDutyRequirement,
 } from '@/config/portal-navigation';
 
-function PortalShellInner({ children }: { children: React.ReactNode }) {
+function PortalSearchParamsSync({
+  onChange,
+}: {
+  onChange: (params: { chapterId: string | null; classroomId: string | null }) => void;
+}) {
+  const searchParams = useSearchParams();
+  const chapterId = searchParams.get('chapterId');
+  const classroomId = searchParams.get('classroomId');
+
+  useEffect(() => {
+    onChange({ chapterId, classroomId });
+  }, [chapterId, classroomId, onChange]);
+
+  return null;
+}
+
+export function PortalShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const [queryParams, setQueryParams] = useState<{
+    chapterId: string | null;
+    classroomId: string | null;
+  }>({ chapterId: null, classroomId: null });
   const school = useInstitutionSettings();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState<PortalSessionUser | null>(null);
@@ -366,8 +385,8 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
       .filter((g): g is AccordionGroup => g !== null);
   }, [visibleGroups, normalizedSearch]);
 
-  const currentChapterId = searchParams.get('chapterId');
-  const currentClassroomId = searchParams.get('classroomId');
+  const currentChapterId = queryParams.chapterId;
+  const currentClassroomId = queryParams.classroomId;
   const normalizedPath = pathname.replace(/\/$/, '') || '/portal';
   const pageTitle =
     PAGE_TITLES[normalizedPath] ||
@@ -626,8 +645,14 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const isPortalReady = authLoaded && pwa.ready;
+  const isAuthorizedView = isPortalReady && canAccessCurrentView(normalizedPath);
+
   return (
     <div className="min-h-screen simms-ambient flex">
+      <Suspense fallback={null}>
+        <PortalSearchParamsSync onChange={setQueryParams} />
+      </Suspense>
       {/* Desktop Sticky Sidebar */}
       <aside className="hidden lg:block w-64 shrink-0 border-r border-slate-200/80 bg-white/75 backdrop-blur-xl sticky top-0 h-screen">
         {SidebarContent}
@@ -734,28 +759,31 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
 
         {/* Page Content */}
         <main id="main-content" className="flex-1 p-4 sm:p-6">
-          {!authLoaded || !pwa.ready ? (
+          {!isPortalReady && (
             <LoadingState
               variant="page"
               title="Memverifikasi Hak Akses..."
               description="Sistem sedang memeriksa sesi dan izin peran akun Anda."
             />
-          ) : !canAccessCurrentView(normalizedPath) ? (
+          )}
+          {isPortalReady && !canAccessCurrentView(normalizedPath) && (
             <div className="mt-6">
               <PermissionDeniedState currentRoles={userRoles} />
             </div>
-          ) : (
-            <>
-              {user && (
-                <MandatoryPushModal
-                  audienceType="USER"
-                  institutionName={school.short_name || school.name || 'SiM-M'}
-                  onLogout={() => void handleLogout()}
-                />
-              )}
-              {children}
-            </>
           )}
+          {isAuthorizedView && user && (
+            <MandatoryPushModal
+              audienceType="USER"
+              institutionName={school.short_name || school.name || 'SiM-M'}
+              onLogout={() => void handleLogout()}
+            />
+          )}
+          <div
+            className={isAuthorizedView ? undefined : 'hidden'}
+            aria-hidden={!isAuthorizedView || undefined}
+          >
+            {children}
+          </div>
         </main>
 
         {/* Portal Footer */}
@@ -920,13 +948,5 @@ function PortalShellInner({ children }: { children: React.ReactNode }) {
         </div>
       )}
     </div>
-  );
-}
-
-export function PortalShell({ children }: { children: React.ReactNode }) {
-  return (
-    <Suspense fallback={<div className="min-h-screen simms-ambient" />}>
-      <PortalShellInner>{children}</PortalShellInner>
-    </Suspense>
   );
 }
