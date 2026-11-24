@@ -1,5 +1,6 @@
 export type VerifiableDocType =
   | 'TABUNGAN'
+  | 'MUTASI_TABUNGAN'
   | 'SPP'
   | 'HONORARIUM'
   | 'KARTU_SISWA'

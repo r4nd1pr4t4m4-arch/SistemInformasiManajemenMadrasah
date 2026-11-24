@@ -1,11 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
+  AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
   Banknote,
+  CalendarRange,
   Download,
+  FileDown,
+  Loader2,
   Receipt,
   RotateCcw,
   Search,
@@ -13,6 +17,16 @@ import {
   X,
 } from 'lucide-react';
 import { formatRupiah } from '@/lib/domain/honorarium';
+import {
+  clampDateToToday,
+  filterSavingsTransactions,
+  getTodayWibIsoDate,
+  resolveSavingsDateRange,
+  type SavingsDatePreset,
+  type SavingsTypeFilter,
+} from '@/lib/domain/savings-history-filter';
+import { exportSavingsHistoryToPdf } from '@/lib/domain/savings-statement-pdf';
+import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 import type { SavingsSlipData } from '@/lib/cards/savings-slip-png';
 import type { SppSlipData } from '@/lib/cards/spp-slip-png';
 import {
@@ -32,10 +46,17 @@ export function TabunganSection({
   scope: PersonalScope;
   onSelectSlip: (slip: SavingsSlipData) => void;
 }) {
+  const school = useInstitutionSettings();
+  const todayIso = useMemo(() => getTodayWibIsoDate(), []);
+
   const [trxSearch, setTrxSearch] = useState('');
-  const [trxTypeFilter, setTrxTypeFilter] = useState<'ALL' | 'SETOR' | 'TARIK'>('ALL');
+  const [trxTypeFilter, setTrxTypeFilter] = useState<SavingsTypeFilter>('ALL');
+  const [trxDatePreset, setTrxDatePreset] = useState<SavingsDatePreset>('ALL');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [trxAccountFilter, setTrxAccountFilter] = useState<string>('ALL');
   const [trxVisibleCount, setTrxVisibleCount] = useState<number>(15);
+  const [exportingPdfMode, setExportingPdfMode] = useState<'filtered' | 'all' | null>(null);
 
   if (data.savingsAccounts.length === 0) {
     return (
@@ -68,37 +89,75 @@ export function TabunganSection({
       ? trxAccountFilter
       : 'ALL';
 
-  const accountScopedTrx =
-    effectiveAccountFilter === 'ALL'
-      ? data.savingsTransactions
-      : data.savingsTransactions.filter((t) => t.account_id === effectiveAccountFilter);
+  const { isInvalidRange } = resolveSavingsDateRange({
+    datePreset: trxDatePreset,
+    customStartDate,
+    customEndDate,
+    todayIso,
+  });
 
-  const totalSetor = accountScopedTrx
+  const filteredTrx = filterSavingsTransactions(data.savingsTransactions, {
+    accountId: effectiveAccountFilter,
+    typeFilter: trxTypeFilter,
+    datePreset: trxDatePreset,
+    customStartDate,
+    customEndDate,
+    searchQuery: trxSearch,
+    todayIso,
+  });
+
+  const totalSetor = filteredTrx
     .filter((t) => t.transaction_type === 'SETOR')
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-  const totalTarik = accountScopedTrx
+  const totalTarik = filteredTrx
     .filter((t) => t.transaction_type === 'TARIK')
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-
-  const q = trxSearch.trim().toLowerCase();
-  const filteredTrx = accountScopedTrx.filter((trx) => {
-    if (trxTypeFilter !== 'ALL' && trx.transaction_type !== trxTypeFilter) {
-      return false;
-    }
-    if (!q) return true;
-    return (
-      (trx.reference_number || '').toLowerCase().includes(q) ||
-      (trx.notes || '').toLowerCase().includes(q) ||
-      formatDateId(trx.transaction_date).toLowerCase().includes(q)
-    );
-  });
 
   const displayedTrx = filteredTrx.slice(0, trxVisibleCount);
   const hasMoreTrx = trxVisibleCount < filteredTrx.length;
   const hasTrxFilter =
     trxSearch.trim().length > 0 ||
     trxTypeFilter !== 'ALL' ||
+    trxDatePreset !== 'ALL' ||
     effectiveAccountFilter !== 'ALL';
+
+  function resetAllFilters() {
+    setTrxSearch('');
+    setTrxTypeFilter('ALL');
+    setTrxDatePreset('ALL');
+    setCustomStartDate('');
+    setCustomEndDate('');
+    setTrxAccountFilter('ALL');
+    setTrxVisibleCount(15);
+  }
+
+  async function handleExportPdf(mode: 'filtered' | 'all') {
+    const targetTransactions =
+      mode === 'all' ? data.savingsTransactions : filteredTrx;
+    if (targetTransactions.length === 0 || exportingPdfMode) return;
+
+    setExportingPdfMode(mode);
+    try {
+      await exportSavingsHistoryToPdf({
+        institutionName: school.name || school.short_name || 'SiM-M',
+        institutionAddress: school.address,
+        ownerDisplayName:
+          data.student?.full_name ||
+          data.teacher?.full_name ||
+          data.profile.fullName ||
+          'Nasabah',
+        accounts: data.savingsAccounts,
+        selectedAccountId: mode === 'all' ? 'ALL' : effectiveAccountFilter,
+        transactions: targetTransactions,
+        datePreset: mode === 'all' ? 'ALL' : trxDatePreset,
+        typeFilter: mode === 'all' ? 'ALL' : trxTypeFilter,
+        customStartDate: mode === 'all' ? undefined : customStartDate,
+        customEndDate: mode === 'all' ? undefined : customEndDate,
+      });
+    } finally {
+      setExportingPdfMode(null);
+    }
+  }
 
   function openSlip(trx: PersonalPayload['savingsTransactions'][number]) {
     const acc = data.savingsAccounts.find((a) => a.id === trx.account_id);
@@ -169,103 +228,260 @@ export function TabunganSection({
       {data.savingsTransactions.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
           <PersonalStatCard
-            label="Total Setoran"
+            label={hasTrxFilter ? 'Total Setoran (Filter)' : 'Total Setoran'}
             value={formatRupiah(totalSetor)}
             tone="emerald"
           />
           <PersonalStatCard
-            label="Total Penarikan"
+            label={hasTrxFilter ? 'Total Penarikan (Filter)' : 'Total Penarikan'}
             value={formatRupiah(totalTarik)}
             tone="amber"
           />
           <PersonalStatCard
-            label="Jumlah Transaksi"
-            value={`${accountScopedTrx.length} Kali`}
+            label={hasTrxFilter ? 'Transaksi Terfilter' : 'Jumlah Transaksi'}
+            value={`${filteredTrx.length} Kali`}
             tone="slate"
           />
         </div>
       )}
 
       <div className="glass-card rounded-3xl p-4 sm:p-6 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
-            <Banknote className="w-4 h-4 text-emerald-700 shrink-0" />
-            <span>Riwayat Transaksi Setor &amp; Tarik Tabungan</span>
-          </h2>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+              <Banknote className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>Riwayat Transaksi Setor &amp; Tarik Tabungan</span>
+            </h2>
+            {data.savingsTransactions.length > 0 && (
+              <p className="text-[11px] font-medium text-slate-500 mt-0.5">
+                Menampilkan {displayedTrx.length} dari {filteredTrx.length} transaksi
+                {hasTrxFilter ? ` (total keseluruhan: ${data.savingsTransactions.length})` : ''}
+              </p>
+            )}
+          </div>
+
           {data.savingsTransactions.length > 0 && (
-            <span className="text-[11px] font-medium text-slate-500">
-              Menampilkan {displayedTrx.length} dari {filteredTrx.length} transaksi
-            </span>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={filteredTrx.length === 0 || isInvalidRange || Boolean(exportingPdfMode)}
+                onClick={() => handleExportPdf('filtered')}
+                className="min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-45 text-white text-xs font-semibold transition shadow-xs"
+                title={
+                  hasTrxFilter
+                    ? 'Unduh riwayat transaksi sesuai filter yang sedang aktif dalam format PDF'
+                    : 'Unduh seluruh riwayat transaksi tabungan dalam format PDF'
+                }
+              >
+                {exportingPdfMode === 'filtered' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <FileDown className="w-3.5 h-3.5" />
+                )}
+                <span>
+                  {hasTrxFilter
+                    ? `Unduh PDF Filter (${filteredTrx.length})`
+                    : `Unduh PDF Semua (${data.savingsTransactions.length})`}
+                </span>
+              </button>
+
+              {hasTrxFilter && (
+                <button
+                  type="button"
+                  disabled={Boolean(exportingPdfMode)}
+                  onClick={() => handleExportPdf('all')}
+                  className="min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 hover:border-emerald-300 text-slate-700 text-xs font-semibold transition disabled:opacity-45"
+                  title="Unduh seluruh riwayat transaksi tanpa filter dalam format PDF"
+                >
+                  {exportingPdfMode === 'all' ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  <span>Unduh Semua ({data.savingsTransactions.length})</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
 
         {data.savingsTransactions.length > 0 && (
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
-            <div className="relative flex-1 min-w-0">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={trxSearch}
-                onChange={(e) => {
-                  setTrxSearch(e.target.value);
-                  setTrxVisibleCount(15);
-                }}
-                placeholder="Cari referensi, tanggal, atau keterangan..."
-                aria-label="Cari transaksi tabungan"
-                className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
-              />
-              {trxSearch && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTrxSearch('');
+          <div className="space-y-3 pt-1">
+            {/* Baris 1: Pencarian, Rekening & Jenis Transaksi */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="relative flex-1 min-w-0">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={trxSearch}
+                  onChange={(e) => {
+                    setTrxSearch(e.target.value);
                     setTrxVisibleCount(15);
                   }}
-                  aria-label="Hapus pencarian transaksi"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+                  placeholder="Cari referensi, tanggal, atau keterangan..."
+                  aria-label="Cari transaksi tabungan"
+                  className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                />
+                {trxSearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrxSearch('');
+                      setTrxVisibleCount(15);
+                    }}
+                    aria-label="Hapus pencarian transaksi"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {data.savingsAccounts.length > 1 && (
+                  <select
+                    value={effectiveAccountFilter}
+                    onChange={(e) => {
+                      setTrxAccountFilter(e.target.value);
+                      setTrxVisibleCount(15);
+                    }}
+                    aria-label="Filter rekening tabungan"
+                    className="min-h-[38px] rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm sm:text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                  >
+                    <option value="ALL">Semua Rekening</option>
+                    {data.savingsAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.account_number}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {(['ALL', 'SETOR', 'TARIK'] as const).map((tp) => (
+                  <button
+                    key={tp}
+                    type="button"
+                    aria-pressed={trxTypeFilter === tp}
+                    onClick={() => {
+                      setTrxTypeFilter(tp);
+                      setTrxVisibleCount(15);
+                    }}
+                    className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 ${
+                      trxTypeFilter === tp
+                        ? 'bg-emerald-700 text-white border-emerald-700'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                    }`}
+                  >
+                    {tp === 'ALL' ? 'Semua Jenis' : tp === 'SETOR' ? 'Transaksi Setor' : 'Transaksi Tarik'}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {data.savingsAccounts.length > 1 && (
-                <select
-                  value={effectiveAccountFilter}
-                  onChange={(e) => {
-                    setTrxAccountFilter(e.target.value);
-                    setTrxVisibleCount(15);
-                  }}
-                  aria-label="Filter rekening tabungan"
-                  className="min-h-[38px] rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm sm:text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
-                >
-                  <option value="ALL">Semua Rekening</option>
-                  {data.savingsAccounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.account_number}
-                    </option>
+            {/* Baris 2: Filter Periode (7 Hari, 30 Hari, 90 Hari, Rentang Tanggal) */}
+            <div className="p-3 rounded-2xl bg-slate-50/85 border border-slate-200/80 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 mr-1">
+                    <CalendarRange className="w-3.5 h-3.5 text-emerald-700" />
+                    Periode:
+                  </span>
+                  {(
+                    [
+                      { key: 'ALL', label: 'Semua Waktu' },
+                      { key: '7D', label: '7 Hari' },
+                      { key: '30D', label: '30 Hari' },
+                      { key: '90D', label: '90 Hari' },
+                      { key: 'CUSTOM', label: 'Rentang Tanggal' },
+                    ] as const
+                  ).map((preset) => (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      aria-pressed={trxDatePreset === preset.key}
+                      onClick={() => {
+                        setTrxDatePreset(preset.key);
+                        setTrxVisibleCount(15);
+                        if (preset.key === 'CUSTOM') {
+                          if (!customEndDate) setCustomEndDate(todayIso);
+                          if (!customStartDate) setCustomStartDate(todayIso);
+                        }
+                      }}
+                      className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                        trxDatePreset === preset.key
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
                   ))}
-                </select>
+                </div>
+
+                {hasTrxFilter && (
+                  <button
+                    type="button"
+                    onClick={resetAllFilters}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-emerald-700 transition"
+                  >
+                    <RotateCcw className="w-3 h-3" /> Reset Filter
+                  </button>
+                )}
+              </div>
+
+              {trxDatePreset === 'CUSTOM' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200/70">
+                  <div>
+                    <label
+                      htmlFor="tabungan-custom-start"
+                      className="block text-[11px] font-semibold text-slate-600 mb-1"
+                    >
+                      Dari Tanggal (maks. hari ini: {todayIso})
+                    </label>
+                    <input
+                      id="tabungan-custom-start"
+                      type="date"
+                      value={customStartDate}
+                      max={customEndDate && customEndDate <= todayIso ? customEndDate : todayIso}
+                      onChange={(e) => {
+                        const clamped = clampDateToToday(e.target.value, todayIso);
+                        setCustomStartDate(clamped);
+                        setTrxVisibleCount(15);
+                      }}
+                      className="w-full min-h-[38px] rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="tabungan-custom-end"
+                      className="block text-[11px] font-semibold text-slate-600 mb-1"
+                    >
+                      Sampai Tanggal (maks. hari ini: {todayIso})
+                    </label>
+                    <input
+                      id="tabungan-custom-end"
+                      type="date"
+                      value={customEndDate}
+                      min={customStartDate || undefined}
+                      max={todayIso}
+                      onChange={(e) => {
+                        const clamped = clampDateToToday(e.target.value, todayIso);
+                        setCustomEndDate(clamped);
+                        setTrxVisibleCount(15);
+                      }}
+                      className="w-full min-h-[38px] rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                    />
+                  </div>
+                  {isInvalidRange && (
+                    <div className="sm:col-span-2 flex items-center gap-2 rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>
+                        Tanggal awal tidak boleh lebih besar dari tanggal akhir. Sesuaikan rentang
+                        tanggal terlebih dahulu.
+                      </span>
+                    </div>
+                  )}
+                </div>
               )}
-              {(['ALL', 'SETOR', 'TARIK'] as const).map((tp) => (
-                <button
-                  key={tp}
-                  type="button"
-                  aria-pressed={trxTypeFilter === tp}
-                  onClick={() => {
-                    setTrxTypeFilter(tp);
-                    setTrxVisibleCount(15);
-                  }}
-                  className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 ${
-                    trxTypeFilter === tp
-                      ? 'bg-emerald-700 text-white border-emerald-700'
-                      : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
-                  }`}
-                >
-                  {tp === 'ALL' ? 'Semua' : tp === 'SETOR' ? 'Setor' : 'Tarik'}
-                </button>
-              ))}
             </div>
           </div>
         )}
@@ -277,17 +493,14 @@ export function TabunganSection({
         ) : filteredTrx.length === 0 ? (
           <div className="py-8 text-center space-y-2.5">
             <p className="text-xs font-semibold text-slate-600">
-              Tidak ada transaksi yang sesuai filter.
+              {isInvalidRange
+                ? 'Rentang tanggal tidak valid.'
+                : 'Tidak ada transaksi yang sesuai filter.'}
             </p>
             {hasTrxFilter && (
               <button
                 type="button"
-                onClick={() => {
-                  setTrxSearch('');
-                  setTrxTypeFilter('ALL');
-                  setTrxAccountFilter('ALL');
-                  setTrxVisibleCount(15);
-                }}
+                onClick={resetAllFilters}
                 className="inline-flex items-center gap-1.5 min-h-[36px] px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
               >
                 <RotateCcw className="w-3.5 h-3.5" /> Reset Filter

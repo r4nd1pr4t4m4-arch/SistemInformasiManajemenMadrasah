@@ -23,6 +23,8 @@ export interface FeeTypeRow {
 export interface BillRow {
   id: string;
   amount: number;
+  billing_month?: number | null;
+  billing_year?: number | null;
   original_amount?: number | null;
   discount_amount?: number | null;
   is_sibling_exempt?: boolean;

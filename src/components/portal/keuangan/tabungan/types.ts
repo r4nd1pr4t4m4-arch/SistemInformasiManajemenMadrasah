@@ -58,6 +58,7 @@ export interface PublicCandidate {
 }
 
 export interface LastReceipt {
+  id?: string;
   referenceNumber: string;
   accountNumber: string;
   ownerName: string;
@@ -82,7 +83,9 @@ export interface TierFormState {
 }
 
 export interface TabunganPostResponse {
+  account?: SavingsAccountRow;
   transaction?: {
+    id?: string;
     reference_number: string;
     transaction_date?: string;
   };
@@ -90,6 +93,7 @@ export interface TabunganPostResponse {
   fee_amount?: number;
   net_amount?: number;
   balance?: number;
+  deletedCount?: number;
   feeTiers?: SavingsFeeTier[];
   error?: string;
 }

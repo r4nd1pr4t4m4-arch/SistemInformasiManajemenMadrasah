@@ -335,6 +335,67 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // 9. MUTASI REKENING TABUNGAN PDF (MUT-<ID8>-<YYYYMMDD>-<TS36>)
+  if (docType === 'MUTASI_TABUNGAN' || ref.toUpperCase().startsWith('MUT-')) {
+    const upperRef = ref.toUpperCase();
+    const mutMatch = upperRef.match(/^MUT-([A-F0-9]{8})-(\d{8})-([A-Z0-9]+)$/);
+    if (mutMatch) {
+      const idPrefix = mutMatch[1].toLowerCase();
+      const dateCompact = mutMatch[2];
+      const tsToken = mutMatch[3];
+      const tsMs = Number.parseInt(tsToken, 36);
+      const parsedDate =
+        !Number.isNaN(tsMs) && tsMs >= 1577836800000 && tsMs <= 4102444800000
+          ? new Date(tsMs).toISOString()
+          : `${dateCompact.slice(0, 4)}-${dateCompact.slice(4, 6)}-${dateCompact.slice(6, 8)}`;
+
+      const { data: accounts } = await supabase
+        .from('savings_accounts')
+        .select('id, account_number, owner_name, owner_type, balance, is_active')
+        .order('created_at', { ascending: false })
+        .limit(1000);
+
+      const matchedAccount = (accounts || []).find((a) =>
+        String(a.id).replace(/-/g, '').toLowerCase().startsWith(idPrefix)
+      );
+
+      if (matchedAccount) {
+        return NextResponse.json({
+          valid: true,
+          documentType: 'MUTASI_TABUNGAN',
+          reference: upperRef,
+          title: 'Dokumen Mutasi Rekening Tabungan Digital',
+          statusLabel: matchedAccount.is_active
+            ? 'TERVERIFIKASI SAH (REKENING AKTIF)'
+            : 'TERVERIFIKASI (REKENING NONAKTIF)',
+          issuedAt: parsedDate,
+          details: [
+            { label: 'Pemilik Rekening', value: matchedAccount.owner_name || '-' },
+            { label: 'Nomor Rekening', value: matchedAccount.account_number || '-' },
+            { label: 'Kategori Nasabah', value: matchedAccount.owner_type || '-' },
+            {
+              label: 'Saldo Rekening Saat Ini',
+              value: formatRupiah(Number(matchedAccount.balance) || 0),
+            },
+            { label: 'Kode Referensi Dokumen', value: upperRef },
+            {
+              label: 'Waktu Cetak Dokumen',
+              value:
+                new Date(parsedDate).toLocaleString('id-ID', {
+                  timeZone: 'Asia/Jakarta',
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }) + ' WIB',
+            },
+          ],
+        });
+      }
+    }
+  }
+
   return NextResponse.json(
     {
       valid: false,

@@ -945,6 +945,14 @@ function matchesDutyRequirement(
   }
 }
 
+export function hasDedicatedTabunganMenu(userRoles: readonly AppRole[]): boolean {
+  return (
+    hasRolePermission(userRoles, PERMISSIONS.TABUNGAN_VIEW) ||
+    hasRolePermission(userRoles, PERMISSIONS.GTK_PERSONAL_VIEW) ||
+    hasRolePermission(userRoles, ['SISWA', 'ORANG_TUA'])
+  );
+}
+
 export function canAccessPortalPath(
   pathname: string,
   userRoles: readonly AppRole[],
@@ -952,6 +960,10 @@ export function canAccessPortalPath(
 ): boolean {
   if (userRoles.length === 0) return false;
   const normalized = pathname.replace(/\/$/, '') || '/portal';
+
+  if (normalized === '/portal/tabungan-saya' && hasDedicatedTabunganMenu(userRoles)) {
+    return false;
+  }
 
   if (
     normalized === '/portal' ||

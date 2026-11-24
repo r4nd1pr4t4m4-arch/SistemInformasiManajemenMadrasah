@@ -267,7 +267,7 @@ export async function GET(request: NextRequest) {
         .select('*')
         .in('account_id', accIds)
         .order('transaction_date', { ascending: false })
-        .limit(100);
+        .limit(1000);
       savingsTransactions = trxData || [];
     }
   }

@@ -26,6 +26,11 @@ import {
   hasRolePermission,
   mapDutyCodeToRole,
 } from '../../auth/rbac';
+import {
+  clampDateToToday,
+  filterSavingsTransactions,
+  resolveSavingsDateRange,
+} from '../savings-history-filter';
 
 describe('Domain: Tabungan Fee & Pembulatan (tabungan-fee.ts)', () => {
   it('membulatkan fee ratusan < 330 ke ribuan bawah (000)', () => {
@@ -242,5 +247,105 @@ describe('Auth & RBAC: Role Mapping & Portal Path Guard (rbac.ts)', () => {
       }),
       false
     );
+
+    // /portal/tabungan-saya hanya untuk UMUM / ALUMNI yang belum punya menu Tabungan Digital lain
+    assert.equal(canAccessPortalPath('/portal/tabungan-saya', ['UMUM']), true);
+    assert.equal(canAccessPortalPath('/portal/tabungan-saya', ['ALUMNI']), true);
+    assert.equal(canAccessPortalPath('/portal/tabungan-saya', ['UMUM', 'GURU']), false);
+    assert.equal(canAccessPortalPath('/portal/tabungan-saya', ['UMUM', 'SISWA']), false);
+    assert.equal(canAccessPortalPath('/portal/tabungan-saya', ['ALUMNI', 'ORANG_TUA']), false);
+    assert.equal(canAccessPortalPath('/portal/tabungan-saya', ['UMUM', 'BENDAHARA']), false);
+    assert.equal(canAccessPortalPath('/portal/tabungan-saya', ['SUPERADMIN', 'UMUM']), false);
+  });
+});
+
+describe('Domain: Filter Riwayat Tabungan & Blokir Tanggal Masa Depan (savings-history-filter.ts)', () => {
+  const today = '2026-11-24';
+  const sampleTrx = [
+    {
+      id: 't1',
+      account_id: 'acc-1',
+      transaction_type: 'SETOR' as const,
+      amount: 50_000,
+      balance_after: 50_000,
+      reference_number: 'TRX-001',
+      transaction_date: '2026-11-24T02:00:00.000Z',
+    },
+    {
+      id: 't2',
+      account_id: 'acc-1',
+      transaction_type: 'TARIK' as const,
+      amount: 20_000,
+      balance_after: 30_000,
+      reference_number: 'TRX-002',
+      transaction_date: '2026-11-10T02:00:00.000Z',
+    },
+    {
+      id: 't3',
+      account_id: 'acc-1',
+      transaction_type: 'SETOR' as const,
+      amount: 100_000,
+      balance_after: 130_000,
+      reference_number: 'TRX-003',
+      transaction_date: '2026-09-20T02:00:00.000Z',
+    },
+    {
+      id: 't4',
+      account_id: 'acc-1',
+      transaction_type: 'SETOR' as const,
+      amount: 75_000,
+      balance_after: 205_000,
+      reference_number: 'TRX-004',
+      transaction_date: '2026-07-01T02:00:00.000Z',
+    },
+  ];
+
+  it('memblokir / menjepit tanggal masa depan ke hari ini', () => {
+    assert.equal(clampDateToToday('2026-12-31', today), today);
+    assert.equal(clampDateToToday('2026-11-20', today), '2026-11-20');
+    const customRange = resolveSavingsDateRange({
+      datePreset: 'CUSTOM',
+      customStartDate: '2026-11-01',
+      customEndDate: '2027-01-01',
+      todayIso: today,
+    });
+    assert.equal(customRange.endDate, today);
+    assert.equal(customRange.isInvalidRange, false);
+  });
+
+  it('memfilter transaksi berdasarkan preset 7 hari, 30 hari, 90 hari, jenis setor/tarik, dan rentang tanggal', () => {
+    const last7 = filterSavingsTransactions(sampleTrx, {
+      accountId: 'ALL',
+      typeFilter: 'ALL',
+      datePreset: '7D',
+      todayIso: today,
+    });
+    assert.deepEqual(last7.map((t) => t.id), ['t1']);
+
+    const last30Tarik = filterSavingsTransactions(sampleTrx, {
+      accountId: 'ALL',
+      typeFilter: 'TARIK',
+      datePreset: '30D',
+      todayIso: today,
+    });
+    assert.deepEqual(last30Tarik.map((t) => t.id), ['t2']);
+
+    const last90 = filterSavingsTransactions(sampleTrx, {
+      accountId: 'ALL',
+      typeFilter: 'ALL',
+      datePreset: '90D',
+      todayIso: today,
+    });
+    assert.deepEqual(last90.map((t) => t.id), ['t1', 't2', 't3']);
+
+    const customSetor = filterSavingsTransactions(sampleTrx, {
+      accountId: 'ALL',
+      typeFilter: 'SETOR',
+      datePreset: 'CUSTOM',
+      customStartDate: '2026-09-01',
+      customEndDate: '2026-11-24',
+      todayIso: today,
+    });
+    assert.deepEqual(customSetor.map((t) => t.id), ['t1', 't3']);
   });
 });

@@ -67,6 +67,16 @@ const UpdateStatusSchema = z.object({
   status: z.enum(['DRAFT', 'APPROVED', 'PAID']),
 });
 
+const UpdateHonorariumSchema = z.object({
+  action: z.literal('UPDATE_HONORARIUM'),
+  honorarium_id: z.string().uuid(),
+  total_jtm: z.number().min(0),
+  rate_per_jtm: z.number().min(0),
+  additional_duty_allowance: z.number().min(0),
+  transport_allowance: z.number().min(0),
+  status: z.enum(['DRAFT', 'APPROVED', 'PAID']),
+});
+
 const AssignDutySchema = z.object({
   action: z.literal('ASSIGN_DUTY'),
   teacher_id: z.string().uuid(),
@@ -318,6 +328,69 @@ export async function PATCH(request: Request) {
           status: parsed.data.status,
         },
       });
+      return NextResponse.json({ honorarium: data });
+    }
+
+    if (body.action === 'UPDATE_HONORARIUM') {
+      const parsed = UpdateHonorariumSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data honorarium tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const {
+        honorarium_id,
+        total_jtm,
+        rate_per_jtm,
+        additional_duty_allowance,
+        transport_allowance,
+        status,
+      } = parsed.data;
+
+      const jtm_honorarium_amount = Math.round(total_jtm * rate_per_jtm);
+      const total_amount =
+        jtm_honorarium_amount + additional_duty_allowance + transport_allowance;
+
+      const { data, error } = await supabase
+        .from('teacher_honorariums')
+        .update({
+          total_jtm,
+          rate_per_jtm,
+          jtm_honorarium_amount,
+          additional_duty_allowance,
+          transport_allowance,
+          total_amount,
+          status,
+          paid_at: status === 'PAID' ? new Date().toISOString() : null,
+        })
+        .eq('id', honorarium_id)
+        .select('*')
+        .single();
+
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_HONORARIUM',
+        action: 'UPDATE_HONORARIUM',
+        entityType: 'teacher_honorarium',
+        entityId: honorarium_id,
+        summary: `Data honorarium diperbarui (Total: ${total_amount}, Status: ${status})`,
+        metadata: {
+          honorariumId: honorarium_id,
+          totalJtm: total_jtm,
+          ratePerJtm: rate_per_jtm,
+          jtmHonorariumAmount: jtm_honorarium_amount,
+          additionalDutyAllowance: additional_duty_allowance,
+          transportAllowance: transport_allowance,
+          totalAmount: total_amount,
+          status,
+        },
+      });
+
       return NextResponse.json({ honorarium: data });
     }
 
@@ -782,6 +855,15 @@ export async function POST(request: Request) {
   }
 }
 
+const DeleteHonorariumsSchema = z.object({
+  action: z.literal('DELETE_HONORARIUMS').optional(),
+  entity: z.literal('honorarium').optional(),
+  ids: z
+    .array(z.string().uuid('ID honorarium tidak valid.'))
+    .min(1, 'Pilih minimal 1 data honorarium untuk dihapus.')
+    .max(100, 'Maksimal 100 data honorarium dapat dihapus sekaligus.'),
+});
+
 const DeleteDutyAssignmentSchema = z.union([
   z.object({
     id: z.string().uuid('ID penugasan tidak valid.'),
@@ -806,6 +888,75 @@ export async function DELETE(request: Request) {
     const url = new URL(request.url);
     const queryId = url.searchParams.get('id');
     const body = queryId ? { id: queryId } : await request.json().catch(() => ({}));
+
+    if (body?.action === 'DELETE_HONORARIUMS' || body?.entity === 'honorarium') {
+      const parsedHonor = DeleteHonorariumsSchema.safeParse(body);
+      if (!parsedHonor.success) {
+        return NextResponse.json(
+          { error: parsedHonor.error.issues[0]?.message || 'ID honorarium tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const targetIds = Array.from(new Set(parsedHonor.data.ids));
+      const supabase = createSupabaseAdminClient();
+
+      const { data: existingRows, error: fetchErr } = await supabase
+        .from('teacher_honorariums')
+        .select('id')
+        .in('id', targetIds);
+
+      if (fetchErr) {
+        return NextResponse.json({ error: sanitizeApiError(fetchErr) }, { status: 500 });
+      }
+      if (!existingRows || existingRows.length === 0) {
+        return NextResponse.json(
+          { error: 'Data honorarium tidak ditemukan.' },
+          { status: 404 }
+        );
+      }
+
+      const foundIds = existingRows.map((r) => r.id);
+
+      const { error: deleteItemsErr } = await supabase
+        .from('teacher_honorarium_duty_items')
+        .delete()
+        .in('honorarium_id', foundIds);
+
+      if (deleteItemsErr) {
+        return NextResponse.json({ error: sanitizeApiError(deleteItemsErr) }, { status: 500 });
+      }
+
+      const { error: deleteHonorErr } = await supabase
+        .from('teacher_honorariums')
+        .delete()
+        .in('id', foundIds);
+
+      if (deleteHonorErr) {
+        return NextResponse.json({ error: sanitizeApiError(deleteHonorErr) }, { status: 500 });
+      }
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_HONORARIUM',
+        action: 'DELETE_HONORARIUMS',
+        entityType: 'teacher_honorarium',
+        entityId: foundIds[0],
+        summary: `Menghapus ${foundIds.length} data honorarium guru`,
+        metadata: {
+          deletedIds: foundIds,
+          deletedCount: foundIds.length,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        deletedCount: foundIds.length,
+        deletedIds: foundIds,
+      });
+    }
+
     const parsed = DeleteDutyAssignmentSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(

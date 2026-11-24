@@ -1,5 +1,5 @@
 /* SIMMS Native Service Worker — Offline-First, Background Sync & Web Push */
-const SW_VERSION = 'simms-pwa-v3';
+const SW_VERSION = 'simms-pwa-v4';
 const STATIC_CACHE = `simms-static-${SW_VERSION}`;
 const PAGES_CACHE = `simms-pages-${SW_VERSION}`;
 const PUBLIC_API_CACHE = `simms-public-api-${SW_VERSION}`;
@@ -38,6 +38,7 @@ const NEVER_CACHE_PREFIXES = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => cache.addAll(PRECACHE_URLS))
   );
@@ -158,6 +159,13 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (isNeverCache(url.pathname)) return;
+
+  // Jangan pernah cache chunk Next.js pada lingkungan development lokal agar tidak memicu hydration mismatch
+  const isLocalDevHost =
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
+    url.hostname === '[::1]';
+  if (isLocalDevHost && url.pathname.startsWith('/_next/')) return;
 
   // Navigasi halaman (HTML)
   if (request.mode === 'navigate') {

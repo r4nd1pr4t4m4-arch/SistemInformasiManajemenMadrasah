@@ -58,6 +58,94 @@ const UpdateFeeTiersSchema = z.object({
   ),
 });
 
+const UpdateAccountSchema = z.object({
+  action: z.literal('UPDATE_ACCOUNT'),
+  id: z.string().uuid('ID rekening tidak valid.'),
+  owner_name: z.string().trim().min(2, 'Nama pemilik rekening minimal 2 karakter.'),
+  owner_phone: z.string().optional().nullable(),
+  owner_type: z.enum(['SISWA', 'GURU', 'TU', 'UMUM']),
+});
+
+const DeleteAccountsSchema = z.object({
+  action: z.literal('DELETE_ACCOUNTS'),
+  ids: z
+    .array(z.string().uuid('ID rekening tidak valid.'))
+    .min(1, 'Minimal pilih 1 rekening untuk dihapus.')
+    .max(100, 'Maksimal 100 rekening dapat dihapus sekaligus.'),
+});
+
+const UpdateTransactionSchema = z.object({
+  action: z.literal('UPDATE_TRANSACTION'),
+  id: z.string().uuid('ID transaksi tidak valid.'),
+  transaction_type: z.enum(['SETOR', 'TARIK']),
+  amount: z
+    .number()
+    .int('Nominal transaksi harus berupa bilangan bulat.')
+    .min(1000, 'Nominal transaksi minimal Rp 1.000.')
+    .refine((val) => val % 1000 === 0, {
+      message: 'Nominal transaksi harus kelipatan Rp 1.000.',
+    }),
+  notes: z.string().optional().nullable(),
+});
+
+const DeleteTransactionsSchema = z.object({
+  action: z.literal('DELETE_TRANSACTIONS'),
+  ids: z
+    .array(z.string().uuid('ID transaksi tidak valid.'))
+    .min(1, 'Minimal pilih 1 transaksi untuk dihapus.')
+    .max(100, 'Maksimal 100 transaksi dapat dihapus sekaligus.'),
+});
+
+async function recalculateAccountBalances(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  accountIds: string[]
+): Promise<Record<string, number>> {
+  const uniqueAccountIds = Array.from(new Set(accountIds.filter(Boolean)));
+  const finalBalances: Record<string, number> = {};
+
+  for (const accountId of uniqueAccountIds) {
+    const { data: rows, error: fetchErr } = await supabase
+      .from('savings_transactions')
+      .select('id, transaction_type, amount, balance_after')
+      .eq('account_id', accountId)
+      .order('transaction_date', { ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
+
+    if (fetchErr) {
+      throw fetchErr;
+    }
+
+    let runningBalance = 0;
+    for (const row of rows || []) {
+      const amount = Number(row.amount || 0);
+      runningBalance += row.transaction_type === 'SETOR' ? amount : -amount;
+      if (Number(row.balance_after) !== runningBalance) {
+        const { error: updTrxErr } = await supabase
+          .from('savings_transactions')
+          .update({ balance_after: runningBalance })
+          .eq('id', row.id);
+        if (updTrxErr) {
+          throw updTrxErr;
+        }
+      }
+    }
+
+    const { error: updAccErr } = await supabase
+      .from('savings_accounts')
+      .update({ balance: runningBalance, updated_at: new Date().toISOString() })
+      .eq('id', accountId);
+
+    if (updAccErr) {
+      throw updAccErr;
+    }
+
+    finalBalances[accountId] = runningBalance;
+  }
+
+  return finalBalances;
+}
+
 export async function GET() {
   const guard = await requireApiRoles(PERMISSIONS.TABUNGAN_VIEW);
   if (guard.errorResponse) return guard.errorResponse;
@@ -457,6 +545,300 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ feeTiers: resetTiers });
+    }
+
+    if (body.action === 'UPDATE_ACCOUNT') {
+      const parsed = UpdateAccountSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data pembaruan rekening tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const { data: existing, error: existErr } = await supabase
+        .from('savings_accounts')
+        .select('id, account_number, owner_name, owner_phone, owner_type')
+        .eq('id', parsed.data.id)
+        .maybeSingle();
+
+      if (existErr || !existing) {
+        return NextResponse.json({ error: 'Rekening tabungan tidak ditemukan.' }, { status: 404 });
+      }
+
+      const nextPhone = parsed.data.owner_phone?.trim() || null;
+      const { data: updated, error: updErr } = await supabase
+        .from('savings_accounts')
+        .update({
+          owner_name: parsed.data.owner_name,
+          owner_phone: nextPhone,
+          owner_type: parsed.data.owner_type,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .select('*')
+        .single();
+
+      if (updErr || !updated) {
+        return NextResponse.json(
+          { error: sanitizeApiError(updErr) || 'Gagal memperbarui rekening tabungan.' },
+          { status: 500 }
+        );
+      }
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_TABUNGAN',
+        action: 'SAVINGS_ACCOUNT_UPDATE',
+        entityType: 'savings_account',
+        entityId: existing.id,
+        summary: `Memperbarui rekening ${existing.account_number} (${parsed.data.owner_name})`,
+        metadata: {
+          accountNumber: existing.account_number,
+          before: {
+            owner_name: existing.owner_name,
+            owner_phone: existing.owner_phone,
+            owner_type: existing.owner_type,
+          },
+          after: {
+            owner_name: updated.owner_name,
+            owner_phone: updated.owner_phone,
+            owner_type: updated.owner_type,
+          },
+        },
+      });
+
+      return NextResponse.json({ account: updated });
+    }
+
+    if (body.action === 'DELETE_ACCOUNTS') {
+      const parsed = DeleteAccountsSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data penghapusan rekening tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const uniqueIds = Array.from(new Set(parsed.data.ids));
+      const { data: targetAccounts } = await supabase
+        .from('savings_accounts')
+        .select('id, account_number, owner_name')
+        .in('id', uniqueIds);
+
+      const { error: delTrxErr } = await supabase
+        .from('savings_transactions')
+        .delete()
+        .in('account_id', uniqueIds);
+
+      if (delTrxErr) {
+        return NextResponse.json({ error: sanitizeApiError(delTrxErr) }, { status: 500 });
+      }
+
+      const { error: delAccErr } = await supabase
+        .from('savings_accounts')
+        .delete()
+        .in('id', uniqueIds);
+
+      if (delAccErr) {
+        return NextResponse.json({ error: sanitizeApiError(delAccErr) }, { status: 500 });
+      }
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_TABUNGAN',
+        action: 'SAVINGS_ACCOUNTS_DELETE',
+        entityType: 'savings_account',
+        entityId: uniqueIds[0],
+        summary: `Menghapus ${uniqueIds.length} rekening tabungan beserta riwayat transaksinya`,
+        metadata: {
+          deletedIds: uniqueIds,
+          deletedAccounts: targetAccounts || [],
+        },
+      });
+
+      return NextResponse.json({ deletedCount: uniqueIds.length });
+    }
+
+    if (body.action === 'UPDATE_TRANSACTION') {
+      const parsed = UpdateTransactionSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data pembaruan transaksi tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const { data: existing, error: existErr } = await supabase
+        .from('savings_transactions')
+        .select('id, account_id, transaction_type, amount, reference_number, notes')
+        .eq('id', parsed.data.id)
+        .maybeSingle();
+
+      if (existErr || !existing) {
+        return NextResponse.json({ error: 'Transaksi tabungan tidak ditemukan.' }, { status: 404 });
+      }
+
+      const { data: accountTrxRows, error: listErr } = await supabase
+        .from('savings_transactions')
+        .select('id, transaction_type, amount')
+        .eq('account_id', existing.account_id)
+        .order('transaction_date', { ascending: true })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
+
+      if (listErr) {
+        return NextResponse.json({ error: sanitizeApiError(listErr) }, { status: 500 });
+      }
+
+      let simulatedBalance = 0;
+      for (const row of accountTrxRows || []) {
+        const type = row.id === existing.id ? parsed.data.transaction_type : row.transaction_type;
+        const amt = row.id === existing.id ? parsed.data.amount : Number(row.amount || 0);
+        simulatedBalance += type === 'SETOR' ? amt : -amt;
+      }
+
+      if (simulatedBalance < 0) {
+        return NextResponse.json(
+          { error: 'Perubahan transaksi menyebabkan saldo rekening menjadi negatif.' },
+          { status: 400 }
+        );
+      }
+
+      let feePercentage = 0;
+      let feeAmount = 0;
+      let netAmount = parsed.data.amount;
+
+      if (parsed.data.transaction_type === 'TARIK') {
+        const { data: tiersData } = await supabase
+          .from('savings_withdrawal_fee_tiers')
+          .select('*')
+          .order('tier_order', { ascending: true });
+
+        const feeCalc = calculateWithdrawalFee(
+          parsed.data.amount,
+          tiersData && tiersData.length > 0 ? (tiersData as SavingsFeeTier[]) : DEFAULT_WITHDRAWAL_FEE_TIERS
+        );
+        feePercentage = feeCalc.feePercentage;
+        feeAmount = feeCalc.feeAmount;
+        netAmount = feeCalc.netAmount;
+      }
+
+      const nextNotes = parsed.data.notes?.trim() || null;
+      const { error: updErr } = await supabase
+        .from('savings_transactions')
+        .update({
+          transaction_type: parsed.data.transaction_type,
+          amount: parsed.data.amount,
+          fee_percentage: feePercentage,
+          fee_amount: feeAmount,
+          net_amount: netAmount,
+          notes: nextNotes,
+        })
+        .eq('id', existing.id);
+
+      if (updErr) {
+        return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
+      }
+
+      const finalBalances = await recalculateAccountBalances(supabase, [existing.account_id]);
+      const finalBalance = finalBalances[existing.account_id] ?? simulatedBalance;
+
+      const { data: updatedTrx } = await supabase
+        .from('savings_transactions')
+        .select('*')
+        .eq('id', existing.id)
+        .maybeSingle();
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_TABUNGAN',
+        action: 'SAVINGS_TRANSACTION_UPDATE',
+        entityType: 'savings_transaction',
+        entityId: existing.id,
+        summary: `Memperbarui transaksi ${existing.reference_number} menjadi ${parsed.data.transaction_type} Rp${parsed.data.amount.toLocaleString('id-ID')}`,
+        metadata: {
+          referenceNumber: existing.reference_number,
+          accountId: existing.account_id,
+          before: {
+            transaction_type: existing.transaction_type,
+            amount: existing.amount,
+            notes: existing.notes,
+          },
+          after: {
+            transaction_type: parsed.data.transaction_type,
+            amount: parsed.data.amount,
+            fee_percentage: feePercentage,
+            fee_amount: feeAmount,
+            net_amount: netAmount,
+            notes: nextNotes,
+            accountBalanceAfter: finalBalance,
+          },
+        },
+      });
+
+      return NextResponse.json({
+        transaction: updatedTrx,
+        balance: finalBalance,
+        fee_percentage: feePercentage,
+        fee_amount: feeAmount,
+        net_amount: netAmount,
+      });
+    }
+
+    if (body.action === 'DELETE_TRANSACTIONS') {
+      const parsed = DeleteTransactionsSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data penghapusan transaksi tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const uniqueIds = Array.from(new Set(parsed.data.ids));
+      const { data: affectedRows, error: fetchErr } = await supabase
+        .from('savings_transactions')
+        .select('id, account_id, reference_number, transaction_type, amount')
+        .in('id', uniqueIds);
+
+      if (fetchErr) {
+        return NextResponse.json({ error: sanitizeApiError(fetchErr) }, { status: 500 });
+      }
+
+      const affectedAccountIds = Array.from(
+        new Set((affectedRows || []).map((row) => row.account_id).filter(Boolean))
+      );
+
+      const { error: delErr } = await supabase
+        .from('savings_transactions')
+        .delete()
+        .in('id', uniqueIds);
+
+      if (delErr) {
+        return NextResponse.json({ error: sanitizeApiError(delErr) }, { status: 500 });
+      }
+
+      await recalculateAccountBalances(supabase, affectedAccountIds);
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_TABUNGAN',
+        action: 'SAVINGS_TRANSACTIONS_DELETE',
+        entityType: 'savings_transaction',
+        entityId: uniqueIds[0],
+        summary: `Menghapus ${uniqueIds.length} transaksi tabungan dan menghitung ulang saldo ${affectedAccountIds.length} rekening`,
+        metadata: {
+          deletedIds: uniqueIds,
+          affectedAccountIds,
+          deletedTransactions: affectedRows || [],
+        },
+      });
+
+      return NextResponse.json({ deletedCount: uniqueIds.length });
     }
 
     return NextResponse.json({ error: 'Aksi tabungan tidak dikenal.' }, { status: 400 });

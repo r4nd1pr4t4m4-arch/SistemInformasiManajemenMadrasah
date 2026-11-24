@@ -312,6 +312,7 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
         <TransaksiSection
           canManage={canManage}
           accounts={accounts}
+          transactions={transactions}
           feeTiers={feeTiers}
           submitting={submitting}
           postTabungan={postTabungan}

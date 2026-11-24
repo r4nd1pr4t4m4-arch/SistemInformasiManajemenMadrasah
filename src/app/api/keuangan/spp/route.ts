@@ -18,6 +18,19 @@ const CreateFeeTypeSchema = z.object({
   is_recurring_monthly: z.boolean().default(true),
 });
 
+const UpdateFeeTypeSchema = z.object({
+  action: z.literal('UPDATE_FEE_TYPE'),
+  id: z.string().uuid(),
+  name: z.string().trim().min(2),
+  category: z.enum(['SPP', 'KOMITE', 'UANG_GEDUNG', 'LAINNYA']),
+  default_amount: z.number().min(0),
+});
+
+const DeleteFeeTypesSchema = z.object({
+  action: z.literal('DELETE_FEE_TYPES'),
+  ids: z.array(z.string().uuid()).min(1).max(100),
+});
+
 const CreateBillSchema = z.object({
   action: z.literal('CREATE_BILL'),
   student_id: z.string().uuid(),
@@ -26,6 +39,20 @@ const CreateBillSchema = z.object({
   billing_year: z.number().min(2020).max(2100).optional().nullable(),
   amount: z.number().min(0),
   due_date: z.string().optional().nullable(),
+});
+
+const UpdateBillSchema = z.object({
+  action: z.literal('UPDATE_BILL'),
+  id: z.string().uuid(),
+  amount: z.number().min(0),
+  billing_month: z.number().min(1).max(12).optional().nullable(),
+  billing_year: z.number().min(2020).max(2100).optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
+const DeleteBillsSchema = z.object({
+  action: z.literal('DELETE_BILLS'),
+  ids: z.array(z.string().uuid()).min(1).max(100),
 });
 
 const RecordPaymentSchema = z.object({
@@ -196,6 +223,214 @@ export async function POST(request: Request) {
         .single();
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ feeType: data });
+    }
+
+    if (body.action === 'UPDATE_FEE_TYPE') {
+      const parsed = UpdateFeeTypeSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Data jenis biaya tidak valid.' }, { status: 400 });
+      }
+      const { id, name, category, default_amount } = parsed.data;
+      const { data, error } = await supabase
+        .from('fee_types')
+        .update({ name, category, default_amount })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return NextResponse.json({ error: 'Jenis biaya tidak ditemukan.' }, { status: 404 });
+        }
+        return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      }
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_SPP',
+        action: 'UPDATE_FEE_TYPE',
+        entityType: 'fee_type',
+        entityId: id,
+        summary: `Memperbarui jenis biaya "${data.name}" (${data.category}, Rp${Number(data.default_amount).toLocaleString('id-ID')})`,
+        metadata: {
+          id,
+          name: data.name,
+          category: data.category,
+          default_amount: data.default_amount,
+        },
+      });
+
+      return NextResponse.json({ feeType: data });
+    }
+
+    if (body.action === 'DELETE_FEE_TYPES') {
+      const parsed = DeleteFeeTypesSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Data penghapusan jenis biaya tidak valid.' },
+          { status: 400 }
+        );
+      }
+      const uniqueIds = Array.from(new Set(parsed.data.ids));
+      const { data: referencedBills, error: refErr } = await supabase
+        .from('student_bills')
+        .select('id, fee_type_id')
+        .in('fee_type_id', uniqueIds)
+        .limit(1);
+      if (refErr) {
+        return NextResponse.json({ error: sanitizeApiError(refErr) }, { status: 500 });
+      }
+      if (referencedBills && referencedBills.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              'Sebagian jenis biaya masih digunakan oleh tagihan siswa dan tidak dapat dihapus.',
+          },
+          { status: 400 }
+        );
+      }
+
+      const { error: delErr } = await supabase
+        .from('fee_types')
+        .delete()
+        .in('id', uniqueIds);
+      if (delErr) {
+        return NextResponse.json({ error: sanitizeApiError(delErr) }, { status: 500 });
+      }
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_SPP',
+        action: 'DELETE_FEE_TYPES',
+        entityType: 'fee_type',
+        entityId: uniqueIds.length === 1 ? uniqueIds[0] : null,
+        summary: `Menghapus ${uniqueIds.length} jenis biaya`,
+        metadata: { ids: uniqueIds, count: uniqueIds.length },
+      });
+
+      return NextResponse.json({ ok: true, deletedCount: uniqueIds.length });
+    }
+
+    if (body.action === 'UPDATE_BILL') {
+      const parsed = UpdateBillSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Data pembaruan tagihan tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const { data: existing, error: fetchErr } = await supabase
+        .from('student_bills')
+        .select('id, amount, paid_amount, billing_month, billing_year, notes')
+        .eq('id', parsed.data.id)
+        .single();
+      if (fetchErr || !existing) {
+        return NextResponse.json({ error: 'Tagihan tidak ditemukan.' }, { status: 404 });
+      }
+
+      const paidAmount = Number(existing.paid_amount ?? 0);
+      if (parsed.data.amount < paidAmount) {
+        return NextResponse.json(
+          {
+            error: `Nominal tagihan tidak boleh lebih kecil dari jumlah yang sudah dibayar (Rp${paidAmount.toLocaleString('id-ID')}).`,
+          },
+          { status: 400 }
+        );
+      }
+
+      const newStatus =
+        paidAmount >= parsed.data.amount
+          ? 'LUNAS'
+          : paidAmount > 0
+            ? 'CICILAN'
+            : 'BELUM_LUNAS';
+
+      const updatePayload: Record<string, unknown> = {
+        amount: parsed.data.amount,
+        status: newStatus,
+      };
+      if (parsed.data.billing_month !== undefined) {
+        updatePayload.billing_month = parsed.data.billing_month;
+      }
+      if (parsed.data.billing_year !== undefined) {
+        updatePayload.billing_year = parsed.data.billing_year;
+      }
+      if (parsed.data.notes !== undefined) {
+        updatePayload.notes = parsed.data.notes ? parsed.data.notes.trim() || null : null;
+      }
+
+      const { data, error: updErr } = await supabase
+        .from('student_bills')
+        .update(updatePayload)
+        .eq('id', parsed.data.id)
+        .select('*')
+        .single();
+      if (updErr) {
+        return NextResponse.json({ error: sanitizeApiError(updErr) }, { status: 500 });
+      }
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_SPP',
+        action: 'UPDATE_BILL',
+        entityType: 'student_bill',
+        entityId: parsed.data.id,
+        summary: `Memperbarui tagihan siswa menjadi Rp${parsed.data.amount.toLocaleString('id-ID')} (${newStatus})`,
+        metadata: {
+          id: parsed.data.id,
+          previousAmount: Number(existing.amount),
+          amount: parsed.data.amount,
+          billing_month: data.billing_month,
+          billing_year: data.billing_year,
+          notes: data.notes,
+          status: newStatus,
+        },
+      });
+
+      return NextResponse.json({ bill: data });
+    }
+
+    if (body.action === 'DELETE_BILLS') {
+      const parsed = DeleteBillsSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Data penghapusan tagihan tidak valid.' },
+          { status: 400 }
+        );
+      }
+      const uniqueIds = Array.from(new Set(parsed.data.ids));
+
+      const { error: payDelErr } = await supabase
+        .from('bill_payments')
+        .delete()
+        .in('bill_id', uniqueIds);
+      if (payDelErr) {
+        return NextResponse.json({ error: sanitizeApiError(payDelErr) }, { status: 500 });
+      }
+
+      const { error: billDelErr } = await supabase
+        .from('student_bills')
+        .delete()
+        .in('id', uniqueIds);
+      if (billDelErr) {
+        return NextResponse.json({ error: sanitizeApiError(billDelErr) }, { status: 500 });
+      }
+
+      await recordAuditLog({
+        session: guard.session,
+        request,
+        module: 'KEUANGAN_SPP',
+        action: 'DELETE_BILLS',
+        entityType: 'student_bill',
+        entityId: uniqueIds.length === 1 ? uniqueIds[0] : null,
+        summary: `Menghapus ${uniqueIds.length} tagihan siswa`,
+        metadata: { ids: uniqueIds, count: uniqueIds.length },
+      });
+
+      return NextResponse.json({ ok: true, deletedCount: uniqueIds.length });
     }
 
     if (body.action === 'CREATE_BILL') {
