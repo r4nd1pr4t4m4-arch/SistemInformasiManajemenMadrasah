@@ -22,6 +22,7 @@ import {
   getPublicGalleryAndFacilities,
 } from '@/lib/data/public-queries';
 import { PublicNavbar } from '@/components/layout/public-shell';
+import { MissionList } from '@/components/home/mission-list';
 
 const getCachedInstitutionSettings = cache(getInstitutionSettings);
 
@@ -199,7 +200,7 @@ async function ProfileVisionContent() {
         <h2 className="text-xl sm:text-2xl font-bold text-slate-900 break-words">
           Mengenal {school.name || 'Lembaga Kami'}
         </h2>
-        <p className="text-slate-600 leading-relaxed text-sm md:text-base break-words">
+        <p className="text-slate-600 leading-relaxed text-sm md:text-base break-words text-justify">
           {school.history || 'Informasi sejarah singkat lembaga belum ditambahkan.'}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 pt-2">
@@ -224,31 +225,13 @@ async function ProfileVisionContent() {
         </div>
         <div className="p-5 rounded-2xl bg-emerald-50/70 border border-emerald-200/60">
           <p className="text-xs font-bold uppercase text-emerald-800 mb-1">Visi</p>
-          <p className="text-slate-800 font-medium text-sm md:text-base leading-relaxed break-words">
+          <p className="text-slate-800 font-medium text-sm md:text-base leading-relaxed break-words text-justify">
             {school.vision || 'Visi lembaga belum ditetapkan.'}
           </p>
         </div>
         <div className="space-y-2.5">
           <p className="text-xs font-bold uppercase text-slate-500">Misi Lembaga</p>
-          {missions.length > 0 ? (
-            <ul className="space-y-2.5">
-              {missions.map((item, idx) => (
-                <li
-                  key={idx}
-                  className="flex items-start gap-3 text-sm text-slate-700 leading-relaxed"
-                >
-                  <span className="w-6 h-6 rounded-full bg-emerald-600/10 text-emerald-700 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
-                    {idx + 1}
-                  </span>
-                  <span className="min-w-0 break-words">{item}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-slate-500">
-              Daftar misi lembaga belum ditambahkan.
-            </p>
-          )}
+          <MissionList missions={missions} />
         </div>
       </div>
     </div>

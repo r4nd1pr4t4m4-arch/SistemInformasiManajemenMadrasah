@@ -14,9 +14,19 @@ import {
   RotateCcw,
   Search,
   Trophy,
+  UserRound,
   Users,
   X,
 } from 'lucide-react';
+import { TeacherProfileModal } from './teacher-profile-modal';
+
+export interface PublicEmploymentHistoryItem {
+  id: string;
+  position_title: string;
+  unit_or_institution: string | null;
+  start_date: string | null;
+  end_date: string | null;
+}
 
 export interface PublicTeacherItem {
   id: string;
@@ -25,6 +35,7 @@ export interface PublicTeacherItem {
   nip?: string | null;
   nuptk?: string | null;
   employment_status: string | null;
+  join_date?: string | null;
   education_level: string | null;
   major: string | null;
   last_campus?: string | null;
@@ -36,6 +47,8 @@ export interface PublicTeacherItem {
   additional_duties?: string[];
   subjects?: string[];
   subject_groups?: string[];
+  taught_classes?: string[];
+  employment_histories?: PublicEmploymentHistoryItem[];
   photo_url: string | null;
 }
 
@@ -118,6 +131,7 @@ export function DirektoriView({
   const [selectedLevel, setSelectedLevel] = useState<string>('ALL');
   const [brokenPhotos, setBrokenPhotos] = useState<Record<string, boolean>>({});
   const [selectedTeacher, setSelectedTeacher] = useState<PublicTeacherItem | null>(null);
+  const [profileTeacher, setProfileTeacher] = useState<PublicTeacherItem | null>(null);
   const [copiedAbstract, setCopiedAbstract] = useState(false);
 
   useEffect(() => {
@@ -459,19 +473,29 @@ export function DirektoriView({
                       </div>
                     </div>
 
-                    {/* Tombol Baca Abstrak */}
-                    <button
-                      type="button"
-                      disabled={!hasAbstract}
-                      onClick={() => {
-                        setCopiedAbstract(false);
-                        setSelectedTeacher(t);
-                      }}
-                      className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm font-semibold text-slate-700 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 disabled:opacity-45 disabled:cursor-not-allowed transition"
-                    >
-                      <FileText className="w-4 h-4 shrink-0" />
-                      <span>Baca Abstrak Skripsi</span>
-                    </button>
+                    {/* Tombol Aksi Kartu GTK */}
+                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setProfileTeacher(t)}
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-700 text-white text-xs sm:text-[13px] font-semibold hover:bg-emerald-800 shadow-2xs transition"
+                      >
+                        <UserRound className="w-4 h-4 shrink-0" />
+                        <span>Profil Singkat</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!hasAbstract}
+                        onClick={() => {
+                          setCopiedAbstract(false);
+                          setSelectedTeacher(t);
+                        }}
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-xs sm:text-[13px] font-semibold text-slate-700 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 disabled:opacity-45 disabled:cursor-not-allowed transition"
+                      >
+                        <FileText className="w-4 h-4 shrink-0" />
+                        <span>Abstrak Skripsi</span>
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -588,6 +612,23 @@ export function DirektoriView({
             </div>
           )}
         </section>
+      )}
+
+      {/* Modal Profil Singkat GTK */}
+      {profileTeacher && (
+        <TeacherProfileModal
+          teacher={profileTeacher}
+          photoBroken={Boolean(brokenPhotos[profileTeacher.id])}
+          onPhotoError={() =>
+            setBrokenPhotos((prev) => ({ ...prev, [profileTeacher.id]: true }))
+          }
+          onClose={() => setProfileTeacher(null)}
+          onOpenAbstract={(teacher) => {
+            setProfileTeacher(null);
+            setCopiedAbstract(false);
+            setSelectedTeacher(teacher);
+          }}
+        />
       )}
 
       {/* Modal Abstrak Karya Ilmiah */}

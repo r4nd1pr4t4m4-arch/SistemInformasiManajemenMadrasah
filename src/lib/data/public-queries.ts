@@ -74,7 +74,7 @@ export async function getPublicDirectoryData() {
       supabase
         .from('teachers_staff')
         .select(
-          'id, full_name, staff_type, nip, nuptk, employment_status, education_level, major, last_campus, graduation_year, thesis_title, thesis_abstract, thesis_keywords, thesis_article_url, photo_url'
+          'id, full_name, staff_type, nip, nuptk, employment_status, join_date, education_level, major, last_campus, graduation_year, thesis_title, thesis_abstract, thesis_keywords, thesis_article_url, photo_url'
         )
         .eq('is_active', true)
         .eq('show_in_public_directory', true)
@@ -92,23 +92,40 @@ export async function getPublicDirectoryData() {
     const dutiesMap = new Map<string, string[]>();
     const subjectsMap = new Map<string, string[]>();
     const groupsMap = new Map<string, string[]>();
+    const classesMap = new Map<string, string[]>();
+    const historiesMap = new Map<
+      string,
+      Array<{
+        id: string;
+        position_title: string;
+        unit_or_institution: string | null;
+        start_date: string | null;
+        end_date: string | null;
+      }>
+    >();
 
     if (teacherIds.length > 0) {
-      const [{ data: duties }, { data: schedules }, { data: homerooms }] = await Promise.all([
-        supabase
-          .from('teacher_additional_duties')
-          .select('teacher_id, duty_type:additional_duty_types(name)')
-          .in('teacher_id', teacherIds)
-          .eq('is_active', true),
-        supabase
-          .from('schedules')
-          .select('teacher_id, subject:subjects(name, subject_group)')
-          .in('teacher_id', teacherIds),
-        supabase
-          .from('classrooms')
-          .select('homeroom_teacher_id, name')
-          .in('homeroom_teacher_id', teacherIds),
-      ]);
+      const [{ data: duties }, { data: schedules }, { data: homerooms }, { data: histories }] =
+        await Promise.all([
+          supabase
+            .from('teacher_additional_duties')
+            .select('teacher_id, duty_type:additional_duty_types(name)')
+            .in('teacher_id', teacherIds)
+            .eq('is_active', true),
+          supabase
+            .from('schedules')
+            .select('teacher_id, subject:subjects(name, subject_group), classroom:classrooms(name)')
+            .in('teacher_id', teacherIds),
+          supabase
+            .from('classrooms')
+            .select('homeroom_teacher_id, name')
+            .in('homeroom_teacher_id', teacherIds),
+          supabase
+            .from('employment_histories')
+            .select('id, teacher_id, position_title, unit_or_institution, start_date, end_date')
+            .in('teacher_id', teacherIds)
+            .order('start_date', { ascending: false }),
+        ]);
 
       const pushUnique = (map: Map<string, string[]>, key: string, val: string | null | undefined) => {
         const cleaned = (val || '').trim();
@@ -131,8 +148,23 @@ export async function getPublicDirectoryData() {
       }
       for (const row of schedules || []) {
         const subj = Array.isArray(row.subject) ? row.subject[0] : row.subject;
+        const cls = Array.isArray(row.classroom) ? row.classroom[0] : row.classroom;
         pushUnique(subjectsMap, row.teacher_id, subj?.name);
         pushUnique(groupsMap, row.teacher_id, subj?.subject_group);
+        pushUnique(classesMap, row.teacher_id, cls?.name);
+      }
+      for (const row of histories || []) {
+        const arr = historiesMap.get(row.teacher_id) || [];
+        if (arr.length < 5) {
+          arr.push({
+            id: row.id,
+            position_title: row.position_title,
+            unit_or_institution: row.unit_or_institution,
+            start_date: row.start_date,
+            end_date: row.end_date,
+          });
+          historiesMap.set(row.teacher_id, arr);
+        }
       }
     }
 
@@ -142,6 +174,8 @@ export async function getPublicDirectoryData() {
       additional_duties: dutiesMap.get(t.id) || [],
       subjects: subjectsMap.get(t.id) || [],
       subject_groups: groupsMap.get(t.id) || [],
+      taught_classes: (classesMap.get(t.id) || []).sort((a, b) => a.localeCompare(b, 'id')),
+      employment_histories: historiesMap.get(t.id) || [],
     }));
 
     return {

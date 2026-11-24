@@ -245,28 +245,91 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 6. SURAT RESMI MADRASAH (letters)
-  if (!docType || docType === 'SURAT') {
+  // 6. SURAT RESMI MADRASAH & BUKU AGENDA PERSURATAN (letters / AGD-...)
+  if (!docType || docType === 'SURAT' || ref.toUpperCase().startsWith('AGD-')) {
+    const upperRef = ref.toUpperCase();
+    const agdMatch = upperRef.match(/^AGD-(\d{8})-([A-Z0-9]+)$/);
+    if (agdMatch) {
+      const dateCompact = agdMatch[1];
+      const tsToken = agdMatch[2];
+      const tsMs = Number.parseInt(tsToken, 36);
+      const parsedDate =
+        !Number.isNaN(tsMs) && tsMs >= 1577836800000 && tsMs <= 4102444800000
+          ? new Date(tsMs).toISOString()
+          : `${dateCompact.slice(0, 4)}-${dateCompact.slice(4, 6)}-${dateCompact.slice(6, 8)}`;
+
+      return NextResponse.json({
+        valid: true,
+        documentType: 'SURAT',
+        reference: upperRef,
+        title: 'Buku Agenda Arsip Persuratan Digital Resmi',
+        statusLabel: 'TERVERIFIKASI SAH',
+        issuedAt: parsedDate,
+        details: [
+          { label: 'Kategori Dokumen', value: 'Rekapitulasi Buku Agenda Surat Masuk & Keluar' },
+          { label: 'Kode Referensi Cetak', value: upperRef },
+          {
+            label: 'Tanggal Cetak',
+            value: `${dateCompact.slice(6, 8)}/${dateCompact.slice(4, 6)}/${dateCompact.slice(0, 4)}`,
+          },
+        ],
+      });
+    }
+
     const { data: letter } = await supabase
       .from('letters')
-      .select('id, letter_number, direction, category, subject, counterparty, letter_date, created_at')
-      .ilike('letter_number', ref.replace(/[\\%_]/g, '\\$&'))
+      .select(
+        '*, student:students(full_name, nis), teacher:teachers_staff(full_name, nip)'
+      )
+      .or(
+        `letter_number.ilike.${ref.replace(/[\\%_]/g, '\\$&')},summary.ilike.%${ref.replace(/[\\%_]/g, '\\$&')}%`
+      )
       .limit(1)
       .maybeSingle();
 
     if (letter) {
+      const student = Array.isArray(letter.student) ? letter.student[0] : letter.student;
+      const teacher = Array.isArray(letter.teacher) ? letter.teacher[0] : letter.teacher;
+      const letterStatus = String((letter as Record<string, unknown>).status || 'TERBIT');
+      const isCancelled = letterStatus === 'DIBATALKAN';
+
       return NextResponse.json({
-        valid: true,
+        valid: !isCancelled,
         documentType: 'SURAT',
         reference: letter.letter_number,
         title: 'Dokumen / Surat Resmi Lembaga',
-        statusLabel: 'TERVERIFIKASI SAH',
+        statusLabel: isCancelled
+          ? 'DOKUMEN DIBATALKAN / TIDAK BERLAKU'
+          : `TERVERIFIKASI SAH (${letterStatus})`,
         issuedAt: letter.letter_date || letter.created_at,
         details: [
           { label: 'Nomor Surat', value: letter.letter_number },
-          { label: 'Jenis Surat', value: `${letter.direction} - ${letter.category}` },
+          {
+            label: 'Jenis & Kategori',
+            value: `${letter.direction} - ${String(letter.category || '').replace(/_/g, ' ')}`,
+          },
           { label: 'Perihal', value: letter.subject || '-' },
-          { label: 'Tujuan / Pengirim', value: letter.counterparty || '-' },
+          {
+            label: letter.direction === 'MASUK' ? 'Pengirim / Asal' : 'Tujuan / Penerima',
+            value: letter.counterparty || '-',
+          },
+          ...(student?.full_name
+            ? [
+                {
+                  label: 'Siswa Terkait',
+                  value: `${student.full_name}${student.nis ? ` (NIS: ${student.nis})` : ''}`,
+                },
+              ]
+            : []),
+          ...(teacher?.full_name
+            ? [
+                {
+                  label: 'GTK Terkait',
+                  value: `${teacher.full_name}${teacher.nip ? ` (NIP: ${teacher.nip})` : ''}`,
+                },
+              ]
+            : []),
+          ...(letter.summary ? [{ label: 'Ringkasan Isi', value: letter.summary }] : []),
           { label: 'Tanggal Surat', value: letter.letter_date || '-' },
         ],
       });
