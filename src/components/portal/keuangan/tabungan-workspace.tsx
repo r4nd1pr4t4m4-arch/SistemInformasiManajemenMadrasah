@@ -170,15 +170,15 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {/* Toast Notification */}
+      {/* Toast Notification (Floating Top-Right di bawah Navbar) */}
       {toast && (
         <div
           role={toast.type === 'ok' ? 'status' : 'alert'}
-          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-start sm:items-center justify-between gap-2 ${
-            toast.type === 'ok'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-rose-50 border-rose-200 text-rose-800'
-          }`}
+          aria-live="polite"
+          className={`fixed top-20 right-4 sm:right-6 z-[60] max-w-sm sm:max-w-md w-[calc(100vw-2rem)] p-3.5 sm:p-4 rounded-2xl border text-xs font-medium flex items-start justify-between gap-3 shadow-xl backdrop-blur-md transition-all ${toast.type === 'ok'
+              ? 'bg-emerald-50/95 border-emerald-200 text-emerald-950'
+              : 'bg-rose-50/95 border-rose-200 text-rose-950'
+            }`}
         >
           <div className="flex items-start sm:items-center gap-2 min-w-0">
             {toast.type === 'ok' ? (
@@ -241,42 +241,38 @@ export function TabunganWorkspace({ section }: { section: TabunganSection }) {
           </button>
           <Link
             href="/portal/keuangan/tabungan/transaksi"
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-              section === 'transaksi'
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${section === 'transaksi'
                 ? 'bg-emerald-700 text-white shadow-xs'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-            }`}
+              }`}
           >
             <Wallet className="w-3.5 h-3.5" /> Transaksi Setor / Tarik
           </Link>
           <Link
             href="/portal/keuangan/tabungan/buka-rekening"
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-              section === 'buka-rekening'
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${section === 'buka-rekening'
                 ? 'bg-emerald-700 text-white shadow-xs'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-            }`}
+              }`}
           >
             <User className="w-3.5 h-3.5" /> Buka Rekening
           </Link>
           <Link
             href="/portal/keuangan/tabungan/rekap"
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-              section === 'rekap'
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${section === 'rekap'
                 ? 'bg-emerald-700 text-white shadow-xs'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-            }`}
+              }`}
           >
             <History className="w-3.5 h-3.5" /> Rekapitulasi
           </Link>
           {canManage && (
             <Link
               href="/portal/keuangan/tabungan/aturan-fee"
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-                section === 'aturan-fee'
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${section === 'aturan-fee'
                   ? 'bg-emerald-700 text-white shadow-xs'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-              }`}
+                }`}
             >
               <Percent className="w-3.5 h-3.5" /> Aturan Fee Penarikan
             </Link>

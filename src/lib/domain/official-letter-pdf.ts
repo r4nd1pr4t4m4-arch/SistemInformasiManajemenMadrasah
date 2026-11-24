@@ -574,11 +574,39 @@ export async function generateOfficialLetterPdf(params: {
   }
 
   // =========================================================================
-  // 3. BLOK TANDA TANGAN ELEKTRONIK (TTE) & QR VERIFIKASI
+  // 3. BLOK TANDA TANGAN ELEKTRONIK (TTE), TEMBUSAN RATA BAWAH & FOOTER
   // =========================================================================
+  const footerTopY = pageHeight - 16;
   const sigX = pageWidth - marginX - 68;
-  let sigY = Math.max(cursorY + 6, 185);
-  if (sigY > pageHeight - 72) {
+  const sigBlockHeight = options?.signatoryNip?.trim() ? 50 : 46;
+  const maxSigY = footerTopY - 5 - sigBlockHeight;
+
+  // Siapkan baris Tembusan terlebih dahulu agar tinggi blok tembusan dapat dihitung akurat
+  const rawCcLines = (options?.ccListText || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const ccMaxWidth = sigX - marginX - 6;
+  const ccLineSpacing = 4.2;
+  doc.setFont('times', 'normal');
+  doc.setFontSize(9);
+
+  const wrappedCcItems: string[][] = rawCcLines.map((line, idx) => {
+    const cleanText = `${idx + 1}. ${line.replace(/^\d+\.\s*/, '')}`;
+    return doc.splitTextToSize(cleanText, ccMaxWidth) as string[];
+  });
+  const totalCcWrappedLines = wrappedCcItems.reduce((acc, item) => acc + item.length, 0);
+
+  // Posisi Tembusan Rata Bawah (tepat di atas garis batas footer dengan jarak aman 4.5 mm)
+  const ccBottomAnchorY = footerTopY - 4.5;
+  const ccHeaderY =
+    totalCcWrappedLines > 0 ? ccBottomAnchorY - totalCcWrappedLines * ccLineSpacing : ccBottomAnchorY;
+
+  let sigY = Math.max(cursorY + 8, 170);
+
+  // Jika tanda tangan melewati batas bawah halaman ATAU teks isi surat menabrak area tembusan rata bawah, pindah ke halaman baru
+  if (sigY > maxSigY || (totalCcWrappedLines > 0 && cursorY + 4 > ccHeaderY)) {
     doc.addPage();
     sigY = 30;
   }
@@ -612,7 +640,11 @@ export async function generateOfficialLetterPdf(params: {
     doc.setFontSize(6.2);
     doc.setTextColor(71, 85, 105);
     doc.text('Scan QR untuk verifikasi keaslian', sigX + 25, sigY + 29);
-    doc.text(`Kode: ${letter.classification_code || getDefaultClassificationCode(letter.category)}`, sigX + 25, sigY + 32.5);
+    doc.text(
+      `Kode: ${letter.classification_code || getDefaultClassificationCode(letter.category)}`,
+      sigX + 25,
+      sigY + 32.5
+    );
   } catch {
     // ignore QR render error
   }
@@ -631,39 +663,38 @@ export async function generateOfficialLetterPdf(params: {
     doc.text(`NIP/NIY. ${options.signatoryNip.trim()}`, sigX, sigY + 49);
   }
 
-  // Tembusan (jika ada)
-  const ccLines = (options?.ccListText || '')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (ccLines.length > 0) {
-    let ccY = sigY + 28;
+  // Tembusan Rata Bawah (di atas garis footer surat)
+  if (totalCcWrappedLines > 0) {
+    let ccY = ccHeaderY;
+    doc.setTextColor(15, 23, 42);
     doc.setFont('times', 'bold');
     doc.setFontSize(9);
     doc.text('Tembusan Yth.:', marginX, ccY);
     doc.setFont('times', 'normal');
-    ccLines.forEach((line, idx) => {
-      ccY += 4.2;
-      doc.text(`${idx + 1}. ${line.replace(/^\d+\.\s*/, '')}`, marginX + 2, ccY);
-    });
+    for (const wrappedLines of wrappedCcItems) {
+      for (const wLine of wrappedLines) {
+        ccY += ccLineSpacing;
+        doc.text(wLine, marginX + 2, ccY);
+      }
+    }
   }
 
   // Footer Verifikasi Elektronik
   doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.25);
-  doc.line(marginX, pageHeight - 15, pageWidth - marginX, pageHeight - 15);
+  doc.line(marginX, footerTopY, pageWidth - marginX, footerTopY);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.2);
   doc.setTextColor(100, 116, 139);
   doc.text(
     `Dokumen resmi ${institution?.name || 'SiM-M'} • Terdaftar di Buku Agenda Digital No: ${letter.letter_number}`,
     marginX,
-    pageHeight - 10.5
+    footerTopY + 4.5
   );
   doc.text(
     'Keaslian dokumen dapat diverifikasi melalui pemindaian QR Code atau portal /verifikasi.',
     marginX,
-    pageHeight - 7
+    footerTopY + 8
   );
 
   const safeSlug = letter.letter_number.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);

@@ -228,6 +228,37 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
         if (!isMounted) return;
         registrationRef = reg;
 
+        // Warm-cache seluruh aset CSS & JS yang sedang dimuat di DOM agar selalu siap saat tiba-tiba offline
+        const warmLoadedStaticAssets = () => {
+          const activeWorker = reg.active || navigator.serviceWorker.controller;
+          if (!activeWorker) return;
+          const urls = new Set<string>(['/offline']);
+          document
+            .querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href]')
+            .forEach((el) => {
+              if (el.href) urls.add(el.href);
+            });
+          document
+            .querySelectorAll<HTMLScriptElement>('script[src]')
+            .forEach((el) => {
+              if (el.src) urls.add(el.src);
+            });
+          activeWorker.postMessage({
+            type: 'WARM_STATIC_ASSETS',
+            urls: Array.from(urls),
+          });
+        };
+
+        if (reg.active) {
+          warmLoadedStaticAssets();
+        } else {
+          navigator.serviceWorker.ready
+            .then(() => {
+              if (isMounted) warmLoadedStaticAssets();
+            })
+            .catch(() => {});
+        }
+
         // Jika sudah ada SW baru menunggu saat halaman dimuat
         if (reg.waiting && navigator.serviceWorker.controller) {
           setWaitingWorker(reg.waiting);
@@ -277,7 +308,7 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('online', handleOnline);
     };
-  }, []);
+  }, [router]);
 
   // 4. Smart Launch Resume:
   //    Simpan halaman terakhir yang dikunjungi, dan saat PWA dibuka dari Home Screen (/?source=pwa),

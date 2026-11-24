@@ -23,6 +23,11 @@ const PUBLIC_NAV_LINKS = [
   { href: '/galeri', label: 'Galeri', desc: 'Dokumentasi foto & video kegiatan' },
   { href: '/direktori', label: 'Direktori', desc: 'Direktori GTK & prestasi siswa' },
   { href: '/e-library', label: 'E-Library', desc: 'Perpustakaan digital koleksi E-Book' },
+  {
+    href: '/persuratan-publik',
+    label: 'Drop-Box Surat',
+    desc: 'Kirim surat masuk eksternal, lacak disposisi & surat edaran',
+  },
   { href: '/verifikasi', label: 'Verifikasi', desc: 'Validasi dokumen & scan QR Code' },
   { href: '/ppdb', label: 'PPDB Online', desc: 'Pendaftaran peserta didik baru' },
   { href: '/kontak', label: 'Kontak & FAQ', desc: 'Alamat, kontak & pertanyaan umum' },
@@ -33,6 +38,7 @@ const DESKTOP_PRIMARY_HREFS = new Set([
   '/profil',
   '/berita',
   '/e-library',
+  '/persuratan-publik',
   '/verifikasi',
   '/ppdb',
 ]);
@@ -365,6 +371,11 @@ export function PublicFooter() {
             <li>
               <Link href="/ppdb/mutasi" className="hover:text-emerald-700 transition">
                 PPDB Mutasi Masuk
+              </Link>
+            </li>
+            <li>
+              <Link href="/persuratan-publik" className="hover:text-emerald-700 transition">
+                Drop-Box Surat Masuk &amp; Edaran
               </Link>
             </li>
             <li>

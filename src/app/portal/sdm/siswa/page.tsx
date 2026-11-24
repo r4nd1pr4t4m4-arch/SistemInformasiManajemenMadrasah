@@ -246,10 +246,11 @@ export default function ManajemenSiswaPage() {
       {message && (
         <div
           role={message.type === 'ok' ? 'status' : 'alert'}
-          className={`p-3.5 rounded-2xl text-xs sm:text-sm border flex items-start sm:items-center justify-between gap-3 ${
+          aria-live="polite"
+          className={`fixed top-20 right-4 sm:right-6 z-[60] max-w-sm sm:max-w-md w-[calc(100vw-2rem)] p-3.5 sm:p-4 rounded-2xl text-xs font-medium border flex items-start justify-between gap-3 shadow-xl backdrop-blur-md transition-all ${
             message.type === 'ok'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-rose-50 border-rose-200 text-rose-800'
+              ? 'bg-emerald-50/95 border-emerald-200 text-emerald-950'
+              : 'bg-rose-50/95 border-rose-200 text-rose-950'
           }`}
         >
           <span className="break-words leading-relaxed">{message.text}</span>

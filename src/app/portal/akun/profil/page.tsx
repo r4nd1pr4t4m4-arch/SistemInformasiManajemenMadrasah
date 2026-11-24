@@ -177,25 +177,26 @@ export default function AkunProfilPage() {
       {toast && (
         <div
           role={toast.type === 'ok' ? 'status' : 'alert'}
-          className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center justify-between gap-2 ${
+          aria-live="polite"
+          className={`fixed top-20 right-4 sm:right-6 z-[60] max-w-sm sm:max-w-md w-[calc(100vw-2rem)] p-3.5 sm:p-4 rounded-2xl border text-xs font-medium flex items-start justify-between gap-3 shadow-xl backdrop-blur-md transition-all ${
             toast.type === 'ok'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-rose-50 border-rose-200 text-rose-700'
+              ? 'bg-emerald-50/95 border-emerald-200 text-emerald-950'
+              : 'bg-rose-50/95 border-rose-200 text-rose-950'
           }`}
         >
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-start gap-2.5 min-w-0">
             {toast.type === 'ok' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
             ) : (
-              <AlertCircle className="w-4 h-4 shrink-0" />
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
             )}
-            <span className="break-words">{toast.msg}</span>
+            <span className="leading-relaxed break-words">{toast.msg}</span>
           </div>
           <button
             type="button"
             onClick={() => setToast(null)}
             aria-label="Tutup notifikasi"
-            className="p-1 rounded-lg hover:bg-black/5 shrink-0"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-black/5 shrink-0"
           >
             <X className="w-3.5 h-3.5" />
           </button>

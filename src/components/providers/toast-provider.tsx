@@ -82,13 +82,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {toasts.length > 0 && (
         <div
           aria-live="polite"
-          className="fixed bottom-4 right-4 z-[60] flex flex-col gap-2.5 max-w-md w-[calc(100vw-2rem)] pointer-events-none"
+          className="fixed top-20 right-4 sm:right-6 z-[60] flex flex-col items-end gap-2.5 max-w-sm sm:max-w-md w-[calc(100vw-2rem)] pointer-events-none"
         >
           {toasts.map((item) => (
             <div
               key={item.id}
               role={item.type === 'error' ? 'alert' : 'status'}
-              className={`pointer-events-auto rounded-2xl p-3.5 sm:p-4 border text-xs font-medium flex items-start justify-between gap-3 shadow-lg backdrop-blur-md transition-all ${
+              className={`pointer-events-auto w-full rounded-2xl p-3.5 sm:p-4 border text-xs font-medium flex items-start justify-between gap-3 shadow-xl backdrop-blur-md transition-all ${
                 item.type === 'success'
                   ? 'bg-emerald-50/95 border-emerald-200 text-emerald-950'
                   : item.type === 'warning'

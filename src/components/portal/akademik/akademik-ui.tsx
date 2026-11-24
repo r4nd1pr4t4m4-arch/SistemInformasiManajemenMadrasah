@@ -1,13 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, X } from 'lucide-react';
 import { useFocusTrap } from '@/lib/hooks/use-focus-trap';
 import {
   EmptyState,
   ErrorState,
   LoadingState,
-  SuccessState,
 } from '@/components/ui/state-views';
 
 export interface ToastState {
@@ -62,22 +61,39 @@ export function AkademikToast({
   onDismiss?: () => void;
 }) {
   if (!toast) return null;
-  if (toast.type === 'success') {
-    return (
-      <SuccessState
-        variant="banner"
-        title="Berhasil"
-        description={toast.text}
-        onDismiss={onDismiss}
-      />
-    );
-  }
   return (
-    <ErrorState
-      compact
-      title="Perhatian"
-      message={toast.text}
-    />
+    <div
+      aria-live="polite"
+      className="fixed top-20 right-4 sm:right-6 z-[60] max-w-sm sm:max-w-md w-[calc(100vw-2rem)] pointer-events-none"
+    >
+      <div
+        role={toast.type === 'error' ? 'alert' : 'status'}
+        className={`pointer-events-auto rounded-2xl p-3.5 sm:p-4 border text-xs font-medium flex items-start justify-between gap-3 shadow-xl backdrop-blur-md transition-all ${
+          toast.type === 'success'
+            ? 'bg-emerald-50/95 border-emerald-200 text-emerald-950'
+            : 'bg-rose-50/95 border-rose-200 text-rose-950'
+        }`}
+      >
+        <div className="flex items-start gap-2.5 min-w-0">
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
+          ) : (
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+          )}
+          <span className="leading-relaxed break-words">{toast.text}</span>
+        </div>
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Tutup notifikasi"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-black/5 shrink-0 transition"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
