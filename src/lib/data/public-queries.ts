@@ -45,7 +45,7 @@ export async function getInstitutionSettings(): Promise<InstitutionSettings> {
 }
 
 export async function getPublishedPosts(limit = 12): Promise<PostItem[]> {
-  if (!isSupabaseAdminConfigured()) return DEFAULT_POSTS;
+  if (!isSupabaseAdminConfigured()) return DEFAULT_POSTS.slice(0, limit);
 
   try {
     const supabase = createSupabaseAdminClient();
@@ -184,6 +184,53 @@ export async function getPublicDirectoryData() {
     };
   } catch {
     return { teachers: [], achievements: [] };
+  }
+}
+
+export async function getPublicFacilities() {
+  if (!isSupabaseAdminConfigured()) {
+    return [];
+  }
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from('facilities')
+      .select('id, name, category, quantity, condition, description, image_url')
+      .order('name');
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getPublicFacilitiesHighlight(limit = 6) {
+  if (!isSupabaseAdminConfigured()) {
+    return { facilities: [], totalCount: 0 };
+  }
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const { data, count, error } = await supabase
+      .from('facilities')
+      .select('id, name, category, quantity, condition, description, image_url', {
+        count: 'exact',
+      })
+      .order('name')
+      .limit(limit);
+
+    if (error) {
+      return { facilities: [], totalCount: 0 };
+    }
+
+    return {
+      facilities: data || [],
+      totalCount: count ?? (data?.length || 0),
+    };
+  } catch {
+    return { facilities: [], totalCount: 0 };
   }
 }
 

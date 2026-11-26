@@ -18,7 +18,7 @@ const CONTENT_SECURITY_POLICY = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https: wss:",
-  "frame-src 'self' https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com",
+  "frame-src 'self' https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://www.openstreetmap.org",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -82,7 +82,7 @@ function buildAllowedImageRemotePatterns(): RemotePattern[] {
 }
 
 const nextConfig: NextConfig = {
-  distDir: isDev ? ".next-runtime" : ".next",
+  distDir: isDev ? (process.env.NEXT_DIST_DIR || ".next-runtime") : ".next",
   transpilePackages: ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner"],
   cacheComponents: true,
   partialPrefetching: true,

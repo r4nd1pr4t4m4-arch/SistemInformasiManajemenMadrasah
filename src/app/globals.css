@@ -70,9 +70,9 @@ body {
   display: none;
 }
 
-/* Kunci scroll halaman latar belakang saat modal popup / flipbook aktif, tetapi modal tetap dapat di-scroll */
-html:has(.fixed.inset-0.z-50),
-body:has(.fixed.inset-0.z-50) {
+/* Kunci scroll halaman latar belakang saat modal popup / flipbook aktif (kecuali jika modal berada di dalam subtree tersembunyi Next.js/React <Activity>) */
+html:has(.fixed.inset-0.z-50:not([hidden]):not([style*="display: none"]):not([style*="display: none"] *)),
+body:has(.fixed.inset-0.z-50:not([hidden]):not([style*="display: none"]):not([style*="display: none"] *)) {
   overflow: hidden !important;
   overscroll-behavior: none;
 }
