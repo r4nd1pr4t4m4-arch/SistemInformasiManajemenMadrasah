@@ -114,6 +114,13 @@ export interface DashboardPayload {
       alpa: number;
     };
   } | null;
+  linkedChildren?: Array<{
+    id: string;
+    full_name: string;
+    nis: string | null;
+    nisn: string | null;
+    status: string;
+  }>;
   libraryMember: {
     id: string;
     member_code: string;
@@ -364,5 +371,10 @@ export interface DashboardPayload {
       institution_or_company: string | null;
       major_or_position: string | null;
     }>;
+  } | null;
+  ewsSummary?: {
+    highAlphaStudents: Array<{ studentId: string; fullName: string; alpaCount: number }>;
+    overdueDispositionsCount: number;
+    pendingSppProofsCount: number;
   } | null;
 }

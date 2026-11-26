@@ -60,6 +60,19 @@ export default function KontakPage() {
   });
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [lastTicketCode, setLastTicketCode] = useState<string | null>(null);
+  const [trackCode, setTrackCode] = useState('');
+  const [tracking, setTracking] = useState(false);
+  const [trackError, setTrackError] = useState<string | null>(null);
+  const [trackedTicket, setTrackedTicket] = useState<{
+    ticket_code: string;
+    category: string;
+    subject: string;
+    status: string;
+    response: string | null;
+    responded_at: string | null;
+    created_at: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
@@ -165,6 +178,10 @@ export default function KontakPage() {
         setError(data.error || 'Gagal mengirim pesan.');
       } else {
         setSent(true);
+        if (data?.ticketCode) {
+          setLastTicketCode(String(data.ticketCode));
+          setTrackCode(String(data.ticketCode));
+        }
         setForm({
           senderName: '',
           senderEmail: '',
@@ -207,8 +224,16 @@ export default function KontakPage() {
             {sent && (
               <SuccessState
                 variant="banner"
-                title="Pesan Berhasil Terkirim"
-                description="Pesan Anda telah tersimpan di database dan akan segera ditindaklanjuti oleh tim Humas & Tata Usaha."
+                title={
+                  lastTicketCode
+                    ? `Pesan Terkirim — Nomor Tiket: ${lastTicketCode}`
+                    : 'Pesan Berhasil Terkirim'
+                }
+                description={
+                  lastTicketCode
+                    ? `Simpan nomor tiket ${lastTicketCode} untuk melacak status tindak lanjut dan tanggapan resmi lembaga di bawah ini.`
+                    : 'Pesan Anda telah tersimpan di database dan akan segera ditindaklanjuti oleh tim Humas & Tata Usaha.'
+                }
                 onDismiss={() => setSent(false)}
               />
             )}
@@ -427,6 +452,95 @@ export default function KontakPage() {
                       </a>
                     ))}
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* Lacak Status Tiket Pengaduan */}
+            <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                  Lacak Status Tiket Pengaduan
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Masukkan nomor tiket (mis. <span className="font-mono">ADU-20261126-XXXX</span>) untuk melihat progres &amp; tanggapan resmi.
+                </p>
+              </div>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const code = trackCode.trim().toUpperCase();
+                  if (!code) return;
+                  setTracking(true);
+                  setTrackError(null);
+                  setTrackedTicket(null);
+                  try {
+                    const res = await fetch(`/api/inquiries?ticket=${encodeURIComponent(code)}`, {
+                      cache: 'no-store',
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                      setTrackError(data.error || 'Nomor tiket tidak ditemukan.');
+                    } else if (data.ticket) {
+                      setTrackedTicket(data.ticket);
+                    }
+                  } catch {
+                    setTrackError('Gagal terhubung ke server.');
+                  } finally {
+                    setTracking(false);
+                  }
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  type="text"
+                  value={trackCode}
+                  onChange={(e) => setTrackCode(e.target.value)}
+                  placeholder="ADU-YYYYMMDD-XXXX"
+                  className="flex-1 min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                />
+                <button
+                  type="submit"
+                  disabled={tracking}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold transition shrink-0"
+                >
+                  {tracking ? 'Mencari...' : 'Lacak'}
+                </button>
+              </form>
+              {trackError && (
+                <p className="text-xs text-rose-600 font-medium">{trackError}</p>
+              )}
+              {trackedTicket && (
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-xs space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono font-bold text-emerald-700">
+                      {trackedTicket.ticket_code}
+                    </span>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] ${
+                        trackedTicket.status === 'SELESAI'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : trackedTicket.status === 'DIPROSES'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}
+                    >
+                      {trackedTicket.status}
+                    </span>
+                  </div>
+                  <p className="font-bold text-slate-900">{trackedTicket.subject}</p>
+                  {trackedTicket.response ? (
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-emerald-950">
+                      <p className="text-[10px] font-bold uppercase text-emerald-700 mb-0.5">
+                        Tanggapan Resmi Lembaga:
+                      </p>
+                      <p className="whitespace-pre-line">{trackedTicket.response}</p>
+                    </div>
+                  ) : (
+                    <p className="text-slate-500 italic">
+                      Laporan Anda telah diterima dan sedang dalam antrean peninjauan tim Humas/TU.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

@@ -151,11 +151,14 @@ export async function GET(request: NextRequest) {
     const sppMatch = ref.toUpperCase().match(/^SPP-([A-F0-9]{8})$/);
     if (sppMatch) {
       const idPrefix = sppMatch[1].toLowerCase();
+      const uuidLow = `${idPrefix}-0000-0000-0000-000000000000`;
+      const uuidHigh = `${idPrefix}-ffff-ffff-ffff-ffffffffffff`;
       const { data: candidates } = await supabase
         .from('student_bills')
         .select('*, student:students(full_name, nis), fee_type:fee_types(name, category)')
-        .order('created_at', { ascending: false })
-        .limit(500);
+        .gte('id', uuidLow)
+        .lte('id', uuidHigh)
+        .limit(5);
       billRow =
         (candidates || []).find((b) => String(b.id).toLowerCase().startsWith(idPrefix)) || null;
     } else {
@@ -250,30 +253,46 @@ export async function GET(request: NextRequest) {
     const upperRef = ref.toUpperCase();
     const agdMatch = upperRef.match(/^AGD-(\d{8})-([A-Z0-9]+)$/);
     if (agdMatch) {
-      const dateCompact = agdMatch[1];
-      const tsToken = agdMatch[2];
-      const tsMs = Number.parseInt(tsToken, 36);
-      const parsedDate =
-        !Number.isNaN(tsMs) && tsMs >= 1577836800000 && tsMs <= 4102444800000
-          ? new Date(tsMs).toISOString()
-          : `${dateCompact.slice(0, 4)}-${dateCompact.slice(4, 6)}-${dateCompact.slice(6, 8)}`;
+      const { data: ledgerRow } = await supabase
+        .from('document_verification_ledger')
+        .select('reference_code, title, issued_at, metadata, is_revoked')
+        .eq('reference_code', upperRef)
+        .maybeSingle();
 
-      return NextResponse.json({
-        valid: true,
-        documentType: 'SURAT',
-        reference: upperRef,
-        title: 'Buku Agenda Arsip Persuratan Digital Resmi',
-        statusLabel: 'TERVERIFIKASI SAH',
-        issuedAt: parsedDate,
-        details: [
-          { label: 'Kategori Dokumen', value: 'Rekapitulasi Buku Agenda Surat Masuk & Keluar' },
-          { label: 'Kode Referensi Cetak', value: upperRef },
-          {
-            label: 'Tanggal Cetak',
-            value: `${dateCompact.slice(6, 8)}/${dateCompact.slice(4, 6)}/${dateCompact.slice(0, 4)}`,
-          },
-        ],
-      });
+      if (ledgerRow) {
+        const meta = (ledgerRow.metadata || {}) as Record<string, unknown>;
+        return NextResponse.json({
+          valid: !ledgerRow.is_revoked,
+          documentType: 'SURAT',
+          reference: ledgerRow.reference_code,
+          title: ledgerRow.title || 'Buku Agenda Arsip Persuratan Digital Resmi',
+          statusLabel: ledgerRow.is_revoked
+            ? 'DOKUMEN DICABUT / TIDAK BERLAKU'
+            : 'TERVERIFIKASI SAH (LEDGER RESMI)',
+          issuedAt: ledgerRow.issued_at,
+          details: [
+            { label: 'Kategori Dokumen', value: 'Rekapitulasi Buku Agenda Surat Masuk & Keluar' },
+            { label: 'Kode Referensi Cetak', value: ledgerRow.reference_code },
+            ...(meta.totalRows !== undefined
+              ? [{ label: 'Jumlah Entri Surat', value: `${String(meta.totalRows)} surat` }]
+              : []),
+            {
+              label: 'Waktu Terbit',
+              value: new Date(ledgerRow.issued_at).toLocaleString('id-ID'),
+            },
+          ],
+        });
+      }
+
+      return NextResponse.json(
+        {
+          valid: false,
+          reference: upperRef,
+          error:
+            'Kode Buku Agenda ini tidak tercatat pada ledger penerbitan dokumen resmi lembaga.',
+        },
+        { status: 404 }
+      );
     }
 
     const { data: letter } = await supabase
@@ -336,74 +355,80 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 7. REKAP ABSENSI PDF (RKP-...)
+  // 7. REKAP ABSENSI PDF (RKP-...) — Wajib Terdaftar di Ledger DB
   if (docType === 'REKAP_ABSENSI' || ref.toUpperCase().startsWith('RKP-')) {
-    const parts = ref.toUpperCase().split('-');
-    if (parts.length >= 4) {
+    const upperRef = ref.toUpperCase();
+    const { data: ledgerRow } = await supabase
+      .from('document_verification_ledger')
+      .select('reference_code, title, issued_at, metadata, is_revoked')
+      .eq('reference_code', upperRef)
+      .maybeSingle();
+
+    if (ledgerRow) {
+      const meta = (ledgerRow.metadata || {}) as Record<string, unknown>;
       return NextResponse.json({
-        valid: true,
+        valid: !ledgerRow.is_revoked,
         documentType: 'REKAP_ABSENSI',
-        reference: ref.toUpperCase(),
-        title: 'Dokumen Rekapitulasi Absensi Resmi',
-        statusLabel: 'FORMAT DOKUMEN VALID',
+        reference: ledgerRow.reference_code,
+        title: ledgerRow.title || 'Dokumen Rekapitulasi Absensi Resmi',
+        statusLabel: ledgerRow.is_revoked
+          ? 'DOKUMEN DICABUT / TIDAK BERLAKU'
+          : 'TERVERIFIKASI SAH (LEDGER RESMI)',
+        issuedAt: ledgerRow.issued_at,
         details: [
-          { label: 'Jenis Rekap', value: parts[1] || '-' },
-          { label: 'Periode Mulai', value: parts.slice(2, 5).join('-') || '-' },
-          { label: 'Kode Referensi', value: ref.toUpperCase() },
+          { label: 'Jenis Rekap', value: String(meta.kind || upperRef.split('-')[1] || '-') },
+          ...(meta.period ? [{ label: 'Periode', value: String(meta.period) }] : []),
+          { label: 'Kode Referensi', value: ledgerRow.reference_code },
+          {
+            label: 'Waktu Terbit',
+            value: new Date(ledgerRow.issued_at).toLocaleString('id-ID'),
+          },
         ],
       });
     }
   }
 
-  // 8. PENILAIAN & RAPORT PDF (PNL-...)
+  // 8. PENILAIAN & RAPORT PDF (PNL-...) — Wajib Terdaftar di Ledger DB
   if (docType === 'PENILAIAN' || ref.toUpperCase().startsWith('PNL-')) {
     const upperRef = ref.toUpperCase();
-    const parts = upperRef.split('-');
-    if (parts.length >= 3) {
-      const docKey = parts.slice(1, -1).join('-');
-      const tsToken = parts[parts.length - 1];
-      const tsMs = Number.parseInt(tsToken, 36);
-      const parsedDate =
-        !Number.isNaN(tsMs) && tsMs >= 1577836800000 && tsMs <= 4102444800000
-          ? new Date(tsMs).toISOString()
-          : undefined;
+    const { data: ledgerRow } = await supabase
+      .from('document_verification_ledger')
+      .select('reference_code, title, issued_at, metadata, is_revoked')
+      .eq('reference_code', upperRef)
+      .maybeSingle();
 
-      const docCategory = docKey.includes('RAPORT')
-        ? 'Laporan Nilai Raport Mata Pelajaran'
-        : docKey.includes('REKAPNILAI')
-        ? 'Rekapitulasi Nilai Siswa / Anak'
-        : 'Dokumen Penilaian Mata Pelajaran';
-
+    if (ledgerRow) {
+      const meta = (ledgerRow.metadata || {}) as Record<string, unknown>;
       return NextResponse.json({
-        valid: true,
+        valid: !ledgerRow.is_revoked,
         documentType: 'PENILAIAN',
-        reference: upperRef,
-        title: docCategory,
-        statusLabel: 'FORMAT DOKUMEN VALID',
-        issuedAt: parsedDate,
+        reference: ledgerRow.reference_code,
+        title: ledgerRow.title || 'Dokumen Penilaian Mata Pelajaran',
+        statusLabel: ledgerRow.is_revoked
+          ? 'DOKUMEN DICABUT / TIDAK BERLAKU'
+          : 'TERVERIFIKASI SAH (LEDGER RESMI)',
+        issuedAt: ledgerRow.issued_at,
         details: [
-          { label: 'Kategori Dokumen', value: docCategory },
-          { label: 'Identitas Berkas', value: docKey || '-' },
-          { label: 'Kode Referensi', value: upperRef },
-          ...(parsedDate
-            ? [
-                {
-                  label: 'Waktu Cetak',
-                  value: new Date(parsedDate).toLocaleString('id-ID'),
-                },
-              ]
-            : []),
+          { label: 'Kategori Dokumen', value: ledgerRow.title || '-' },
+          ...(meta.subtitle ? [{ label: 'Keterangan', value: String(meta.subtitle) }] : []),
+          { label: 'Kode Referensi', value: ledgerRow.reference_code },
+          {
+            label: 'Waktu Terbit',
+            value: new Date(ledgerRow.issued_at).toLocaleString('id-ID'),
+          },
         ],
       });
     }
   }
 
-  // 9. MUTASI REKENING TABUNGAN PDF (MUT-<ID8>-<YYYYMMDD>-<TS36>)
+  // 9. MUTASI REKENING TABUNGAN PDF (MUT-<ID8>-<YYYYMMDD>-<TS36>) — Query Indeks UUID
   if (docType === 'MUTASI_TABUNGAN' || ref.toUpperCase().startsWith('MUT-')) {
     const upperRef = ref.toUpperCase();
     const mutMatch = upperRef.match(/^MUT-([A-F0-9]{8})-(\d{8})-([A-Z0-9]+)$/);
     if (mutMatch) {
       const idPrefix = mutMatch[1].toLowerCase();
+      const uuidLow = `${idPrefix}-0000-0000-0000-000000000000`;
+      const uuidHigh = `${idPrefix}-ffff-ffff-ffff-ffffffffffff`;
       const dateCompact = mutMatch[2];
       const tsToken = mutMatch[3];
       const tsMs = Number.parseInt(tsToken, 36);
@@ -415,8 +440,9 @@ export async function GET(request: NextRequest) {
       const { data: accounts } = await supabase
         .from('savings_accounts')
         .select('id, account_number, owner_name, owner_type, balance, is_active')
-        .order('created_at', { ascending: false })
-        .limit(1000);
+        .gte('id', uuidLow)
+        .lte('id', uuidHigh)
+        .limit(5);
 
       const matchedAccount = (accounts || []).find((a) =>
         String(a.id).replace(/-/g, '').toLowerCase().startsWith(idPrefix)

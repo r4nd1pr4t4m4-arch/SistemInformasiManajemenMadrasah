@@ -220,3 +220,93 @@ export async function getPublicGalleryAndFacilities() {
     return { gallery: [], facilities: [], faqs: [] };
   }
 }
+
+export async function getPostBySlug(slug: string): Promise<PostItem | null> {
+  if (!slug) return null;
+  if (!isSupabaseAdminConfigured()) {
+    return DEFAULT_POSTS.find((p) => p.slug === slug) || null;
+  }
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from('posts')
+      .select('id, title, slug, category, excerpt, content, cover_image_url, author_display_name, status, published_at')
+      .eq('slug', slug)
+      .eq('status', 'PUBLISHED')
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data as PostItem;
+  } catch {
+    return null;
+  }
+}
+
+export async function getPublicInstitutionStats() {
+  if (!isSupabaseAdminConfigured()) {
+    return { students: 0, teachers: 0, classrooms: 0, ebooks: 0, alumni: 0 };
+  }
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const [
+      { count: students },
+      { count: teachers },
+      { count: classrooms },
+      { count: ebooks },
+      { count: alumni },
+    ] = await Promise.all([
+      supabase.from('students').select('id', { count: 'exact', head: true }).eq('status', 'AKTIF'),
+      supabase.from('teachers_staff').select('id', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('classrooms').select('id', { count: 'exact', head: true }),
+      supabase.from('library_books').select('id', { count: 'exact', head: true }),
+      supabase.from('students').select('id', { count: 'exact', head: true }).eq('status', 'LULUS'),
+    ]);
+
+    return {
+      students: students ?? 0,
+      teachers: teachers ?? 0,
+      classrooms: classrooms ?? 0,
+      ebooks: ebooks ?? 0,
+      alumni: alumni ?? 0,
+    };
+  } catch {
+    return { students: 0, teachers: 0, classrooms: 0, ebooks: 0, alumni: 0 };
+  }
+}
+
+export async function getPublicLeadershipStructure() {
+  if (!isSupabaseAdminConfigured()) return [];
+  try {
+    const supabase = createSupabaseAdminClient();
+    const { data } = await supabase
+      .from('teacher_additional_duties')
+      .select('id, teacher:teachers_staff(id, full_name, photo_url), duty_type:additional_duty_types(code, name)')
+      .eq('is_active', true);
+
+    const leadershipKeywords = ['KEPALA', 'WAKA', 'OPERATOR', 'BENDAHARA', 'PERPUSTAKAAN', 'BK', 'OSIM', 'OSIS'];
+    const result: Array<{ id: string; roleName: string; personName: string; photoUrl: string | null }> = [];
+    const seen = new Set<string>();
+
+    for (const row of data || []) {
+      const teacher = Array.isArray(row.teacher) ? row.teacher[0] : row.teacher;
+      const duty = Array.isArray(row.duty_type) ? row.duty_type[0] : row.duty_type;
+      if (!teacher?.full_name || !duty?.name) continue;
+      const upper = `${duty.code || ''} ${duty.name}`.toUpperCase();
+      if (!leadershipKeywords.some((kw) => upper.includes(kw))) continue;
+      const key = `${duty.name}::${teacher.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push({
+        id: row.id,
+        roleName: duty.name,
+        personName: teacher.full_name,
+        photoUrl: teacher.photo_url || null,
+      });
+    }
+    return result.slice(0, 12);
+  } catch {
+    return [];
+  }
+}

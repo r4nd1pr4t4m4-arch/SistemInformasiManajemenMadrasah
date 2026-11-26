@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
 import type { AppRole } from '@/types/database';
@@ -16,15 +17,21 @@ import {
   DashboardFinanceSection,
   DashboardServicesAndPersonalSection,
 } from '@/components/portal/dashboard/executive-finance-services-sections';
+import { DashboardExecutiveChartsAndEws } from '@/components/portal/dashboard/executive-charts-and-ews';
 
 export default function PortalDashboardPage() {
+  const [selectedChildId, setSelectedChildId] = useState<string>('');
+  const dashboardUrl = selectedChildId
+    ? `/api/portal/dashboard?studentId=${encodeURIComponent(selectedChildId)}`
+    : '/api/portal/dashboard';
+
   const {
     data,
     loading,
     validating: refreshing,
     error: errorMsg,
     refetch: loadDashboard,
-  } = useApiQuery<DashboardPayload>('/api/portal/dashboard', {
+  } = useApiQuery<DashboardPayload>(dashboardUrl, {
     staleTimeMs: 30_000,
     revalidateOnFocus: true,
   });
@@ -143,6 +150,14 @@ export default function PortalDashboardPage() {
 
       {exec && <DashboardExecutiveSection exec={exec} hasRole={hasRole} />}
 
+      {(exec || showFinanceSection || data.ewsSummary) && (
+        <DashboardExecutiveChartsAndEws
+          exec={exec}
+          finance={showFinanceSection ? finance : null}
+          ews={data.ewsSummary || null}
+        />
+      )}
+
       {showFinanceSection && finance && (
         <DashboardFinanceSection
           finance={finance}
@@ -160,6 +175,9 @@ export default function PortalDashboardPage() {
         bk={bk}
         guruWali={guruWali}
         studentPersonal={studentPersonal}
+        linkedChildren={data.linkedChildren || []}
+        selectedChildId={selectedChildId || studentPersonal?.student.id || ''}
+        onSelectChild={(id) => setSelectedChildId(id)}
         library={library}
         libraryMember={data.libraryMember}
         alumni={alumni}

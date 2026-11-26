@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import * as XLSX from 'xlsx';
 import {
   AlertCircle,
   Building2,
@@ -87,6 +88,8 @@ export default function CmsPpdbPage() {
   >('ALL');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [detailRow, setDetailRow] = useState<PpdbRow | null>(null);
+  const [detailNotesDraft, setDetailNotesDraft] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
 
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [ppdbList, setPpdbList] = useState<PpdbRow[]>([]);
@@ -169,6 +172,112 @@ export default function CmsPpdbPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [detailRow]);
+
+  useEffect(() => {
+    setDetailNotesDraft(detailRow?.admin_notes || '');
+  }, [detailRow?.id, detailRow?.admin_notes]);
+
+  async function handleSaveAdminNotes() {
+    if (!detailRow) return;
+    setSavingNotes(true);
+    try {
+      const res = await fetch('/api/cms/ppdb', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: detailRow.id,
+          status: detailRow.status,
+          admin_notes: detailNotesDraft.trim() || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.registration) {
+        const nextNotes = data.registration.admin_notes ?? null;
+        setPpdbList((prev) =>
+          prev.map((row) => (row.id === detailRow.id ? { ...row, admin_notes: nextNotes } : row))
+        );
+        setDetailRow((prev) => (prev ? { ...prev, admin_notes: nextNotes } : prev));
+        showToast('Catatan admin PPDB berhasil disimpan.');
+      } else {
+        showToast(data?.error || 'Gagal menyimpan catatan admin.', 'err');
+      }
+    } catch {
+      showToast('Terjadi kesalahan jaringan saat menyimpan catatan.', 'err');
+    } finally {
+      setSavingNotes(false);
+    }
+  }
+
+  async function handleToggleDocVerify(docId: string, nextVerified: boolean) {
+    try {
+      const res = await fetch('/api/cms/ppdb', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'TOGGLE_DOC_VERIFY',
+          document_id: docId,
+          is_verified: nextVerified,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data?.error || 'Gagal memperbarui status verifikasi berkas.', 'err');
+        return;
+      }
+      setPpdbList((prev) =>
+        prev.map((row) => ({
+          ...row,
+          ppdb_documents: row.ppdb_documents?.map((d) =>
+            d.id === docId ? { ...d, is_verified: nextVerified } : d
+          ),
+        }))
+      );
+      setDetailRow((prev) =>
+        prev
+          ? {
+              ...prev,
+              ppdb_documents: prev.ppdb_documents?.map((d) =>
+                d.id === docId ? { ...d, is_verified: nextVerified } : d
+              ),
+            }
+          : prev
+      );
+      showToast(nextVerified ? 'Berkas ditandai terverifikasi.' : 'Status verifikasi berkas dibatalkan.');
+    } catch {
+      showToast('Gagal terhubung ke server.', 'err');
+    }
+  }
+
+  function handleExportPpdbExcel() {
+    const headers = [
+      'No. Pendaftaran',
+      'Nama Lengkap',
+      'NISN',
+      'NIK',
+      'Asal Sekolah',
+      'Jalur',
+      'Orang Tua/Wali',
+      'No. WA',
+      'Status',
+      'Catatan Admin',
+    ];
+    const rows = filtered.map((r) => [
+      r.registration_number,
+      r.full_name,
+      r.nisn || '-',
+      r.nik || '-',
+      r.previous_school || '-',
+      r.pathway,
+      r.parent_name,
+      r.parent_phone,
+      r.status,
+      r.admin_notes || '',
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pendaftar PPDB');
+    XLSX.writeFile(wb, `Rekap_PPDB_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
 
   async function handleUpdatePpdbStatus(id: string, status: string) {
     setUpdatingId(id);
@@ -685,12 +794,33 @@ export default function CmsPpdbPage() {
                   <p className="font-medium text-slate-800 break-words">{detailRow.address}</p>
                 </div>
               )}
-              {detailRow.admin_notes && (
-                <div className="sm:col-span-2">
-                  <span className="text-slate-500">Catatan:</span>
-                  <p className="font-medium text-slate-800 break-words">{detailRow.admin_notes}</p>
-                </div>
-              )}
+              <div className="sm:col-span-2 space-y-1.5">
+                <span className="text-slate-500">Catatan Verifikasi / Mutasi:</span>
+                {canManage ? (
+                  <div className="space-y-2">
+                    <textarea
+                      rows={2}
+                      value={detailNotesDraft}
+                      onChange={(e) => setDetailNotesDraft(e.target.value)}
+                      placeholder="Tambahkan catatan verifikasi, alasan perbaikan, atau info kelas tujuan mutasi..."
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                    />
+                    <button
+                      type="button"
+                      disabled={savingNotes}
+                      onClick={handleSaveAdminNotes}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-semibold transition"
+                    >
+                      {savingNotes && <Loader2 className="w-3 h-3 animate-spin" />}
+                      Simpan Catatan
+                    </button>
+                  </div>
+                ) : (
+                  <p className="font-medium text-slate-800 break-words">
+                    {detailRow.admin_notes || '-'}
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -713,26 +843,53 @@ export default function CmsPpdbPage() {
                         <p className="font-semibold text-slate-800 truncate">
                           {doc.file_name || doc.document_type}
                         </p>
-                        <p className="text-[10px] text-slate-500">{doc.document_type}</p>
+                        <p className="text-[10px] text-slate-500">
+                          {doc.document_type} •{' '}
+                          <span className={doc.is_verified ? 'text-emerald-700 font-bold' : 'text-amber-700'}>
+                            {doc.is_verified ? 'Terverifikasi' : 'Belum Diverifikasi'}
+                          </span>
+                        </p>
                       </div>
-                      {isSafeDocUrl(doc.file_url) && (
-                        <a
-                          href={doc.file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-emerald-300 text-emerald-700 font-semibold transition"
-                        >
-                          <span>Buka</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {canManage && (
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleDocVerify(doc.id, !doc.is_verified)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
+                              doc.is_verified
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                                : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-300'
+                            }`}
+                          >
+                            {doc.is_verified ? '✓ Valid' : 'Verifikasi'}
+                          </button>
+                        )}
+                        {isSafeDocUrl(doc.file_url) && (
+                          <a
+                            href={doc.file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-emerald-300 text-emerald-700 font-semibold transition"
+                          >
+                            <span>Buka</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="pt-2 flex justify-end">
+            <div className="pt-2 flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={handleExportPpdbExcel}
+                className="px-4 py-2 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold transition"
+              >
+                Ekspor Daftar PPDB (.xlsx)
+              </button>
               <button
                 type="button"
                 onClick={() => setDetailRow(null)}

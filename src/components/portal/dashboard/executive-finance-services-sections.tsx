@@ -565,6 +565,9 @@ export function DashboardServicesAndPersonalSection({
   bk,
   guruWali,
   studentPersonal,
+  linkedChildren = [],
+  selectedChildId = '',
+  onSelectChild,
   library,
   libraryMember,
   alumni,
@@ -572,6 +575,9 @@ export function DashboardServicesAndPersonalSection({
   bk: DashboardPayload['bkSummary'];
   guruWali: DashboardPayload['guruWaliSummary'];
   studentPersonal: DashboardPayload['studentProfile'];
+  linkedChildren?: NonNullable<DashboardPayload['linkedChildren']>;
+  selectedChildId?: string;
+  onSelectChild?: (studentId: string) => void;
   library: DashboardPayload['librarySummary'];
   libraryMember: DashboardPayload['libraryMember'];
   alumni: DashboardPayload['alumniSummary'];
@@ -672,10 +678,34 @@ export function DashboardServicesAndPersonalSection({
 
       {studentPersonal && (
         <section className="space-y-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-            <UserCheck className="w-4 h-4 text-emerald-700" />
-            Informasi Akademik, Dokumen &amp; Keuangan Siswa
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-emerald-700" />
+              Informasi Akademik, Dokumen &amp; Keuangan Siswa
+            </h2>
+            {linkedChildren.length > 1 && onSelectChild && (
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="dashboard-child-switcher"
+                  className="text-xs font-semibold text-slate-600"
+                >
+                  Pilih Anak:
+                </label>
+                <select
+                  id="dashboard-child-switcher"
+                  value={selectedChildId || studentPersonal.student.id}
+                  onChange={(e) => onSelectChild(e.target.value)}
+                  className="rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                >
+                  {linkedChildren.map((child) => (
+                    <option key={child.id} value={child.id}>
+                      {child.full_name} {child.nis ? `(${child.nis})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="glass-card rounded-3xl p-5 space-y-1">

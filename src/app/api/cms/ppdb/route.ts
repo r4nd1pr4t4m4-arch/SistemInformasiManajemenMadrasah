@@ -23,6 +23,12 @@ const SyncSchema = z.object({
   ids: z.array(z.string().uuid()).optional(),
 });
 
+const ToggleDocVerifySchema = z.object({
+  action: z.literal('TOGGLE_DOC_VERIFY'),
+  document_id: z.string().uuid(),
+  is_verified: z.boolean(),
+});
+
 type PpdbDocumentRow = {
   id: string;
   document_type: string;
@@ -244,13 +250,17 @@ export async function PATCH(request: Request) {
     }
 
     const supabase = createSupabaseAdminClient();
+    const updatePayload: Record<string, unknown> = {
+      status: parsed.data.status,
+      updated_at: new Date().toISOString(),
+    };
+    if (parsed.data.admin_notes !== undefined) {
+      updatePayload.admin_notes = parsed.data.admin_notes;
+    }
+
     const { data, error } = await supabase
       .from('ppdb_registrations')
-      .update({
-        status: parsed.data.status,
-        admin_notes: parsed.data.admin_notes ?? null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', parsed.data.id)
       .select('*')
       .single();
@@ -272,6 +282,23 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+
+    if (body?.action === 'TOGGLE_DOC_VERIFY') {
+      const parsedToggle = ToggleDocVerifySchema.safeParse(body);
+      if (!parsedToggle.success) {
+        return NextResponse.json({ error: 'Data verifikasi dokumen tidak valid.' }, { status: 400 });
+      }
+      const supabase = createSupabaseAdminClient();
+      const { data: updatedDoc, error: docErr } = await supabase
+        .from('ppdb_documents')
+        .update({ is_verified: parsedToggle.data.is_verified })
+        .eq('id', parsedToggle.data.document_id)
+        .select('id, is_verified')
+        .single();
+      if (docErr) return NextResponse.json({ error: sanitizeApiError(docErr) }, { status: 500 });
+      return NextResponse.json({ ok: true, document: updatedDoc });
+    }
+
     const parsed = SyncSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Permintaan sinkronisasi PPDB tidak valid.' }, { status: 400 });

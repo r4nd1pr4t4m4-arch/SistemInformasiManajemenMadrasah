@@ -28,6 +28,19 @@ interface SchedulePair {
   teacher_name: string | null;
 }
 
+interface TeacherProgressRow {
+  subject_id: string;
+  subject_name: string;
+  classroom_id: string;
+  classroom_name: string;
+  teacher_name: string | null;
+  hasFormatif: boolean;
+  hasSumatif: boolean;
+  hasSts: boolean;
+  hasSas: boolean;
+  completionPct: number;
+}
+
 const ASSESSMENT_TYPES: Array<{ value: AssessmentMenuType; label: string }> = [
   { value: 'FORMATIF', label: 'Formatif (Lingkup BAB)' },
   { value: 'SUMATIF', label: 'Sumatif (Lingkup Materi)' },
@@ -45,6 +58,8 @@ export function MonitoringPenilaianWorkspace() {
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
   const [classrooms, setClassrooms] = useState<ClassroomItem[]>([]);
   const [schedulePairs, setSchedulePairs] = useState<SchedulePair[]>([]);
+  const [teacherProgress, setTeacherProgress] = useState<TeacherProgressRow[]>([]);
+  const [showProgressPanel, setShowProgressPanel] = useState(true);
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [selectedType, setSelectedType] = useState<AssessmentMenuType>('FORMATIF');
   const [onlyScheduledClasses, setOnlyScheduledClasses] = useState(true);
@@ -56,6 +71,7 @@ export function MonitoringPenilaianWorkspace() {
     setSubjects(subList);
     setClassrooms((data.classrooms as ClassroomItem[]) || []);
     setSchedulePairs((data.schedulePairs as SchedulePair[]) || []);
+    setTeacherProgress((data.teacherProgress as TeacherProgressRow[]) || []);
     if (subList.length > 0) {
       setSelectedSubjectId((prev) =>
         prev && subList.some((s) => s.id === prev) ? prev : subList[0].id
@@ -145,6 +161,92 @@ export function MonitoringPenilaianWorkspace() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-5 pb-6">
+      {/* Progres Ketuntasan Input Nilai Guru */}
+      {teacherProgress.length > 0 && (
+        <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900">
+                Progres Ketuntasan Input Nilai Guru ({teacherProgress.length} Mapel/Kelas)
+              </h2>
+              <p className="text-xs text-slate-500">
+                Rata-rata kelengkapan komponen Formatif, Sumatif, STS, dan SAS:{' '}
+                <strong className="text-emerald-700">
+                  {Math.round(
+                    teacherProgress.reduce((s, p) => s + p.completionPct, 0) /
+                      teacherProgress.length
+                  )}
+                  %
+                </strong>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowProgressPanel((v) => !v)}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {showProgressPanel ? 'Sembunyikan' : 'Tampilkan Progres'}
+            </button>
+          </div>
+          {showProgressPanel && (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
+              {teacherProgress.map((item) => (
+                <div
+                  key={`${item.subject_id}-${item.classroom_id}`}
+                  className="modular-card rounded-2xl p-3 text-xs space-y-1.5 border border-slate-200/80"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-900 truncate">
+                      {item.classroom_name} • {item.subject_name}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                        item.completionPct === 100
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : item.completionPct >= 50
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}
+                    >
+                      {item.completionPct}%
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 truncate">
+                    Guru: {item.teacher_name || '-'}
+                  </p>
+                  <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        item.completionPct === 100
+                          ? 'bg-emerald-500'
+                          : item.completionPct >= 50
+                          ? 'bg-amber-500'
+                          : 'bg-rose-500'
+                      }`}
+                      style={{ width: `${item.completionPct}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] font-semibold">
+                    <span className={item.hasFormatif ? 'text-emerald-700' : 'text-slate-400'}>
+                      {item.hasFormatif ? '✓' : '○'} Formatif
+                    </span>
+                    <span className={item.hasSumatif ? 'text-emerald-700' : 'text-slate-400'}>
+                      {item.hasSumatif ? '✓' : '○'} Sumatif
+                    </span>
+                    <span className={item.hasSts ? 'text-emerald-700' : 'text-slate-400'}>
+                      {item.hasSts ? '✓' : '○'} STS
+                    </span>
+                    <span className={item.hasSas ? 'text-emerald-700' : 'text-slate-400'}>
+                      {item.hasSas ? '✓' : '○'} SAS
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Header & Filter Card */}
       <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">

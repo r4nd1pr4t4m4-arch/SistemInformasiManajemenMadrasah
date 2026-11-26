@@ -38,6 +38,9 @@ export async function GET(request: NextRequest) {
     { data: classrooms },
     { data: subjects },
     { data: teachers },
+    { data: teacherSchedules },
+    { data: teacherPickets },
+    { data: calendarHolidays },
   ] = await Promise.all([
     supabase
       .from('teacher_attendances')
@@ -61,7 +64,44 @@ export async function GET(request: NextRequest) {
     supabase.from('classrooms').select('id, name').order('name'),
     supabase.from('subjects').select('id, name, code').order('name'),
     supabase.from('teachers_staff').select('id, full_name, nip').eq('is_active', true).order('full_name'),
+    supabase.from('schedules').select('teacher_id, day_of_week'),
+    supabase.from('picket_schedules').select('teacher_id, day_of_week'),
+    supabase
+      .from('academic_calendar_events')
+      .select('event_date, category')
+      .gte('event_date', startDate)
+      .lte('event_date', endDate)
+      .in('category', ['LIBUR_BERBAYAR', 'LIBUR_TIDAK_BERBAYAR']),
   ]);
+
+  // Hitung jumlah kemunculan setiap hari (1=Senin..6=Sabtu) pada rentang tanggal di luar hari libur kalender
+  const holidaySet = new Set((calendarHolidays || []).map((h) => String(h.event_date)));
+  const dayCountInRange = new Map<number, number>();
+  const startDt = new Date(`${startDate}T00:00:00Z`);
+  const endDt = new Date(`${endDate}T00:00:00Z`);
+  if (!Number.isNaN(startDt.getTime()) && !Number.isNaN(endDt.getTime()) && startDt <= endDt) {
+    const cursor = new Date(startDt);
+    let safety = 0;
+    while (cursor <= endDt && safety < 400) {
+      const iso = cursor.toISOString().slice(0, 10);
+      const utcDay = cursor.getUTCDay();
+      const isoDay = utcDay === 0 ? 7 : utcDay;
+      if (isoDay !== 7 && !holidaySet.has(iso)) {
+        dayCountInRange.set(isoDay, (dayCountInRange.get(isoDay) || 0) + 1);
+      }
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+      safety++;
+    }
+  }
+
+  const teacherScheduledDaysMap = new Map<string, Set<number>>();
+  for (const s of [...(teacherSchedules || []), ...(teacherPickets || [])]) {
+    if (!s.teacher_id || !s.day_of_week) continue;
+    if (!teacherScheduledDaysMap.has(s.teacher_id)) {
+      teacherScheduledDaysMap.set(s.teacher_id, new Set());
+    }
+    teacherScheduledDaysMap.get(s.teacher_id)!.add(Number(s.day_of_week));
+  }
 
   const isGlobalRecapViewer = hasAnyRole(guard.session, [
     'SUPERADMIN',
@@ -134,20 +174,34 @@ export async function GET(request: NextRequest) {
   }
 
   const teacherRecap = Array.from(teacherMap.values())
-    .map((t) => ({
-      teacher_id: t.teacher_id,
-      full_name: t.full_name,
-      nip: t.nip,
-      total_days_present: t.dates.size,
-      teaching_sessions: t.teaching_sessions,
-      picket_sessions: t.picket_sessions,
-      exam_sessions: t.exam_sessions,
-      event_sessions: t.event_sessions,
-      confirmed_sessions: t.confirmed_sessions,
-      total_jtm: Number(t.total_jtm.toFixed(2)),
-      total_short_leave_minutes: leaveMap.get(t.teacher_id) || 0,
-      avg_presence_pct: null,
-    }))
+    .map((t) => {
+      const scheduledDays = teacherScheduledDaysMap.get(t.teacher_id);
+      let expectedDays = 0;
+      if (scheduledDays && scheduledDays.size > 0) {
+        for (const d of scheduledDays) {
+          expectedDays += dayCountInRange.get(d) || 0;
+        }
+      }
+      const avgPresencePct =
+        expectedDays > 0
+          ? Math.min(100, Math.round((t.dates.size / expectedDays) * 1000) / 10)
+          : null;
+
+      return {
+        teacher_id: t.teacher_id,
+        full_name: t.full_name,
+        nip: t.nip,
+        total_days_present: t.dates.size,
+        teaching_sessions: t.teaching_sessions,
+        picket_sessions: t.picket_sessions,
+        exam_sessions: t.exam_sessions,
+        event_sessions: t.event_sessions,
+        confirmed_sessions: t.confirmed_sessions,
+        total_jtm: Number(t.total_jtm.toFixed(2)),
+        total_short_leave_minutes: leaveMap.get(t.teacher_id) || 0,
+        avg_presence_pct: avgPresencePct,
+      };
+    })
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   // 2 & 3. Rekap Absensi Siswa Harian (schedule_id IS NULL) & Per Mapel (schedule_id IS NOT NULL)

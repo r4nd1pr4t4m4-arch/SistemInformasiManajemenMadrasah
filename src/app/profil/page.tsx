@@ -1,18 +1,20 @@
 import { Suspense } from 'react';
-import { Award, Building2, CheckCircle2, MapPin } from 'lucide-react';
+import { Award, Building2, CheckCircle2, ExternalLink, MapPin, Users } from 'lucide-react';
 import { connection } from 'next/server';
 import { PublicShell } from '@/components/layout/public-shell';
 import { FacilitiesSection } from '@/components/profil/facilities-section';
 import {
   getInstitutionSettings,
   getPublicGalleryAndFacilities,
+  getPublicLeadershipStructure,
 } from '@/lib/data/public-queries';
 
 async function ProfilContent() {
   await connection();
-  const [school, { facilities }] = await Promise.all([
+  const [school, { facilities }, leadership] = await Promise.all([
     getInstitutionSettings(),
     getPublicGalleryAndFacilities(),
+    getPublicLeadershipStructure(),
   ]);
 
   const missions = Array.isArray(school.mission)
@@ -122,6 +124,86 @@ async function ProfilContent() {
           — {school.headmaster_name || 'Kepala Lembaga'}
         </p>
       </div>
+
+      {leadership.length > 0 && (
+        <div className="glass-card rounded-3xl p-5 sm:p-8 space-y-5">
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Users className="w-5 h-5 text-emerald-700 shrink-0" />
+              <span>Struktur Organisasi &amp; Pimpinan Lembaga</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Jajaran pimpinan dan koordinator tugas tambahan aktif lembaga.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {leadership.map((item) => (
+              <div
+                key={item.id}
+                className="modular-card rounded-2xl p-4 flex items-center gap-3 border border-slate-200/80"
+              >
+                <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 font-bold text-sm flex items-center justify-center shrink-0 overflow-hidden">
+                  {item.photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.photoUrl}
+                      alt={item.personName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    item.personName.slice(0, 1).toUpperCase()
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700 truncate">
+                    {item.roleName}
+                  </p>
+                  <p className="text-sm font-bold text-slate-900 truncate">{item.personName}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {school.geofence_lat != null && school.geofence_lng != null && (
+        <div className="glass-card rounded-3xl p-5 sm:p-8 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-emerald-700 shrink-0" />
+                <span>Peta Lokasi Kampus</span>
+              </h2>
+              {school.address && <p className="text-xs text-slate-500 mt-0.5">{school.address}</p>}
+            </div>
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${school.geofence_lat},${school.geofence_lng}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
+            >
+              <span>Buka di Google Maps</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+          <div className="w-full h-72 sm:h-80 rounded-2xl overflow-hidden border border-slate-200 bg-slate-100">
+            <iframe
+              title={`Peta Lokasi ${school.name}`}
+              width="100%"
+              height="100%"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              src={`https://www.openstreetmap.org/export/embed.html?bbox=${
+                Number(school.geofence_lng) - 0.005
+              }%2C${Number(school.geofence_lat) - 0.004}%2C${
+                Number(school.geofence_lng) + 0.005
+              }%2C${Number(school.geofence_lat) + 0.004}&layer=mapnik&marker=${
+                school.geofence_lat
+              }%2C${school.geofence_lng}`}
+            />
+          </div>
+        </div>
+      )}
 
       <FacilitiesSection facilities={facilities} />
     </>

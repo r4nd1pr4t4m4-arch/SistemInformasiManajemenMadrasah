@@ -774,6 +774,144 @@ export async function POST(request: Request) {
       });
     }
 
+    if (body.action === 'GENERATE_BULK_BILLS') {
+      const BulkBillSchema = z.object({
+        action: z.literal('GENERATE_BULK_BILLS'),
+        fee_type_id: z.string().uuid(),
+        classroom_id: z.string().uuid().optional().nullable(),
+        billing_month: z.number().int().min(1).max(12),
+        billing_year: z.number().int().min(2020).max(2100),
+        amount: z.number().positive(),
+        due_date: z.string().optional().nullable(),
+      });
+      const parsed = BulkBillSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Data penerbitan tagihan massal tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const { data: feeType } = await supabase
+        .from('fee_types')
+        .select('id, name, category')
+        .eq('id', parsed.data.fee_type_id)
+        .maybeSingle();
+      if (!feeType) {
+        return NextResponse.json({ error: 'Jenis biaya tidak ditemukan.' }, { status: 404 });
+      }
+
+      let targetStudentIds: string[] = [];
+      if (parsed.data.classroom_id) {
+        const { data: enrs } = await supabase
+          .from('student_enrollments')
+          .select('student_id, student:students(status)')
+          .eq('classroom_id', parsed.data.classroom_id);
+        targetStudentIds = (enrs || [])
+          .filter((e) => {
+            const st = Array.isArray(e.student) ? e.student[0] : e.student;
+            return st?.status === 'AKTIF';
+          })
+          .map((e) => e.student_id as string);
+      } else {
+        const { data: allActive } = await supabase
+          .from('students')
+          .select('id')
+          .eq('status', 'AKTIF')
+          .limit(1000);
+        targetStudentIds = (allActive || []).map((s) => s.id as string);
+      }
+
+      targetStudentIds = Array.from(new Set(targetStudentIds));
+      if (targetStudentIds.length === 0) {
+        return NextResponse.json({ error: 'Tidak ada siswa aktif pada target yang dipilih.' }, { status: 400 });
+      }
+
+      const { data: existingBills } = await supabase
+        .from('student_bills')
+        .select('student_id')
+        .in('student_id', targetStudentIds)
+        .eq('fee_type_id', feeType.id)
+        .eq('billing_month', parsed.data.billing_month)
+        .eq('billing_year', parsed.data.billing_year);
+      const existingSet = new Set((existingBills || []).map((b) => b.student_id as string));
+
+      const applySiblingDiscount = isSiblingDiscountCategory(feeType.category);
+      const exemptStudentSet = new Set<string>();
+      const studentGroupMap = new Map<string, { groupId: string; groupName: string }>();
+
+      if (applySiblingDiscount) {
+        const [{ data: groups }, { data: allMembers }] = await Promise.all([
+          supabase.from('sibling_groups').select('id, name'),
+          supabase
+            .from('sibling_group_members')
+            .select('group_id, student_id, is_exempt, student:students(status)'),
+        ]);
+        const groupNameMap = new Map((groups || []).map((g) => [g.id as string, String(g.name)]));
+        const byGroup = new Map<string, Array<{ student_id: string; is_exempt: boolean }>>();
+        for (const m of allMembers || []) {
+          const st = Array.isArray(m.student) ? m.student[0] : m.student;
+          if (st?.status !== 'AKTIF') continue;
+          const list = byGroup.get(m.group_id as string) || [];
+          list.push({ student_id: m.student_id as string, is_exempt: Boolean(m.is_exempt) });
+          byGroup.set(m.group_id as string, list);
+        }
+        for (const [gid, members] of byGroup.entries()) {
+          const ids = members.map((m) => m.student_id);
+          const pref = members.find((m) => m.is_exempt)?.student_id || null;
+          const summary = calculateSiblingGroupBilling(ids, pref);
+          const gName = groupNameMap.get(gid) || 'Kelompok Saudara';
+          for (const sid of ids) {
+            studentGroupMap.set(sid, { groupId: gid, groupName: gName });
+          }
+          if (summary.exemptStudentId) {
+            exemptStudentSet.add(summary.exemptStudentId);
+          }
+        }
+      }
+
+      const toInsert = targetStudentIds
+        .filter((sid) => !existingSet.has(sid))
+        .map((sid) => {
+          const isExempt = exemptStudentSet.has(sid);
+          const grpInfo = studentGroupMap.get(sid);
+          return {
+            student_id: sid,
+            fee_type_id: feeType.id,
+            billing_month: parsed.data.billing_month,
+            billing_year: parsed.data.billing_year,
+            amount: isExempt ? 0 : parsed.data.amount,
+            original_amount: parsed.data.amount,
+            discount_amount: isExempt ? parsed.data.amount : 0,
+            is_sibling_exempt: isExempt,
+            sibling_group_id: grpInfo?.groupId || null,
+            due_date: parsed.data.due_date || null,
+            notes: isExempt
+              ? `Gratis Kelompok Saudara "${grpInfo?.groupName || ''}" (Generate Massal)`
+              : null,
+            paid_amount: 0,
+            status: isExempt ? 'LUNAS' : 'BELUM_LUNAS',
+          };
+        });
+
+      if (toInsert.length === 0) {
+        return NextResponse.json(
+          { error: 'Seluruh siswa target sudah memiliki tagihan untuk periode tersebut.' },
+          { status: 400 }
+        );
+      }
+
+      const { error: insErr } = await supabase.from('student_bills').insert(toInsert);
+      if (insErr) return NextResponse.json({ error: sanitizeApiError(insErr) }, { status: 500 });
+
+      return NextResponse.json({
+        ok: true,
+        insertedCount: toInsert.length,
+        skippedCount: targetStudentIds.length - toInsert.length,
+        exemptCount: toInsert.filter((r) => r.is_sibling_exempt).length,
+      });
+    }
+
     return NextResponse.json({ error: 'Aksi SPP tidak dikenali.' }, { status: 400 });
   } catch {
     return NextResponse.json({ error: 'Gagal memproses transaksi SPP.' }, { status: 500 });

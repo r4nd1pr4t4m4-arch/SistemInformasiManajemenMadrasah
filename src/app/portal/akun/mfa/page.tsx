@@ -53,6 +53,62 @@ export default function ManajemenMfaPage() {
   const [resetOtpSent, setResetOtpSent] = useState(false);
   const [resettingMfa, setResettingMfa] = useState(false);
 
+  // Backup Recovery Codes MFA
+  const [recoveryStats, setRecoveryStats] = useState<{
+    totalCount: number;
+    remainingCount: number;
+    lastGeneratedAt: string | null;
+  } | null>(null);
+  const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
+  const [generatingCodes, setGeneratingCodes] = useState(false);
+  const [copiedCodes, setCopiedCodes] = useState(false);
+
+  const loadRecoveryStats = useCallback(async () => {
+    try {
+      const res = await fetch('/api/akun/mfa/recovery-codes', { cache: 'no-store' });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) {
+        setRecoveryStats({
+          totalCount: Number(data.totalCount || 0),
+          remainingCount: Number(data.remainingCount || 0),
+          lastGeneratedAt: data.lastGeneratedAt || null,
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  async function handleGenerateRecoveryCodes() {
+    setGeneratingCodes(true);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/akun/mfa/recovery-codes', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(data.codes)) {
+        setGeneratedCodes(data.codes);
+        setRecoveryStats({
+          totalCount: data.codes.length,
+          remainingCount: data.codes.length,
+          lastGeneratedAt: new Date().toISOString(),
+        });
+        setFeedback({
+          type: 'success',
+          text: data.message || 'Kode pemulihan cadangan MFA berhasil dibuat.',
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          text: data.error || 'Gagal membuat kode pemulihan cadangan MFA.',
+        });
+      }
+    } catch {
+      setFeedback({ type: 'error', text: 'Terjadi kesalahan jaringan.' });
+    } finally {
+      setGeneratingCodes(false);
+    }
+  }
+
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -97,9 +153,10 @@ export default function ManajemenMfaPage() {
   useEffect(() => {
     const id = setTimeout(() => {
       void loadFactors();
+      void loadRecoveryStats();
     }, 0);
     return () => clearTimeout(id);
-  }, [loadFactors]);
+  }, [loadFactors, loadRecoveryStats]);
 
   async function handleStartEnroll() {
     if (!isSupabaseConfigured()) {
@@ -291,11 +348,10 @@ export default function ManajemenMfaPage() {
       <div className="glass-card rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-start sm:items-center gap-3.5 min-w-0">
           <div
-            className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-              verifiedCount > 0
+            className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${verifiedCount > 0
                 ? 'bg-emerald-100 text-emerald-700'
                 : 'bg-amber-100 text-amber-700'
-            }`}
+              }`}
           >
             {verifiedCount > 0 ? (
               <ShieldCheck className="w-5 h-5" />
@@ -315,16 +371,14 @@ export default function ManajemenMfaPage() {
           </div>
         </div>
         <span
-          className={`self-start sm:self-center shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
-            verifiedCount > 0
+          className={`self-start sm:self-center shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${verifiedCount > 0
               ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
               : 'bg-amber-50 border border-amber-200 text-amber-800'
-          }`}
+            }`}
         >
           <span
-            className={`w-2 h-2 rounded-full ${
-              verifiedCount > 0 ? 'bg-emerald-500' : 'bg-amber-500'
-            }`}
+            className={`w-2 h-2 rounded-full ${verifiedCount > 0 ? 'bg-emerald-500' : 'bg-amber-500'
+              }`}
           />
           {verifiedCount > 0 ? 'MFA Aktif' : 'MFA Nonaktif'}
         </span>
@@ -334,11 +388,10 @@ export default function ManajemenMfaPage() {
         <div
           role="alert"
           aria-live="polite"
-          className={`p-3.5 sm:p-4 rounded-2xl text-xs font-medium flex items-start sm:items-center justify-between gap-3 ${
-            feedback.type === 'error'
+          className={`p-3.5 sm:p-4 rounded-2xl text-xs font-medium flex items-start sm:items-center justify-between gap-3 ${feedback.type === 'error'
               ? 'bg-rose-50 border border-rose-200 text-rose-700'
               : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
-          }`}
+            }`}
         >
           <div className="flex items-start sm:items-center gap-2.5 min-w-0">
             {feedback.type === 'error' ? (
@@ -500,11 +553,10 @@ export default function ManajemenMfaPage() {
                         {f.friendly_name || 'Authenticator App'}
                       </p>
                       <span
-                        className={`inline-block mt-1.5 text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${
-                          f.status === 'verified'
+                        className={`inline-block mt-1.5 text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${f.status === 'verified'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/70'
                             : 'bg-amber-50 text-amber-700 border border-amber-200/70'
-                        }`}
+                          }`}
                       >
                         {f.status === 'verified' ? 'AKTIF' : 'MENUNGGU VERIFIKASI'}
                       </span>
@@ -593,6 +645,90 @@ export default function ManajemenMfaPage() {
             </button>
           </form>
         </div>
+      </div>
+
+      {/* Backup Recovery Codes MFA */}
+      <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-emerald-700" />
+              <span>Kode Pemulihan Cadangan (Backup Recovery Codes)</span>
+            </h2>
+            <p className="text-xs text-slate-600 max-w-2xl">
+              Buat 8 kode pemulihan satu kali pakai sebagai cadangan apabila perangkat Authenticator
+              Anda hilang atau rusak. Kode hanya ditampilkan sekali saat dibuat.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={generatingCodes}
+            onClick={handleGenerateRecoveryCodes}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold transition"
+          >
+            {generatingCodes ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="w-3.5 h-3.5" />
+            )}
+            <span>
+              {recoveryStats && recoveryStats.totalCount > 0
+                ? 'Buat Ulang 8 Kode Cadangan'
+                : 'Buat 8 Kode Cadangan'}
+            </span>
+          </button>
+        </div>
+
+        {recoveryStats && (
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 bg-slate-50 border border-slate-200/80 rounded-2xl px-4 py-3">
+            <span>
+              Sisa kode aktif:{' '}
+              <strong className="text-emerald-700">
+                {recoveryStats.remainingCount} / {recoveryStats.totalCount}
+              </strong>
+            </span>
+            {recoveryStats.lastGeneratedAt && (
+              <span>
+                • Terakhir dibuat:{' '}
+                <strong>
+                  {new Date(recoveryStats.lastGeneratedAt).toLocaleString('id-ID')}
+                </strong>
+              </span>
+            )}
+          </div>
+        )}
+
+        {generatedCodes.length > 0 && (
+          <div className="rounded-2xl bg-amber-50/90 border border-amber-200 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-bold text-amber-900">
+                Simpan kode ini sekarang — tidak akan ditampilkan kembali setelah halaman ditutup:
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(generatedCodes.join('\n'));
+                  setCopiedCodes(true);
+                  setTimeout(() => setCopiedCodes(false), 2500);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-900 text-[11px] font-semibold hover:bg-amber-100/50 transition"
+              >
+                {copiedCodes ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedCodes ? 'Tersalin!' : 'Salin Semua Kode'}</span>
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {generatedCodes.map((code) => (
+                <div
+                  key={code}
+                  className="px-3 py-2 rounded-xl bg-white border border-amber-200 font-mono text-xs font-bold text-center text-slate-900 tracking-wider"
+                >
+                  {code}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal Konfirmasi Hapus Faktor MFA */}

@@ -10,6 +10,7 @@ import {
   Eye,
   Loader2,
   Newspaper,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -74,6 +75,7 @@ export default function CmsBeritaPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeletePost, setConfirmDeletePost] = useState<PostItem | null>(null);
   const [previewPost, setPreviewPost] = useState<PostItem | null>(null);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
 
   const [toast, setToast] = useState<ToastState | null>(null);
   const [posts, setPosts] = useState<PostItem[]>([]);
@@ -83,6 +85,7 @@ export default function CmsBeritaPage() {
   const [newPost, setNewPost] = useState({
     title: '',
     category: 'BERITA' as PostItem['category'],
+    status: 'PUBLISHED' as 'DRAFT' | 'PUBLISHED' | 'ARCHIVED',
     excerpt: '',
     content: '',
     author_display_name: 'Humas Lembaga',
@@ -166,30 +169,38 @@ export default function CmsBeritaPage() {
     setSaving(true);
     try {
       const res = await fetch('/api/cms/posts', {
-        method: 'POST',
+        method: editingPostId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...(editingPostId ? { id: editingPostId } : {}),
           title: trimmedTitle,
           category: newPost.category,
           excerpt: trimmedExcerpt,
           content: trimmedContent,
           author_display_name: trimmedAuthor,
           cover_image_url: trimmedCover || null,
-          status: 'PUBLISHED',
+          status: newPost.status,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data?.post) {
-        setPosts((prev) => [data.post, ...prev]);
+        if (editingPostId) {
+          setPosts((prev) => prev.map((item) => (item.id === editingPostId ? data.post : item)));
+          setEditingPostId(null);
+          showToast('success', 'Perubahan artikel berhasil disimpan.');
+        } else {
+          setPosts((prev) => [data.post, ...prev]);
+          showToast('success', 'Artikel berhasil disimpan.');
+        }
         setNewPost({
           title: '',
           category: 'BERITA',
+          status: 'PUBLISHED',
           excerpt: '',
           content: '',
           author_display_name: 'Humas Lembaga',
           cover_image_url: '',
         });
-        showToast('success', 'Artikel berhasil dipublikasikan.');
       } else {
         showToast('error', data?.error || 'Gagal membuat artikel.');
       }
@@ -427,14 +438,64 @@ export default function CmsBeritaPage() {
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-4 rounded-2xl text-sm transition shadow-xs"
-            >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              <span>{saving ? 'Menerbitkan...' : 'Terbitkan Konten'}</span>
-            </button>
+            <div className="min-w-0">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Status Publikasi
+              </label>
+              <select
+                value={newPost.status}
+                onChange={(e) =>
+                  setNewPost({
+                    ...newPost,
+                    status: e.target.value as 'DRAFT' | 'PUBLISHED' | 'ARCHIVED',
+                  })
+                }
+                className={INPUT_CLASS}
+              >
+                <option value="PUBLISHED">Terbit (Publik)</option>
+                <option value="DRAFT">Draft (Disimpan Saja)</option>
+                <option value="ARCHIVED">Arsip (Disembunyikan)</option>
+              </select>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-4 rounded-2xl text-sm transition shadow-xs"
+              >
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>
+                  {saving
+                    ? 'Menyimpan...'
+                    : editingPostId
+                    ? 'Simpan Perubahan'
+                    : newPost.status === 'DRAFT'
+                    ? 'Simpan sebagai Draft'
+                    : 'Terbitkan Konten'}
+                </span>
+              </button>
+              {editingPostId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingPostId(null);
+                    setNewPost({
+                      title: '',
+                      category: 'BERITA',
+                      status: 'PUBLISHED',
+                      excerpt: '',
+                      content: '',
+                      author_display_name: 'Humas Lembaga',
+                      cover_image_url: '',
+                    });
+                  }}
+                  className="px-4 py-2.5 rounded-2xl border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+              )}
+            </div>
           </form>
         )}
 
@@ -515,6 +576,17 @@ export default function CmsBeritaPage() {
                         <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
                           {formatCategory(p.category)}
                         </span>
+                        <span
+                          className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                            p.status === 'PUBLISHED'
+                              ? 'bg-sky-50 text-sky-700'
+                              : p.status === 'DRAFT'
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {p.status}
+                        </span>
                         {dateLabel && (
                           <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                             <Calendar className="w-3 h-3" /> {dateLabel}
@@ -536,6 +608,29 @@ export default function CmsBeritaPage() {
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
+                      {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPostId(p.id);
+                            setNewPost({
+                              title: p.title,
+                              category: p.category,
+                              status: (p.status as 'DRAFT' | 'PUBLISHED' | 'ARCHIVED') || 'PUBLISHED',
+                              excerpt: p.excerpt || '',
+                              content: p.content || '',
+                              author_display_name: p.author_display_name || 'Humas Lembaga',
+                              cover_image_url: p.cover_image_url || '',
+                            });
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          aria-label={`Edit ${p.title}`}
+                          title="Edit artikel"
+                          className="p-2 rounded-xl text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 transition"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setPreviewPost(p)}

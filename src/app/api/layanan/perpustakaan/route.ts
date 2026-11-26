@@ -25,6 +25,7 @@ const UpdateBookSchema = z.object({
   book_id: z.string().uuid(),
   title: z.string().min(2),
   author: z.string().min(2),
+  isbn: z.string().optional().nullable(),
   category: z.string().optional().nullable(),
   book_format: z.enum(['FISIK', 'EBOOK', 'KEDUANYA']).default('FISIK'),
   total_copies: z.number().int().min(1).default(1),
@@ -308,6 +309,7 @@ export async function POST(request: Request) {
         .update({
           title: fields.title.trim(),
           author: fields.author.trim(),
+          isbn: fields.isbn?.trim() || null,
           category: fields.category?.trim() || null,
           book_format: fields.book_format,
           total_copies: fields.total_copies,

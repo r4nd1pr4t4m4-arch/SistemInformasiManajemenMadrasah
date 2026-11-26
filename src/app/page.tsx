@@ -20,6 +20,7 @@ import {
   getInstitutionSettings,
   getPublishedPosts,
   getPublicGalleryAndFacilities,
+  getPublicInstitutionStats,
 } from '@/lib/data/public-queries';
 import { PublicNavbar } from '@/components/layout/public-shell';
 import { MissionList } from '@/components/home/mission-list';
@@ -299,7 +300,7 @@ async function LatestPosts() {
         return (
           <Link
             key={post.id}
-            href="/berita"
+            href={`/berita/${post.slug}`}
             className="modular-card rounded-3xl p-6 flex flex-col justify-between space-y-4 min-w-0 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             <article className="space-y-3 min-w-0">
@@ -470,6 +471,33 @@ function FooterSkeleton() {
   );
 }
 
+async function InstitutionStatsStrip() {
+  await connection();
+  const stats = await getPublicInstitutionStats();
+  const items = [
+    { label: 'Siswa Aktif', value: stats.students, accent: 'text-emerald-700' },
+    { label: 'GTK & Pengajar', value: stats.teachers, accent: 'text-sky-700' },
+    { label: 'Rombongan Belajar', value: stats.classrooms, accent: 'text-indigo-700' },
+    { label: 'Koleksi E-Library', value: stats.ebooks, accent: 'text-amber-700' },
+    { label: 'Alumni Terdata', value: stats.alumni, accent: 'text-teal-700' },
+  ];
+
+  return (
+    <section className="max-w-7xl mx-auto px-4 sm:px-6 pb-4 w-full">
+      <div className="glass-card rounded-3xl p-4 sm:p-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        {items.map((item) => (
+          <div key={item.label} className="text-center space-y-0.5">
+            <p className={`text-2xl sm:text-3xl font-black tracking-tight ${item.accent}`}>
+              {item.value.toLocaleString('id-ID')}
+            </p>
+            <p className="text-xs font-semibold text-slate-600">{item.label}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col simms-ambient">
@@ -508,6 +536,11 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* Live Institution Stats Strip */}
+        <Suspense fallback={null}>
+          <InstitutionStatsStrip />
+        </Suspense>
 
         {/* 3 Pillars Modular Cards */}
         <section id="layanan" className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-12 w-full">
@@ -649,7 +682,7 @@ export default function HomePage() {
               </div>
             </Link>
             <Link
-              href="/portal/layanan/alumni"
+              href="/alumni"
               className="modular-card rounded-2xl p-5 flex items-start gap-3.5 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             >
               <div className="p-2.5 rounded-xl bg-sky-50 text-sky-600 shrink-0 group-hover:bg-sky-100 transition-colors">

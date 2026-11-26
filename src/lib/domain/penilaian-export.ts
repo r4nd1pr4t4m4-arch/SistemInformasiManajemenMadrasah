@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
-import { buildVerificationUrl } from '@/lib/verification/document-verify';
+import { buildVerificationUrl, registerDocumentLedger } from '@/lib/verification/document-verify';
 import { fetchInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 
 export interface ExportTablePayload {
@@ -72,6 +72,12 @@ export async function exportAssessmentToPdf(payload: ExportTablePayload) {
     });
     const qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 120, margin: 1 });
     doc.addImage(qrDataUrl, 'PNG', qrX, 8, qrSize, qrSize);
+    void registerDocumentLedger({
+      referenceCode: refCode,
+      documentType: 'PENILAIAN',
+      title: payload.title,
+      metadata: { subtitle: payload.subtitle, fileName: payload.fileName },
+    });
   } catch {
     // Abaikan jika QR gagal dirender agar ekspor PDF tetap berjalan
   }

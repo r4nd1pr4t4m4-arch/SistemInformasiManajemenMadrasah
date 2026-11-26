@@ -16,6 +16,10 @@ const CreatePostSchema = z.object({
   status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']).default('PUBLISHED'),
 });
 
+const UpdatePostSchema = CreatePostSchema.extend({
+  id: z.string().uuid(),
+});
+
 function toSlug(title: string): string {
   const base = title
     .toLowerCase()
@@ -94,6 +98,65 @@ export async function POST(request: Request) {
     return NextResponse.json({ post: data });
   } catch {
     return NextResponse.json({ error: 'Gagal menyimpan artikel.' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  const guard = await requireApiRoles(PERMISSIONS.CMS_MANAGE);
+  if (guard.errorResponse) return guard.errorResponse;
+
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
+  }
+
+  try {
+    const body = await request.json();
+    const parsed = UpdatePostSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Data pembaruan artikel tidak valid.', details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+
+    const { id, ...fields } = parsed.data;
+    const supabase = createSupabaseAdminClient();
+    const { data: existing } = await supabase
+      .from('posts')
+      .select('status, published_at')
+      .eq('id', id)
+      .maybeSingle();
+
+    const becomingPublished =
+      fields.status === 'PUBLISHED' && (!existing || existing.status !== 'PUBLISHED');
+
+    const { data, error } = await supabase
+      .from('posts')
+      .update({
+        ...fields,
+        published_at:
+          fields.status === 'PUBLISHED'
+            ? existing?.published_at || new Date().toISOString()
+            : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+    if (data && becomingPublished) {
+      await notifyCmsPostPublished({
+        postId: data.id,
+        title: data.title,
+        slug: data.slug,
+        category: data.category,
+        createdBy: guard.session.userId,
+      });
+    }
+    return NextResponse.json({ post: data });
+  } catch {
+    return NextResponse.json({ error: 'Gagal memperbarui artikel.' }, { status: 500 });
   }
 }
 

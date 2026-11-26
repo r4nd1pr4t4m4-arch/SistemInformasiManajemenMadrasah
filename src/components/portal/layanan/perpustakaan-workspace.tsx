@@ -10,6 +10,7 @@ import type {
   BookRow,
   DeleteTarget,
   GrantRow,
+  LoanRow,
   MemberRow,
   PerpustakaanSection,
   ToastState,
@@ -17,6 +18,7 @@ import type {
 } from './perpustakaan/types';
 import { KatalogSection } from './perpustakaan/katalog-section';
 import { AnggotaSection } from './perpustakaan/anggota-section';
+import { SirkulasiSection } from './perpustakaan/sirkulasi-section';
 import { PerpustakaanModals } from './perpustakaan/perpustakaan-modals';
 
 export type { PerpustakaanSection };
@@ -36,6 +38,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
 
   const [books, setBooks] = useState<BookRow[]>([]);
   const [members, setMembers] = useState<MemberRow[]>([]);
+  const [loans, setLoans] = useState<LoanRow[]>([]);
   const [grants, setGrants] = useState<GrantRow[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
 
@@ -45,6 +48,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
   const [editBookForm, setEditBookForm] = useState<BookFormState>({
     title: '',
     author: '',
+    isbn: '',
     category: '',
     book_format: 'KEDUANYA',
     total_copies: 1,
@@ -82,6 +86,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
     return {
       books: (data.books || []) as BookRow[],
       members: (data.members || []) as MemberRow[],
+      loans: (data.loans || []) as LoanRow[],
       grants: (data.grants || []) as GrantRow[],
       users: (data.users || []) as UserOption[],
     };
@@ -91,6 +96,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
     (data: Awaited<ReturnType<typeof fetchLibraryData>>) => {
       setBooks(data.books);
       setMembers(data.members);
+      setLoans(data.loans);
       setGrants(data.grants);
       setUsers(data.users);
       setSelectedBookIds((prev) => {
@@ -181,6 +187,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
     setEditBookForm({
       title: book.title || '',
       author: book.author || '',
+      isbn: book.isbn || '',
       category: book.category || '',
       book_format: (book.book_format === 'FISIK' || book.book_format === 'EBOOK'
         ? book.book_format
@@ -216,6 +223,7 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
         book_id: editingBook.id,
         title,
         author,
+        isbn: editBookForm.isbn.trim() || null,
         category: editBookForm.category.trim() || null,
         book_format: editBookForm.book_format,
         total_copies: copies,
@@ -331,6 +339,20 @@ export function PerpustakaanWorkspace({ section }: { section: PerpustakaanSectio
           members={members}
           canManage={canManage}
           canViewAllMembers={canViewAllMembers}
+          refreshing={refreshing}
+          submittingAction={submittingAction}
+          onRefresh={() => void loadData('refresh')}
+          postLib={postLib}
+          showToast={showToast}
+        />
+      )}
+
+      {section === 'sirkulasi' && (
+        <SirkulasiSection
+          books={books}
+          members={members}
+          loans={loans}
+          canManage={canManage}
           refreshing={refreshing}
           submittingAction={submittingAction}
           onRefresh={() => void loadData('refresh')}

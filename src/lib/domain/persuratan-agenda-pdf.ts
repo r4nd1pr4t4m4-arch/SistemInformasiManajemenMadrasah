@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
-import { buildVerificationUrl } from '@/lib/verification/document-verify';
+import { buildVerificationUrl, registerDocumentLedger } from '@/lib/verification/document-verify';
 
 export type LetterDirection = 'MASUK' | 'KELUAR';
 
@@ -327,6 +327,17 @@ export async function exportLettersAgendaToPdf(params: {
     doc.setFillColor(255, 255, 255);
     doc.roundedRect(qrX - 1, qrY - 1, qrSize + 2, qrSize + 2, 1.5, 1.5, 'F');
     doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+    void registerDocumentLedger({
+      referenceCode: refCode,
+      documentType: 'SURAT',
+      title: 'Buku Agenda Arsip Persuratan Digital Resmi',
+      metadata: {
+        totalRows: letters.length,
+        direction: filterSummary.directionLabel,
+        category: filterSummary.categoryLabel,
+        period: filterSummary.periodLabel,
+      },
+    });
   } catch {
     // Abaikan jika gagal render QR
   }

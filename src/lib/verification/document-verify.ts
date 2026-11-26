@@ -93,3 +93,26 @@ export function extractVerificationParams(rawInput: string): {
 
   return { ref: trimmed };
 }
+
+export async function registerDocumentLedger(params: {
+  referenceCode: string;
+  documentType: 'REKAP_ABSENSI' | 'PENILAIAN' | 'SURAT' | 'MUTASI_TABUNGAN';
+  title: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    await fetch('/api/portal/document-ledger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        referenceCode: params.referenceCode,
+        documentType: params.documentType,
+        title: params.title,
+        metadata: params.metadata || {},
+      }),
+    });
+  } catch {
+    // Non-blocking: kegagalan jaringan tidak menghambat unduhan PDF
+  }
+}

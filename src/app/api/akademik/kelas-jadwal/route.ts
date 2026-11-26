@@ -295,6 +295,70 @@ export async function GET() {
   });
 }
 
+const DAY_NAMES_ID: Record<number, string> = {
+  1: 'Senin',
+  2: 'Selasa',
+  3: 'Rabu',
+  4: 'Kamis',
+  5: 'Jumat',
+  6: 'Sabtu',
+  7: 'Minggu',
+};
+
+async function findScheduleConflict(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  params: {
+    academicYearId: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    classroomId: string;
+    teacherId: string;
+    excludeScheduleId?: string;
+  }
+): Promise<string | null> {
+  const startHHMM = params.startTime.slice(0, 5);
+  const endHHMM = params.endTime.slice(0, 5);
+  if (endHHMM <= startHHMM) {
+    return 'Jam selesai harus lebih besar dari jam mulai.';
+  }
+
+  let query = supabase
+    .from('schedules')
+    .select(
+      'id, classroom_id, teacher_id, day_of_week, start_time, end_time, classroom:classrooms(name), teacher:teachers_staff(full_name)'
+    )
+    .eq('academic_year_id', params.academicYearId)
+    .eq('day_of_week', params.dayOfWeek);
+
+  if (params.excludeScheduleId) {
+    query = query.neq('id', params.excludeScheduleId);
+  }
+
+  const { data: sameDaySchedules } = await query;
+  for (const sch of sameDaySchedules || []) {
+    const sStart = String(sch.start_time || '').slice(0, 5);
+    const sEnd = String(sch.end_time || '').slice(0, 5);
+    const overlaps = startHHMM < sEnd && endHHMM > sStart;
+    if (!overlaps) continue;
+
+    if (sch.classroom_id === params.classroomId) {
+      const cls = Array.isArray(sch.classroom) ? sch.classroom[0] : sch.classroom;
+      return `Bentrok jadwal rombel: Rombel ${cls?.name || ''} sudah memiliki jadwal pada hari ${
+        DAY_NAMES_ID[params.dayOfWeek] || ''
+      } (${sStart}–${sEnd}).`;
+    }
+    if (sch.teacher_id === params.teacherId) {
+      const tchr = Array.isArray(sch.teacher) ? sch.teacher[0] : sch.teacher;
+      const cls = Array.isArray(sch.classroom) ? sch.classroom[0] : sch.classroom;
+      return `Bentrok jadwal guru: ${tchr?.full_name || 'Guru'} sudah mengajar di Rombel ${
+        cls?.name || ''
+      } pada hari ${DAY_NAMES_ID[params.dayOfWeek] || ''} (${sStart}–${sEnd}).`;
+    }
+  }
+  return null;
+}
+
 const SCHEDULE_ACTIONS = new Set([
   'CREATE_SCHEDULE',
   'UPDATE_SCHEDULE',
@@ -447,6 +511,17 @@ export async function POST(request: Request) {
           { status: 403 }
         );
       }
+      const conflictErr = await findScheduleConflict(supabase, {
+        academicYearId,
+        dayOfWeek: parsed.data.day_of_week,
+        startTime: parsed.data.start_time,
+        endTime: parsed.data.end_time,
+        classroomId: parsed.data.classroom_id,
+        teacherId: parsed.data.teacher_id,
+      });
+      if (conflictErr) {
+        return NextResponse.json({ error: conflictErr }, { status: 409 });
+      }
       const payload = { ...parsed.data } as Record<string, unknown>;
       delete payload.action;
       const { data, error } = await supabase
@@ -479,6 +554,18 @@ export async function POST(request: Request) {
             { status: 403 }
           );
         }
+      }
+      const conflictErr = await findScheduleConflict(supabase, {
+        academicYearId,
+        dayOfWeek: parsed.data.day_of_week,
+        startTime: parsed.data.start_time,
+        endTime: parsed.data.end_time,
+        classroomId: parsed.data.classroom_id,
+        teacherId: parsed.data.teacher_id,
+        excludeScheduleId: parsed.data.id,
+      });
+      if (conflictErr) {
+        return NextResponse.json({ error: conflictErr }, { status: 409 });
       }
       const { action: _, id, ...payload } = parsed.data;
       void _;

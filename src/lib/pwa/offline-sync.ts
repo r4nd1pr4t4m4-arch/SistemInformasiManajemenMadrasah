@@ -185,6 +185,16 @@ async function deleteQueueItemById(id: string): Promise<void> {
   db.close();
 }
 
+export async function removeOfflineQueueItem(id: string): Promise<void> {
+  try {
+    await deleteQueueItemById(id);
+    const count = await getOfflineQueueCount();
+    dispatchQueueChanged({ count });
+  } catch {
+    // abaikan jika IndexedDB tidak tersedia
+  }
+}
+
 let flushInFlight: Promise<FlushQueueResult> | null = null;
 
 export async function flushOfflineQueue(): Promise<FlushQueueResult> {

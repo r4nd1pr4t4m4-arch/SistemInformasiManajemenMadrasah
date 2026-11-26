@@ -63,6 +63,7 @@ export function JadwalSection({
   const [scheduleDayFilter, setScheduleDayFilter] = useState<string>('ALL');
   const [scheduleClassroomFilter, setScheduleClassroomFilter] = useState<string>('ALL');
   const [schedulePage, setSchedulePage] = useState(1);
+  const [viewMode, setViewMode] = useState<'LIST' | 'GRID'>('LIST');
   const [scheduleForm, setScheduleForm] = useState({
     classroom_id: '',
     subject_id: '',
@@ -525,6 +526,31 @@ export function JadwalSection({
                   </option>
                 ))}
               </select>
+
+              <div className="col-span-2 sm:col-span-1 inline-flex rounded-xl border border-slate-200 bg-white p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('LIST')}
+                  className={`flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition ${
+                    viewMode === 'LIST'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Daftar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('GRID')}
+                  className={`flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition ${
+                    viewMode === 'GRID'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Timetable Grid
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -540,6 +566,61 @@ export function JadwalSection({
             message="Tidak ada jadwal pelajaran yang sesuai dengan filter atau pencarian."
             compact
           />
+        ) : viewMode === 'GRID' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {[1, 2, 3, 4, 5, 6].map((dayNum) => {
+              const dayItems = filteredSchedules
+                .filter((s) => s.day_of_week === dayNum)
+                .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
+              return (
+                <div
+                  key={dayNum}
+                  className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">
+                      {DAY_NAMES[dayNum]}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full bg-white border border-slate-200 text-[10px] font-bold text-slate-600">
+                      {dayItems.length} sesi
+                    </span>
+                  </div>
+                  {dayItems.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 italic py-3 text-center">
+                      Tidak ada jadwal
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {dayItems.map((sch) => (
+                        <div
+                          key={sch.id}
+                          className="rounded-xl bg-white border border-slate-200/80 p-2.5 text-xs space-y-1 shadow-2xs"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                              {(sch.start_time || '').slice(0, 5)}–{(sch.end_time || '').slice(0, 5)}
+                            </span>
+                            <span className="text-[10px] font-semibold text-slate-500">
+                              {sch.jtm_count} JTM
+                            </span>
+                          </div>
+                          <p className="font-bold text-slate-900 leading-snug">
+                            {sch.subject?.name || '-'}
+                          </p>
+                          <p className="text-[11px] text-slate-600 flex items-center justify-between gap-1">
+                            <span className="font-semibold text-sky-700">
+                              {sch.classroom?.name || '-'}
+                            </span>
+                            <span className="truncate">{sch.teacher?.full_name || '-'}</span>
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="space-y-3">
             {canManageSchedule &&

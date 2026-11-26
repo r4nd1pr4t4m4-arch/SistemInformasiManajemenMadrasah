@@ -31,7 +31,9 @@ const PpdbRegisterSchema = z.object({
   previousSchool: z.string().min(2),
   address: z.string().min(6),
   parentName: z.string().min(2),
-  parentPhone: z.string().regex(/^\d{12}$/, 'No. WhatsApp Orang Tua / Wali harus berupa 12 digit angka.'),
+  parentPhone: z
+    .string()
+    .regex(/^\d{10,13}$/, 'No. WhatsApp Orang Tua / Wali harus berupa 10 hingga 13 digit angka.'),
   pathway: z.enum(['DOMISILI', 'AFIRMASI', 'PRESTASI', 'MUTASI', 'REGULER']).default('DOMISILI'),
   targetGrade: z.string().optional().default(''),
   mutationReason: z.string().optional().default(''),
@@ -62,6 +64,23 @@ export async function GET(request: Request) {
       supabase.from('classrooms').select('grade_level').order('grade_level'),
     ]);
 
+    const pathwayCounts: Record<string, number> = {
+      DOMISILI: 0,
+      AFIRMASI: 0,
+      PRESTASI: 0,
+      MUTASI: 0,
+    };
+    if (period?.id) {
+      const { data: regRows } = await supabase
+        .from('ppdb_registrations')
+        .select('pathway')
+        .eq('period_id', period.id);
+      for (const r of regRows || []) {
+        const key = String(r.pathway || '').toUpperCase();
+        if (key in pathwayCounts) pathwayCounts[key] += 1;
+      }
+    }
+
     const dbGrades = Array.from(
       new Set((classroomRows || []).map((c) => String(c.grade_level).trim()).filter(Boolean))
     );
@@ -72,6 +91,7 @@ export async function GET(request: Request) {
         ? {
             ...period,
             pathway_quotas: period.pathway_quotas || DEFAULT_PATHWAY_QUOTAS,
+            pathway_counts: pathwayCounts,
           }
         : null,
       gradeLevels,
@@ -250,5 +270,80 @@ export async function POST(request: Request) {
       { error: 'Terjadi kesalahan saat memproses pendaftaran PPDB.' },
       { status: 500 }
     );
+  }
+}
+
+const PpdbRevisionSchema = z.object({
+  registrationNumber: z.string().trim().min(5),
+  nik: z.string().regex(/^\d{16}$/, 'NIK konfirmasi harus berupa 16 digit angka.'),
+  documentType: z.enum([
+    'KK',
+    'AKTA_KELAHIRAN',
+    'IJAZAH_SKL',
+    'PAS_FOTO',
+    'SERTIFIKAT_PRESTASI',
+    'LAINNYA',
+  ]),
+  fileUrl: z.string().trim().min(4),
+  fileName: z.string().trim().min(2),
+});
+
+export async function PATCH(request: Request) {
+  if (!isSupabaseAdminConfigured()) {
+    return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
+  }
+
+  try {
+    const body = await request.json();
+    const parsed = PpdbRevisionSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message || 'Data berkas perbaikan tidak valid.' },
+        { status: 400 }
+      );
+    }
+
+    const supabase = createSupabaseAdminClient();
+    const { data: reg } = await supabase
+      .from('ppdb_registrations')
+      .select('id, status, nik')
+      .eq('registration_number', parsed.data.registrationNumber.toUpperCase())
+      .maybeSingle();
+
+    if (!reg || reg.nik !== parsed.data.nik) {
+      return NextResponse.json(
+        { error: 'Nomor pendaftaran atau NIK tidak cocok.' },
+        { status: 403 }
+      );
+    }
+    if (reg.status !== 'PERLU_PERBAIKAN') {
+      return NextResponse.json(
+        { error: 'Upload berkas perbaikan hanya tersedia untuk pendaftar berstatus PERLU PERBAIKAN.' },
+        { status: 400 }
+      );
+    }
+
+    await supabase.from('ppdb_documents').insert({
+      registration_id: reg.id,
+      document_type: parsed.data.documentType,
+      file_url: parsed.data.fileUrl,
+      file_name: parsed.data.fileName,
+      is_verified: false,
+    });
+
+    await supabase
+      .from('ppdb_registrations')
+      .update({
+        status: 'MENUNGGU_VERIFIKASI',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', reg.id);
+
+    return NextResponse.json({
+      ok: true,
+      message: 'Berkas perbaikan berhasil dikirim. Status kembali ke MENUNGGU VERIFIKASI.',
+    });
+  } catch {
+    return NextResponse.json({ error: 'Gagal mengirim berkas perbaikan.' }, { status: 500 });
   }
 }

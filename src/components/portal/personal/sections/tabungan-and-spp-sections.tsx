@@ -797,6 +797,65 @@ export function SppSection({
 
   const hasSppFilter = sppSearch.trim().length > 0 || sppStatusFilter !== 'ALL';
 
+  const [proofBill, setProofBill] = useState<PersonalPayload['bills'][number] | null>(null);
+  const [proofForm, setProofForm] = useState({
+    amount_claimed: 0,
+    payment_method: 'TRANSFER' as 'TRANSFER' | 'QRIS',
+    transfer_date: new Date().toISOString().slice(0, 10),
+    proof_file_url: '',
+    notes: '',
+  });
+  const [proofSubmitting, setProofSubmitting] = useState(false);
+  const [proofMsg, setProofMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  function openProofModal(b: PersonalPayload['bills'][number]) {
+    const rem = Math.max(0, (Number(b.amount) || 0) - (Number(b.paid_amount) || 0));
+    setProofBill(b);
+    setProofMsg(null);
+    setProofForm({
+      amount_claimed: rem,
+      payment_method: 'TRANSFER',
+      transfer_date: new Date().toISOString().slice(0, 10),
+      proof_file_url: '',
+      notes: '',
+    });
+  }
+
+  async function handleSubmitProof(e: React.FormEvent) {
+    e.preventDefault();
+    if (!proofBill || proofSubmitting) return;
+    setProofSubmitting(true);
+    setProofMsg(null);
+    try {
+      const res = await fetch('/api/keuangan/spp/proofs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bill_id: proofBill.id,
+          amount_claimed: Number(proofForm.amount_claimed),
+          payment_method: proofForm.payment_method,
+          transfer_date: proofForm.transfer_date,
+          proof_file_url: proofForm.proof_file_url.trim(),
+          notes: proofForm.notes.trim() || null,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setProofMsg({ type: 'err', text: json.error || 'Gagal mengirim bukti transfer.' });
+      } else {
+        setProofMsg({
+          type: 'ok',
+          text: 'Bukti transfer berhasil dikirim dan menunggu verifikasi Bendahara.',
+        });
+        setTimeout(() => setProofBill(null), 1800);
+      }
+    } catch {
+      setProofMsg({ type: 'err', text: 'Gagal terhubung ke server.' });
+    } finally {
+      setProofSubmitting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
@@ -962,15 +1021,26 @@ export function SppSection({
                       )}
                     </div>
 
-                    {canDownloadSlip && (
-                      <button
-                        type="button"
-                        onClick={() => openSppSlip(b)}
-                        className="w-full min-h-[40px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-xs transition"
-                      >
-                        <Download className="w-3.5 h-3.5" /> Lihat &amp; Unduh Slip PNG
-                      </button>
-                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {remaining > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => openProofModal(b)}
+                          className="flex-1 min-h-[40px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition"
+                        >
+                          Kirim Bukti Transfer
+                        </button>
+                      )}
+                      {canDownloadSlip && (
+                        <button
+                          type="button"
+                          onClick={() => openSppSlip(b)}
+                          className="flex-1 min-h-[40px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 text-white font-semibold text-xs transition"
+                        >
+                          <Download className="w-3.5 h-3.5" /> Slip PNG
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -1028,8 +1098,18 @@ export function SppSection({
                             {b.status}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                          {canDownloadSlip ? (
+                        <td className="py-2.5 px-3 text-center whitespace-nowrap space-x-1.5">
+                          {remaining > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => openProofModal(b)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] transition"
+                              title="Konfirmasi & Kirim Bukti Transfer"
+                            >
+                              Bayar / Bukti
+                            </button>
+                          )}
+                          {canDownloadSlip && (
                             <button
                               type="button"
                               onClick={() => openSppSlip(b)}
@@ -1038,7 +1118,8 @@ export function SppSection({
                             >
                               <Download className="w-3 h-3" /> PNG
                             </button>
-                          ) : (
+                          )}
+                          {!canDownloadSlip && remaining <= 0 && (
                             <span className="text-[10px] text-slate-400">-</span>
                           )}
                         </td>
@@ -1051,6 +1132,125 @@ export function SppSection({
           </>
         )}
       </div>
+
+      {proofBill && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setProofBill(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-xs p-4"
+        >
+          <form
+            onSubmit={handleSubmitProof}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4 text-xs"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">Kirim Bukti Transfer SPP</h3>
+              <button
+                type="button"
+                onClick={() => setProofBill(null)}
+                className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-slate-600">
+              Tagihan: <strong>{proofBill.title || proofBill.fee_type?.name || 'SPP'}</strong>
+            </p>
+            {proofMsg && (
+              <div
+                className={`p-3 rounded-xl border ${
+                  proofMsg.type === 'ok'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : 'bg-rose-50 border-rose-200 text-rose-900'
+                }`}
+              >
+                {proofMsg.text}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Nominal Transfer (Rp) *</label>
+                <input
+                  type="number"
+                  required
+                  min={1000}
+                  value={proofForm.amount_claimed}
+                  onChange={(e) =>
+                    setProofForm({ ...proofForm, amount_claimed: Number(e.target.value) || 0 })
+                  }
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Metode *</label>
+                <select
+                  value={proofForm.payment_method}
+                  onChange={(e) =>
+                    setProofForm({
+                      ...proofForm,
+                      payment_method: e.target.value as 'TRANSFER' | 'QRIS',
+                    })
+                  }
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white"
+                >
+                  <option value="TRANSFER">Transfer Bank</option>
+                  <option value="QRIS">QRIS</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Tanggal Transfer *</label>
+              <input
+                type="date"
+                required
+                value={proofForm.transfer_date}
+                onChange={(e) => setProofForm({ ...proofForm, transfer_date: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                URL Bukti Transfer (Foto/PDF) *
+              </label>
+              <input
+                type="url"
+                required
+                value={proofForm.proof_file_url}
+                onChange={(e) => setProofForm({ ...proofForm, proof_file_url: e.target.value })}
+                placeholder="https://..."
+                className="w-full rounded-xl border border-slate-300 px-3 py-2"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Catatan (Opsional)</label>
+              <input
+                value={proofForm.notes}
+                onChange={(e) => setProofForm({ ...proofForm, notes: e.target.value })}
+                placeholder="mis. Transfer via BSI a.n. ..."
+                className="w-full rounded-xl border border-slate-300 px-3 py-2"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setProofBill(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={proofSubmitting}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold"
+              >
+                {proofSubmitting ? 'Mengirim...' : 'Kirim Bukti Transfer'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

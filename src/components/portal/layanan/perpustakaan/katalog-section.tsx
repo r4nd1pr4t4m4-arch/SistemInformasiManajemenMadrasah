@@ -76,6 +76,7 @@ export function KatalogSection({
   const [bookForm, setBookForm] = useState<BookFormState>({
     title: '',
     author: '',
+    isbn: '',
     category: '',
     book_format: 'KEDUANYA',
     total_copies: 3,
@@ -170,6 +171,7 @@ export function KatalogSection({
         ...bookForm,
         title,
         author,
+        isbn: bookForm.isbn.trim() || null,
         category: bookForm.category.trim() || null,
         ebook_file_url: bookForm.ebook_file_url.trim() || null,
         cover_url: bookForm.cover_url.trim() || null,
@@ -183,6 +185,7 @@ export function KatalogSection({
         ...bookForm,
         title: '',
         author: '',
+        isbn: '',
         category: '',
         total_copies: 3,
         ebook_file_url: '',
@@ -376,21 +379,39 @@ export function KatalogSection({
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label
-                  htmlFor="lib-book-category"
-                  className="block text-[11px] font-semibold text-slate-700"
-                >
-                  Kategori (Opsional)
-                </label>
-                <input
-                  id="lib-book-category"
-                  disabled={submittingAction === 'ADD_BOOK'}
-                  placeholder="mis. Pelajaran, Fiksi, Referensi"
-                  value={bookForm.category}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label
+                    htmlFor="lib-book-isbn"
+                    className="block text-[11px] font-semibold text-slate-700"
+                  >
+                    ISBN (Opsional)
+                  </label>
+                  <input
+                    id="lib-book-isbn"
+                    disabled={submittingAction === 'ADD_BOOK'}
+                    placeholder="mis. 978-602-..."
+                    value={bookForm.isbn}
+                    onChange={(e) => setBookForm({ ...bookForm, isbn: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="lib-book-category"
+                    className="block text-[11px] font-semibold text-slate-700"
+                  >
+                    Kategori (Opsional)
+                  </label>
+                  <input
+                    id="lib-book-category"
+                    disabled={submittingAction === 'ADD_BOOK'}
+                    placeholder="mis. Pelajaran, Fiksi, Referensi"
+                    value={bookForm.category}
                   onChange={(e) => setBookForm({ ...bookForm, category: e.target.value })}
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
                 />
+                </div>
               </div>
 
               <div className="space-y-1">

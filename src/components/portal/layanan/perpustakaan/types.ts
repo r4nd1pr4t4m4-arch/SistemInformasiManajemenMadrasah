@@ -1,4 +1,4 @@
-export type PerpustakaanSection = 'katalog' | 'anggota';
+export type PerpustakaanSection = 'katalog' | 'anggota' | 'sirkulasi';
 
 export type BookFormat = 'FISIK' | 'EBOOK' | 'KEDUANYA';
 export type BookFilter = 'ALL' | 'EBOOK' | 'FISIK' | 'PREMIUM';
@@ -9,6 +9,7 @@ export interface BookRow {
   id: string;
   title: string;
   author: string;
+  isbn?: string | null;
   category?: string | null;
   cover_url?: string | null;
   ebook_file_url?: string | null;
@@ -59,9 +60,23 @@ export interface ToastState {
   message: string;
 }
 
+export interface LoanRow {
+  id: string;
+  book_id: string;
+  member_id: string;
+  loan_date: string;
+  due_date: string;
+  return_date?: string | null;
+  status: string;
+  fine_amount: number;
+  book?: { title: string } | null;
+  member?: { full_name: string; member_code: string } | null;
+}
+
 export interface BookFormState {
   title: string;
   author: string;
+  isbn: string;
   category: string;
   book_format: BookFormat;
   total_copies: number;

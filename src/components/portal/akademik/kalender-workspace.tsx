@@ -9,6 +9,7 @@ import {
 } from './akademik-ui';
 import { AgendaSection } from './kalender/agenda-section';
 import { LogJtmSection } from './kalender/log-jtm-section';
+import { KalenderVisualGrid } from './kalender-visual-export';
 import type {
   CalendarEventFormState,
   CalendarEventRow,
@@ -117,16 +118,19 @@ export function KalenderWorkspace({ section }: { section: KalenderSection }) {
       <AkademikErrorBanner error={loadError} onRetry={handleRefresh} />
 
       {section === 'agenda' && (
-        <AgendaSection
-          events={events}
-          canManageCalendar={canManageCalendar}
-          refreshing={refreshing}
-          form={form}
-          setForm={setForm}
-          onRefresh={handleRefresh}
-          postKalender={postKalender}
-          showToast={showToast}
-        />
+        <>
+          <KalenderVisualGrid events={events} />
+          <AgendaSection
+            events={events}
+            canManageCalendar={canManageCalendar}
+            refreshing={refreshing}
+            form={form}
+            setForm={setForm}
+            onRefresh={handleRefresh}
+            postKalender={postKalender}
+            showToast={showToast}
+          />
+        </>
       )}
 
       {section === 'log-jtm' && (

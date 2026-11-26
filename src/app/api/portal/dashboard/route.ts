@@ -11,11 +11,13 @@ function getIsoDayOfWeek(dateStr: string): number {
   return day === 0 ? 7 : day;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getCurrentUserWithRoles();
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  const { searchParams } = new URL(request.url);
+  const requestedStudentId = searchParams.get('studentId')?.trim() || '';
 
   const todayDate = getWibTodayDateString();
   const todayDayOfWeek = getIsoDayOfWeek(todayDate);
@@ -911,18 +913,45 @@ export async function GET() {
 
   // --- G. Student / Parent Personal Summary ---
   let studentPersonalSummary: Record<string, unknown> | null = null;
+  let linkedChildren: Array<{
+    id: string;
+    full_name: string;
+    nis: string | null;
+    nisn: string | null;
+    status: string;
+  }> = [];
   let targetStudent = studentRow;
   if (!targetStudent && hasRole(['ORANG_TUA'])) {
-    const { data: guardianLink } = await supabase
+    const { data: guardianLinks } = await supabase
       .from('student_guardians')
       .select('student:students(*)')
-      .eq('profile_id', session.userId)
-      .limit(1)
-      .maybeSingle();
-    if (guardianLink?.student) {
-      targetStudent = Array.isArray(guardianLink.student)
-        ? guardianLink.student[0]
-        : guardianLink.student;
+      .eq('profile_id', session.userId);
+
+    const childrenList = (guardianLinks || [])
+      .map((link) => (Array.isArray(link.student) ? link.student[0] : link.student))
+      .filter((s): s is NonNullable<typeof s> => Boolean(s && s.id));
+
+    // Deduplikasi berdasarkan student.id
+    const seenIds = new Set<string>();
+    const uniqueChildren = childrenList.filter((s) => {
+      if (seenIds.has(s.id)) return false;
+      seenIds.add(s.id);
+      return true;
+    });
+
+    linkedChildren = uniqueChildren.map((s) => ({
+      id: s.id,
+      full_name: s.full_name,
+      nis: s.nis ?? null,
+      nisn: s.nisn ?? null,
+      status: s.status ?? 'AKTIF',
+    }));
+
+    if (uniqueChildren.length > 0) {
+      targetStudent =
+        (requestedStudentId
+          ? uniqueChildren.find((c) => c.id === requestedStudentId)
+          : null) || uniqueChildren[0];
     }
   }
 
@@ -1084,6 +1113,54 @@ export async function GET() {
     };
   }
 
+  // --- I. Early Warning System (EWS) untuk Pimpinan/Admin ---
+  let ewsSummary: {
+    highAlphaStudents: Array<{ studentId: string; fullName: string; alpaCount: number }>;
+    overdueDispositionsCount: number;
+    pendingSppProofsCount: number;
+  } | null = null;
+
+  if (executiveSummary || financeSummary?.spp) {
+    const [alphaRes, overdueDispRes, pendingProofsRes] = await Promise.all([
+      supabase
+        .from('student_attendances')
+        .select('student_id, student:students(full_name)')
+        .eq('status', 'ALPA')
+        .is('schedule_id', null)
+        .gte('attendance_date', monthStart)
+        .limit(500),
+      supabase
+        .from('letter_dispositions')
+        .select('id', { count: 'exact', head: true })
+        .neq('status', 'SELESAI')
+        .lt('due_date', todayDate),
+      supabase
+        .from('spp_payment_proofs')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'MENUNGGU_VERIFIKASI'),
+    ]);
+
+    const alphaMap = new Map<string, { fullName: string; count: number }>();
+    for (const row of alphaRes.data || []) {
+      const sid = row.student_id as string;
+      const st = Array.isArray(row.student) ? row.student[0] : row.student;
+      const cur = alphaMap.get(sid) || { fullName: st?.full_name || 'Siswa', count: 0 };
+      cur.count += 1;
+      alphaMap.set(sid, cur);
+    }
+    const highAlphaStudents = Array.from(alphaMap.entries())
+      .filter(([, v]) => v.count >= 3)
+      .map(([studentId, v]) => ({ studentId, fullName: v.fullName, alpaCount: v.count }))
+      .sort((a, b) => b.alpaCount - a.alpaCount)
+      .slice(0, 10);
+
+    ewsSummary = {
+      highAlphaStudents,
+      overdueDispositionsCount: overdueDispRes.count ?? 0,
+      pendingSppProofsCount: pendingProofsRes.count ?? 0,
+    };
+  }
+
   return NextResponse.json({
     todayDate,
     todayDayOfWeek,
@@ -1111,6 +1188,7 @@ export async function GET() {
         }
       : null,
     studentProfile: studentPersonalSummary,
+    linkedChildren,
     libraryMember: libMemberRow
       ? {
           id: libMemberRow.id,
@@ -1126,5 +1204,6 @@ export async function GET() {
     guruWaliSummary,
     librarySummary,
     alumniSummary,
+    ewsSummary,
   });
 }
