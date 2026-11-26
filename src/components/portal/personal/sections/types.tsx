@@ -215,10 +215,10 @@ export function PersonalEmptyState({
   description: string;
 }) {
   return (
-    <div className="glass-card rounded-3xl p-10 text-center flex flex-col items-center justify-center space-y-2">
+    <div className="glass-card rounded-3xl p-8 sm:p-10 text-center flex flex-col items-center justify-center space-y-2 min-w-0">
       {icon}
-      <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-      <p className="text-xs text-slate-500 max-w-md">{description}</p>
+      <h3 className="text-sm font-bold text-slate-800 break-words">{title}</h3>
+      <p className="text-xs text-slate-500 max-w-md leading-relaxed break-words">{description}</p>
     </div>
   );
 }
@@ -242,9 +242,9 @@ export function PersonalStatCard({
           : 'border-slate-200 bg-white text-slate-900';
 
   return (
-    <div className={`rounded-2xl border p-4 ${toneClass}`}>
-      <p className="text-[11px] font-semibold opacity-75 uppercase">{label}</p>
-      <p className="text-2xl font-black mt-1">{value}</p>
+    <div className={`rounded-2xl border p-3.5 sm:p-4 min-w-0 ${toneClass}`}>
+      <p className="text-[11px] font-semibold opacity-75 uppercase truncate">{label}</p>
+      <p className="text-xl sm:text-2xl font-black mt-1 tabular-nums">{value}</p>
     </div>
   );
 }

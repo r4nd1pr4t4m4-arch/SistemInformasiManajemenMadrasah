@@ -6,10 +6,25 @@ import { sanitizeApiError } from '@/lib/security/api-error';
 import { dispatchNotification } from '@/lib/notifications/dispatcher';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 
+const ALLOWED_DATA_URL_PREFIX =
+  /^data:(application\/pdf|image\/jpeg|image\/jpg|image\/png|image\/webp);base64,[A-Za-z0-9+/=]+$/i;
+
 const PublicIncomingLetterSchema = z.object({
-  sender_organization: z.string().trim().min(3, 'Nama pengirim / instansi asal minimal 3 karakter.'),
-  sender_contact: z.string().trim().min(5, 'Kontak (WhatsApp / Email) pengirim wajib diisi.'),
-  letter_number: z.string().trim().min(2, 'Nomor surat asal minimal 2 karakter.'),
+  sender_organization: z
+    .string()
+    .trim()
+    .min(3, 'Nama pengirim / instansi asal minimal 3 karakter.')
+    .max(160, 'Nama pengirim / instansi terlalu panjang.'),
+  sender_contact: z
+    .string()
+    .trim()
+    .min(5, 'Kontak (WhatsApp / Email) pengirim wajib diisi.')
+    .max(120, 'Kontak pengirim terlalu panjang.'),
+  letter_number: z
+    .string()
+    .trim()
+    .min(2, 'Nomor surat asal minimal 2 karakter.')
+    .max(100, 'Nomor surat asal terlalu panjang.'),
   letter_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Tanggal surat tidak valid.'),
   category: z
     .enum([
@@ -21,11 +36,30 @@ const PublicIncomingLetterSchema = z.object({
       'LAINNYA',
     ])
     .default('SURAT_PENGANTAR'),
-  subject: z.string().trim().min(4, 'Perihal surat minimal 4 karakter.'),
-  summary: z.string().trim().min(5, 'Ringkasan maksud / keperluan surat wajib diisi.'),
+  subject: z
+    .string()
+    .trim()
+    .min(4, 'Perihal surat minimal 4 karakter.')
+    .max(240, 'Perihal surat terlalu panjang.'),
+  summary: z
+    .string()
+    .trim()
+    .min(5, 'Ringkasan maksud / keperluan surat wajib diisi.')
+    .max(2000, 'Ringkasan surat maksimal 2000 karakter.'),
   file_data_url: z.string().trim().optional().nullable(),
-  file_name: z.string().trim().optional().nullable(),
+  file_name: z.string().trim().max(200).optional().nullable(),
 });
+
+function extractReceiptTicketFromSummary(summary?: string | null): string | null {
+  if (!summary) return null;
+  const match = summary.match(/\[Resi:\s*(SM-\d{8}-[A-Z0-9]+)\b/i);
+  return match?.[1] ? match[1].toUpperCase() : null;
+}
+
+export function stripReceiptMetaPrefix(summary?: string | null): string {
+  if (!summary) return '';
+  return summary.replace(/^\[Resi:[^\]]+\]\s*/i, '').trim();
+}
 
 export async function GET(request: NextRequest) {
   if (!isSupabaseAdminConfigured()) {
@@ -35,50 +69,118 @@ export async function GET(request: NextRequest) {
   const supabase = createSupabaseAdminClient();
   const ticket = request.nextUrl.searchParams.get('ticket')?.trim() || '';
 
-  const [{ data: circulars }, { data: inst }] = await Promise.all([
+  // 1. Ambil daftar Surat Edaran Resmi (dengan fallback bila kolom migrasi 0046 belum tersedia)
+  const [circularRes, instRes] = await Promise.all([
     supabase
       .from('letters')
-      .select('id, direction, category, letter_number, letter_date, subject, counterparty, summary, file_url, signatory_name, signatory_title')
+      .select(
+        'id, direction, category, letter_number, letter_date, subject, counterparty, summary, file_url, attachment_name, signatory_name, signatory_title, status, priority, classification_code'
+      )
       .eq('direction', 'KELUAR')
       .eq('category', 'SURAT_EDARAN')
       .order('letter_date', { ascending: false })
-      .limit(30),
+      .limit(50),
     supabase
       .from('institution_settings')
-      .select('institution_type, name, short_name, address, phone, email, website_url, headmaster_name, head_title_label, nsm, npsn, accreditation')
+      .select(
+        'institution_type, name, short_name, address, phone, email, website_url, headmaster_name, head_title_label, nsm, npsn, accreditation, logo_url'
+      )
       .limit(1)
       .maybeSingle(),
   ]);
 
-  let trackedLetter: Record<string, unknown> | null = null;
-  if (ticket) {
-    const safeTicket = ticket.replace(/[\\%_]/g, '\\$&');
-    const { data: found } = await supabase
+  let rawCirculars: Array<Record<string, unknown>> = [];
+  if (!circularRes.error && circularRes.data) {
+    rawCirculars = circularRes.data as Array<Record<string, unknown>>;
+  } else {
+    const fallbackCirculars = await supabase
       .from('letters')
-      .select('id, direction, category, letter_number, letter_date, subject, counterparty, summary, status, receipt_ticket, created_at')
-      .or(`receipt_ticket.ilike.${safeTicket},letter_number.ilike.${safeTicket},summary.ilike.%${safeTicket}%`)
+      .select('id, direction, category, letter_number, letter_date, subject, counterparty, summary, file_url')
+      .eq('direction', 'KELUAR')
+      .eq('category', 'SURAT_EDARAN')
+      .order('letter_date', { ascending: false })
+      .limit(50);
+    rawCirculars = (fallbackCirculars.data || []) as Array<Record<string, unknown>>;
+  }
+
+  // Filter hanya surat edaran yang berstatus TERBIT / DIARSIPKAN (bukan DRAFT atau DIBATALKAN)
+  const circulars = rawCirculars.filter((c) => {
+    const st = String(c.status || 'TERBIT').toUpperCase();
+    return st !== 'DRAFT' && st !== 'DIBATALKAN';
+  });
+
+  // 2. Pelacakan Surat Masuk berdasarkan Nomor Resi (SM-...) atau Nomor Surat Asal
+  let trackedLetter: Record<string, unknown> | null = null;
+  if (ticket.length >= 2) {
+    const safeTicket = ticket.replace(/[\\%_]/g, '\\$&');
+    const isReceiptFormat = /^SM-\d{8}-[A-Z0-9]+$/i.test(ticket);
+
+    // Coba query dengan kolom receipt_ticket terlebih dahulu (hanya untuk direction = 'MASUK')
+    const enrichedTrack = await supabase
+      .from('letters')
+      .select(
+        'id, direction, category, letter_number, letter_date, subject, counterparty, summary, status, priority, receipt_ticket, created_at'
+      )
+      .eq('direction', 'MASUK')
+      .or(
+        isReceiptFormat
+          ? `receipt_ticket.ilike.${safeTicket},summary.ilike.%[Resi: ${safeTicket}%`
+          : `receipt_ticket.ilike.${safeTicket},letter_number.ilike.${safeTicket},summary.ilike.%[Resi: ${safeTicket}%`
+      )
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (found) {
+    let foundLetter: Record<string, unknown> | null = null;
+    if (!enrichedTrack.error && enrichedTrack.data) {
+      foundLetter = enrichedTrack.data as Record<string, unknown>;
+    } else if (enrichedTrack.error) {
+      // Fallback aman apabila kolom receipt_ticket/status belum dimigrasikan pada DB
+      const fallbackTrack = await supabase
+        .from('letters')
+        .select('id, direction, category, letter_number, letter_date, subject, counterparty, summary, created_at')
+        .eq('direction', 'MASUK')
+        .or(
+          isReceiptFormat
+            ? `summary.ilike.%[Resi: ${safeTicket}%`
+            : `letter_number.ilike.${safeTicket},summary.ilike.%[Resi: ${safeTicket}%`
+        )
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (fallbackTrack.data) {
+        foundLetter = fallbackTrack.data as Record<string, unknown>;
+      }
+    }
+
+    if (foundLetter) {
       const { data: disps } = await supabase
         .from('letter_dispositions')
-        .select('id, instruction, status, priority, due_date, completed_at, created_at, assignee:teachers_staff(full_name)')
-        .eq('letter_id', found.id)
+        .select(
+          'id, instruction, notes, status, priority, due_date, completion_notes, completed_at, created_at, assignee:teachers_staff(full_name)'
+        )
+        .eq('letter_id', String(foundLetter.id))
         .order('created_at', { ascending: false });
 
+      const resolvedTicket =
+        (foundLetter.receipt_ticket as string | null) ||
+        extractReceiptTicketFromSummary(foundLetter.summary as string | null) ||
+        null;
+
       trackedLetter = {
-        ...found,
+        ...foundLetter,
+        receipt_ticket: resolvedTicket,
+        clean_summary: stripReceiptMetaPrefix(foundLetter.summary as string | null),
         dispositions: disps || [],
       };
     }
   }
 
   return NextResponse.json({
-    circulars: circulars || [],
+    circulars,
     trackedLetter,
-    institution: inst || null,
+    institution: instRes.data || null,
   });
 }
 
@@ -107,11 +209,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: firstIssue }, { status: 400 });
     }
 
-    if (parsed.data.file_data_url && parsed.data.file_data_url.length > 2.2 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: 'Ukuran berkas lampiran maksimal 1.5 MB untuk pengiriman publik.' },
-        { status: 400 }
-      );
+    const rawDataUrl = parsed.data.file_data_url?.trim() || '';
+    if (rawDataUrl) {
+      if (rawDataUrl.length > 2.2 * 1024 * 1024) {
+        return NextResponse.json(
+          { error: 'Ukuran berkas lampiran maksimal 1.5 MB untuk pengiriman publik.' },
+          { status: 400 }
+        );
+      }
+      if (!ALLOWED_DATA_URL_PREFIX.test(rawDataUrl)) {
+        return NextResponse.json(
+          { error: 'Format berkas lampiran tidak valid. Gunakan file PDF, JPG, PNG, atau WEBP.' },
+          { status: 400 }
+        );
+      }
     }
 
     const supabase = createSupabaseAdminClient();
@@ -131,8 +242,8 @@ export async function POST(request: NextRequest) {
         subject: parsed.data.subject,
         counterparty: parsed.data.sender_organization,
         summary: summaryWithMeta,
-        file_url: parsed.data.file_data_url || null,
-        attachment_name: parsed.data.file_name || null,
+        file_url: rawDataUrl || null,
+        attachment_name: parsed.data.file_name?.trim() || null,
         receipt_ticket: receiptTicket,
         sender_contact: parsed.data.sender_contact,
         status: 'TERBIT',
@@ -158,7 +269,7 @@ export async function POST(request: NextRequest) {
           subject: parsed.data.subject,
           counterparty: parsed.data.sender_organization,
           summary: summaryWithMeta,
-          file_url: parsed.data.file_data_url || null,
+          file_url: rawDataUrl || null,
         })
         .select('id, letter_number, subject, counterparty, letter_date')
         .single();

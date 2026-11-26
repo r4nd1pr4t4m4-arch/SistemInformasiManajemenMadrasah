@@ -106,16 +106,18 @@ export function PersonalWorkspace({
 
   const sectionResetKey = `${scope}-${section}-${selectedChildId || data?.student?.id || 'default'}`;
 
+  const childrenList = Array.isArray(data?.children) ? data.children : [];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0">
       {/* Header & Identity Banner */}
-      <div className="glass-card rounded-3xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="glass-card rounded-3xl p-4 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight break-words">
             {title}
           </h1>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">{subtitle}</p>
-          {data?.student && (
+          {!error && data?.student && (
             <div className="flex flex-wrap items-center gap-2 mt-3">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold max-w-full break-words">
                 <UserCheck className="w-3.5 h-3.5 shrink-0" />
@@ -134,7 +136,7 @@ export function PersonalWorkspace({
               )}
             </div>
           )}
-          {data?.teacher && scope === 'gtk' && (
+          {!error && data?.teacher && scope === 'gtk' && (
             <div className="flex flex-wrap items-center gap-2 mt-3">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold max-w-full break-words">
                 <UserCheck className="w-3.5 h-3.5 shrink-0" />
@@ -153,7 +155,7 @@ export function PersonalWorkspace({
 
         <div className="flex flex-wrap items-end gap-2.5 w-full md:w-auto shrink-0">
           {/* Child selector for Orang Tua */}
-          {scope === 'orang-tua' && data && data.children.length > 1 && (
+          {scope === 'orang-tua' && childrenList.length > 1 && (
             <div className="w-full sm:w-auto sm:min-w-[220px] min-w-0 flex-1 sm:flex-none">
               <label
                 htmlFor="personal-child-select"
@@ -163,15 +165,16 @@ export function PersonalWorkspace({
               </label>
               <select
                 id="personal-child-select"
-                value={selectedChildId || data.student?.id || ''}
+                disabled={loading}
+                value={selectedChildId || data?.student?.id || ''}
                 onChange={(e) => {
                   setLoading(true);
                   setError(null);
                   setSelectedChildId(e.target.value);
                 }}
-                className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
               >
-                {data.children.map((child) => (
+                {childrenList.map((child) => (
                   <option key={child.id} value={child.id}>
                     {child.full_name} {child.nis ? `(${child.nis})` : ''}
                   </option>

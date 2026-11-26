@@ -4,6 +4,8 @@ import { useState } from 'react';
 import {
   BookOpen,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   HeartHandshake,
   RotateCcw,
   Search,
@@ -347,6 +349,28 @@ const GW_ASPECT_LABELS: Record<string, string> = {
   LAINNYA: 'Lainnya',
 };
 
+const GW_ASPECT_BADGE_CLASS: Record<string, string> = {
+  SETORAN_HAFALAN: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  AKADEMIK: 'bg-amber-50 text-amber-800 border-amber-200',
+  IBADAH_KARAKTER: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+  SOSIAL: 'bg-sky-50 text-sky-800 border-sky-200',
+  KESEHATAN: 'bg-teal-50 text-teal-800 border-teal-200',
+  LAINNYA: 'bg-slate-100 text-slate-700 border-slate-200',
+};
+
+function extractGuruWaliTeacherName(assignment: unknown): string {
+  if (!assignment || typeof assignment !== 'object') return '';
+  const assignObj = Array.isArray(assignment) ? assignment[0] : assignment;
+  if (!assignObj || typeof assignObj !== 'object') return '';
+  const teacherRaw = (assignObj as { teacher?: unknown }).teacher;
+  const teacherObj = Array.isArray(teacherRaw) ? teacherRaw[0] : teacherRaw;
+  if (!teacherObj || typeof teacherObj !== 'object') return '';
+  const fullName = (teacherObj as { full_name?: unknown }).full_name;
+  return typeof fullName === 'string' ? fullName.trim() : '';
+}
+
+const GW_PAGE_SIZE = 10;
+
 export function GuruWaliSection({
   data,
   scope,
@@ -358,24 +382,35 @@ export function GuruWaliSection({
     'ALL' | 'AKADEMIK' | 'IBADAH_KARAKTER' | 'SETORAN_HAFALAN' | 'SOSIAL' | 'KESEHATAN' | 'LAINNYA'
   >('ALL');
   const [gwSearch, setGwSearch] = useState('');
+  const [gwPage, setGwPage] = useState(1);
 
-  if (scope === 'orang-tua' && !data.student) {
+  if ((scope === 'orang-tua' || scope === 'siswa') && !data.student) {
     return (
       <PersonalEmptyState
         icon={<HeartHandshake className="w-8 h-8 text-slate-300" />}
-        title="Belum ada data putra/putri terhubung"
-        description="Akun Anda belum terhubung dengan data siswa. Silakan hubungi bagian Tata Usaha atau Operator Madrasah."
+        title={
+          scope === 'orang-tua'
+            ? 'Belum ada data putra/putri terhubung'
+            : 'Akun siswa belum tertaut ke Buku Induk'
+        }
+        description={
+          scope === 'orang-tua'
+            ? 'Akun Anda belum terhubung dengan data siswa. Silakan hubungi bagian Tata Usaha atau Operator Madrasah.'
+            : 'Akun Anda belum terhubung dengan data peserta didik di Buku Induk. Silakan hubungi bagian Tata Usaha atau Operator Madrasah.'
+        }
       />
     );
   }
 
-  const allLogs = data.guruWaliLogs || [];
+  const allLogs = [...(data.guruWaliLogs || [])].sort((a, b) =>
+    (b.mentoring_date || '').localeCompare(a.mentoring_date || '')
+  );
   const q = gwSearch.trim().toLowerCase();
   const filteredLogs = allLogs.filter((log) => {
     const asp = String(log.aspect || 'AKADEMIK').toUpperCase();
     if (gwAspectFilter !== 'ALL' && asp !== gwAspectFilter) return false;
     if (q) {
-      const teacherName = log.assignment?.teacher?.full_name || '';
+      const teacherName = extractGuruWaliTeacherName(log.assignment);
       const haystack = `${asp} ${GW_ASPECT_LABELS[asp] || ''} ${log.topic || ''} ${
         log.notes || ''
       } ${log.recommendation || ''} ${teacherName} ${log.mentoring_date || ''} ${formatDateId(
@@ -393,11 +428,17 @@ export function GuruWaliSection({
     (l) => String(l.aspect || '').toUpperCase() === 'AKADEMIK'
   ).length;
   const hasFilter = gwSearch.trim().length > 0 || gwAspectFilter !== 'ALL';
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / GW_PAGE_SIZE));
+  const safePage = Math.min(gwPage, totalPages);
+  const paginatedLogs = filteredLogs.slice(
+    (safePage - 1) * GW_PAGE_SIZE,
+    safePage * GW_PAGE_SIZE
+  );
 
   return (
     <div className="space-y-4">
       {data.guruWaliTeacher?.full_name && (
-        <div className="glass-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 border border-emerald-200/70 bg-emerald-50/40">
+        <div className="glass-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 border border-emerald-200/70 bg-emerald-50/40 min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
               <HeartHandshake className="w-5 h-5" />
@@ -406,7 +447,7 @@ export function GuruWaliSection({
               <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">
                 Guru Wali Pendamping Aktif
               </p>
-              <p className="text-sm font-bold text-slate-900 truncate">
+              <p className="text-sm font-bold text-slate-900 break-words">
                 {data.guruWaliTeacher.full_name}
               </p>
             </div>
@@ -426,10 +467,54 @@ export function GuruWaliSection({
         />
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-3">
-            <PersonalStatCard label="Total Bimbingan" value={String(allLogs.length)} tone="slate" />
-            <PersonalStatCard label="Setoran Hafalan" value={String(hafalanCount)} tone="emerald" />
-            <PersonalStatCard label="Akademik" value={String(akademikCount)} tone="amber" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
+            <button
+              type="button"
+              aria-pressed={gwAspectFilter === 'ALL'}
+              onClick={() => {
+                setGwAspectFilter('ALL');
+                setGwPage(1);
+              }}
+              className={`col-span-2 sm:col-span-1 text-left rounded-2xl transition hover:opacity-95 ${
+                gwAspectFilter === 'ALL' ? 'ring-2 ring-slate-900/20' : ''
+              }`}
+            >
+              <PersonalStatCard
+                label="Total Bimbingan"
+                value={String(allLogs.length)}
+                tone="slate"
+              />
+            </button>
+            <button
+              type="button"
+              aria-pressed={gwAspectFilter === 'SETORAN_HAFALAN'}
+              onClick={() => {
+                setGwAspectFilter('SETORAN_HAFALAN');
+                setGwPage(1);
+              }}
+              className={`text-left rounded-2xl transition hover:opacity-95 ${
+                gwAspectFilter === 'SETORAN_HAFALAN' ? 'ring-2 ring-emerald-500/40' : ''
+              }`}
+            >
+              <PersonalStatCard
+                label="Setoran Hafalan"
+                value={String(hafalanCount)}
+                tone="emerald"
+              />
+            </button>
+            <button
+              type="button"
+              aria-pressed={gwAspectFilter === 'AKADEMIK'}
+              onClick={() => {
+                setGwAspectFilter('AKADEMIK');
+                setGwPage(1);
+              }}
+              className={`text-left rounded-2xl transition hover:opacity-95 ${
+                gwAspectFilter === 'AKADEMIK' ? 'ring-2 ring-amber-500/40' : ''
+              }`}
+            >
+              <PersonalStatCard label="Akademik" value={String(akademikCount)} tone="amber" />
+            </button>
           </div>
 
           <div className="glass-card rounded-2xl p-3.5 sm:p-4 space-y-3">
@@ -443,14 +528,20 @@ export function GuruWaliSection({
                   id="personal-gw-search"
                   type="text"
                   value={gwSearch}
-                  onChange={(e) => setGwSearch(e.target.value)}
+                  onChange={(e) => {
+                    setGwSearch(e.target.value);
+                    setGwPage(1);
+                  }}
                   placeholder="Cari topik, hafalan, catatan, rekomendasi, atau tanggal..."
                   className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                 />
                 {gwSearch && (
                   <button
                     type="button"
-                    onClick={() => setGwSearch('')}
+                    onClick={() => {
+                      setGwSearch('');
+                      setGwPage(1);
+                    }}
                     aria-label="Hapus pencarian bimbingan Guru Wali"
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                   >
@@ -474,11 +565,15 @@ export function GuruWaliSection({
                   <button
                     key={tab.key}
                     type="button"
-                    onClick={() => setGwAspectFilter(tab.key)}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition shrink-0 whitespace-nowrap ${
+                    aria-pressed={gwAspectFilter === tab.key}
+                    onClick={() => {
+                      setGwAspectFilter(tab.key);
+                      setGwPage(1);
+                    }}
+                    className={`min-h-[36px] px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition shrink-0 whitespace-nowrap ${
                       gwAspectFilter === tab.key
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300'
                     }`}
                   >
                     {tab.label}
@@ -486,10 +581,29 @@ export function GuruWaliSection({
                 ))}
               </div>
             </div>
+
+            <div className="flex items-center justify-between text-[11px] font-medium text-slate-500">
+              <span>
+                Menampilkan {filteredLogs.length} dari {allLogs.length} catatan bimbingan
+              </span>
+              {hasFilter && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGwSearch('');
+                    setGwAspectFilter('ALL');
+                    setGwPage(1);
+                  }}
+                  className="font-semibold text-emerald-700 hover:underline"
+                >
+                  Reset Filter
+                </button>
+              )}
+            </div>
           </div>
 
           {filteredLogs.length === 0 ? (
-            <div className="glass-card rounded-2xl p-8 text-center space-y-2">
+            <div className="glass-card rounded-2xl p-8 text-center space-y-2.5">
               <p className="text-xs font-semibold text-slate-700">
                 Tidak ada rekam jejak bimbingan yang cocok dengan filter.
               </p>
@@ -499,59 +613,91 @@ export function GuruWaliSection({
                   onClick={() => {
                     setGwSearch('');
                     setGwAspectFilter('ALL');
+                    setGwPage(1);
                   }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-semibold"
+                  className="inline-flex items-center gap-1.5 min-h-[36px] px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
                 >
                   <RotateCcw className="w-3.5 h-3.5" /> Reset Filter
                 </button>
               )}
             </div>
           ) : (
-            <div className="space-y-3">
-              {filteredLogs.map((log) => {
-                const aspKey = String(log.aspect || 'AKADEMIK').toUpperCase();
-                const aspLabel = GW_ASPECT_LABELS[aspKey] || aspKey;
-                const isHafalan = aspKey === 'SETORAN_HAFALAN';
-                return (
-                  <div
-                    key={log.id}
-                    className="glass-card rounded-2xl p-4 sm:p-5 space-y-2.5 border border-slate-200/80"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                          isHafalan
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            : 'bg-sky-50 text-sky-800 border-sky-200'
-                        }`}
-                      >
-                        {aspLabel}
-                      </span>
-                      <span className="text-[11px] font-mono text-slate-500">
-                        {formatDateId(log.mentoring_date)}
-                      </span>
+            <>
+              <div className="space-y-3">
+                {paginatedLogs.map((log) => {
+                  const aspKey = String(log.aspect || 'AKADEMIK').toUpperCase();
+                  const aspLabel = GW_ASPECT_LABELS[aspKey] || aspKey;
+                  const isHafalan = aspKey === 'SETORAN_HAFALAN';
+                  const badgeClass =
+                    GW_ASPECT_BADGE_CLASS[aspKey] || 'bg-sky-50 text-sky-800 border-sky-200';
+                  const teacherName = extractGuruWaliTeacherName(log.assignment);
+                  return (
+                    <div
+                      key={log.id}
+                      className="glass-card rounded-2xl p-4 sm:p-5 space-y-2.5 border border-slate-200/80 min-w-0"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${badgeClass}`}
+                        >
+                          {aspLabel}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                          {formatDateId(log.mentoring_date)}
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-slate-900 break-words">
+                        {isHafalan ? `Hafalan: ${log.topic || '-'}` : log.topic || 'Bimbingan Umum'}
+                      </p>
+                      {log.notes && (
+                        <p className="text-xs sm:text-[13px] text-slate-700 break-words leading-relaxed whitespace-pre-line">
+                          {log.notes}
+                        </p>
+                      )}
+                      {log.recommendation && (
+                        <p className="text-[11px] text-emerald-800 bg-emerald-50/70 border border-emerald-100 rounded-xl px-3 py-2 break-words">
+                          <span className="font-semibold">Rekomendasi:</span> {log.recommendation}
+                        </p>
+                      )}
+                      {teacherName && (
+                        <p className="text-[11px] text-slate-500 break-words">
+                          Guru Wali: {teacherName}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-sm font-bold text-slate-900 break-words">
-                      {isHafalan ? `Hafalan: ${log.topic}` : log.topic}
-                    </p>
-                    <p className="text-xs sm:text-[13px] text-slate-700 break-words leading-relaxed">
-                      {log.notes}
-                    </p>
-                    {log.recommendation && (
-                      <p className="text-[11px] text-emerald-800 bg-emerald-50/70 border border-emerald-100 rounded-xl px-3 py-2 break-words">
-                        <span className="font-semibold">Rekomendasi:</span>{' '}
-                        {log.recommendation}
-                      </p>
-                    )}
-                    {log.assignment?.teacher?.full_name && (
-                      <p className="text-[11px] text-slate-500 break-words">
-                        Guru Wali: {log.assignment.teacher.full_name}
-                      </p>
-                    )}
+                  );
+                })}
+              </div>
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/70 text-xs text-slate-600">
+                  <span>
+                    Halaman <strong className="text-slate-900">{safePage}</strong> dari{' '}
+                    {totalPages}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={safePage <= 1}
+                      onClick={() => setGwPage((p) => Math.max(1, p - 1))}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold disabled:opacity-40"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span>Sebelumnya</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={safePage >= totalPages}
+                      onClick={() => setGwPage((p) => Math.min(totalPages, p + 1))}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold disabled:opacity-40"
+                    >
+                      <span>Berikutnya</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
