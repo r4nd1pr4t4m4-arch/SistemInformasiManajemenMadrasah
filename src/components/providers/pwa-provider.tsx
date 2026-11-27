@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Suspense,
   createContext,
   useCallback,
   useContext,
@@ -472,7 +473,9 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <PwaContext.Provider value={contextValue}>
-      <PwaRouteTracker />
+      <Suspense fallback={null}>
+        <PwaRouteTracker />
+      </Suspense>
       {children}
       <SwUpdateModal
         open={Boolean(waitingWorker)}

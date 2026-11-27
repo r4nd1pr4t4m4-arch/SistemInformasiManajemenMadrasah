@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { CloudUpload } from 'lucide-react';
 import {
@@ -411,5 +411,9 @@ function AppStateMonitorInner() {
 }
 
 export function AppStateMonitor() {
-  return <AppStateMonitorInner />;
+  return (
+    <Suspense fallback={null}>
+      <AppStateMonitorInner />
+    </Suspense>
+  );
 }
