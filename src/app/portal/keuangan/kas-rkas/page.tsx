@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import * as XLSX from 'xlsx';
 import {
   AlertCircle,
@@ -13,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   Trash2,
+  X,
 } from 'lucide-react';
 
 interface BudgetRow {
@@ -48,18 +49,30 @@ function formatRupiah(n: number) {
   }).format(n || 0);
 }
 
+function getTodayWibIso(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+}
+
+function isSafeReceiptUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return /^https?:\/\//i.test(url.trim()) || url.trim().startsWith('/');
+}
+
 export default function KasRkasPage() {
   const [tab, setTab] = useState<'BKU' | 'RKAS'>('BKU');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteEntry, setConfirmDeleteEntry] = useState<CashbookRow | null>(null);
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const [budgets, setBudgets] = useState<BudgetRow[]>([]);
   const [entries, setEntries] = useState<CashbookRow[]>([]);
   const [summary, setSummary] = useState({ totalIn: 0, totalOut: 0, balance: 0, totalBudget: 0 });
 
-  const [bkuForm, setBkuForm] = useState({
-    entry_date: new Date().toISOString().slice(0, 10),
+  const [bkuForm, setBkuForm] = useState(() => ({
+    entry_date: getTodayWibIso(),
     entry_type: 'KELUAR' as 'MASUK' | 'KELUAR',
     funding_source: 'BOS' as 'BOS' | 'KOMITE' | 'YAYASAN' | 'LAINNYA',
     budget_plan_id: '',
@@ -68,43 +81,83 @@ export default function KasRkasPage() {
     amount: 0,
     reference_no: '',
     receipt_url: '',
-  });
+  }));
 
-  const [rkasForm, setRkasForm] = useState({
+  const [rkasForm, setRkasForm] = useState(() => ({
     fiscal_year: new Date().getFullYear(),
     funding_source: 'BOS' as 'BOS' | 'KOMITE' | 'YAYASAN' | 'LAINNYA',
     code: '',
     name: '',
     allocated_amount: 0,
     notes: '',
-  });
+  }));
 
-  const showToast = (text: string, type: 'ok' | 'err' = 'ok') => {
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const showToast = useCallback((text: string, type: 'ok' | 'err' = 'ok') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ type, text });
-    setTimeout(() => setToast(null), 4000);
-  };
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!confirmDeleteEntry) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !deletingId) setConfirmDeleteEntry(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [confirmDeleteEntry, deletingId]);
 
   const loadData = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch('/api/keuangan/kas-rkas', { cache: 'no-store' });
+      const res = await fetch('/api/keuangan/kas-rkas', {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const data = await res.json().catch(() => ({}));
+      if (controller.signal.aborted) return;
       if (res.ok) {
         setBudgets(data.budgets || []);
         setEntries(data.entries || []);
         if (data.summary) setSummary(data.summary);
+      } else {
+        setLoadError(data.error || 'Gagal memuat data Buku Kas Umum & RKAS.');
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      if (!controller.signal.aborted) {
+        setLoadError('Tidak dapat terhubung ke server untuk memuat data kas.');
       }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadData();
+    const timer = window.setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadData]);
 
   async function handleAddBku(e: FormEvent) {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     try {
       const res = await fetch('/api/keuangan/kas-rkas', {
@@ -124,6 +177,8 @@ export default function KasRkasPage() {
         setBkuForm((p) => ({ ...p, description: '', amount: 0, reference_no: '', receipt_url: '' }));
         await loadData();
       }
+    } catch {
+      showToast('Terjadi kesalahan jaringan saat mencatat BKU.', 'err');
     } finally {
       setSaving(false);
     }
@@ -131,6 +186,7 @@ export default function KasRkasPage() {
 
   async function handleAddRkas(e: FormEvent) {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     try {
       const res = await fetch('/api/keuangan/kas-rkas', {
@@ -150,8 +206,33 @@ export default function KasRkasPage() {
         setRkasForm((p) => ({ ...p, code: '', name: '', allocated_amount: 0, notes: '' }));
         await loadData();
       }
+    } catch {
+      showToast('Terjadi kesalahan jaringan saat menambah pos anggaran.', 'err');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDeleteEntry(entry: CashbookRow) {
+    if (deletingId) return;
+    setDeletingId(entry.id);
+    try {
+      const res = await fetch(
+        `/api/keuangan/kas-rkas?id=${encodeURIComponent(entry.id)}&target=entry`,
+        { method: 'DELETE' }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setConfirmDeleteEntry(null);
+        showToast('Entri Buku Kas Umum berhasil dihapus.');
+        await loadData();
+      } else {
+        showToast(data.error || 'Gagal menghapus entri BKU.', 'err');
+      }
+    } catch {
+      showToast('Terjadi kesalahan jaringan saat menghapus entri BKU.', 'err');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -187,7 +268,7 @@ export default function KasRkasPage() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws1, 'Buku Kas Umum');
     XLSX.utils.book_append_sheet(wb, ws2, 'Realisasi RKAS');
-    XLSX.writeFile(wb, `Laporan_BKU_RKAS_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `Laporan_BKU_RKAS_${getTodayWibIso()}.xlsx`);
   }
 
   return (
@@ -278,6 +359,25 @@ export default function KasRkasPage() {
             <Landmark className="w-3.5 h-3.5" /> Anggaran BOS &amp; RKAS ({budgets.length})
           </button>
         </div>
+
+        {loadError && (
+          <div
+            role="alert"
+            className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-wrap items-center justify-between gap-2"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{loadError}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => void loadData()}
+              className="min-h-[34px] px-3 py-1 rounded-lg bg-white border border-rose-200 font-semibold hover:bg-rose-100/60 transition"
+            >
+              Coba Lagi
+            </button>
+          </div>
+        )}
 
         {tab === 'BKU' ? (
           <div className="space-y-4 text-xs">
@@ -405,9 +505,9 @@ export default function KasRkasPage() {
                       {e.entry_type === 'MASUK' ? '+' : '-'}
                       {formatRupiah(Number(e.amount))}
                     </span>
-                    {e.receipt_url && (
+                    {isSafeReceiptUrl(e.receipt_url) && (
                       <a
-                        href={e.receipt_url}
+                        href={e.receipt_url!.trim()}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-emerald-700 hover:underline inline-flex items-center gap-0.5"
@@ -417,15 +517,17 @@ export default function KasRkasPage() {
                     )}
                     <button
                       type="button"
-                      onClick={async () => {
-                        await fetch(`/api/keuangan/kas-rkas?id=${encodeURIComponent(e.id)}&target=entry`, {
-                          method: 'DELETE',
-                        });
-                        await loadData();
-                      }}
-                      className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50"
+                      disabled={deletingId === e.id}
+                      onClick={() => setConfirmDeleteEntry(e)}
+                      aria-label={`Hapus transaksi ${e.description}`}
+                      title="Hapus transaksi BKU"
+                      className="min-h-[34px] min-w-[34px] inline-flex items-center justify-center p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 disabled:opacity-50 transition"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      {deletingId === e.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -505,7 +607,7 @@ export default function KasRkasPage() {
                       className={`h-full rounded-full ${
                         b.absorption_pct >= 90 ? 'bg-rose-500' : 'bg-emerald-500'
                       }`}
-                      style={{ width: `${b.absorption_pct}%` }}
+                      style={{ width: `${Math.min(100, Math.max(0, Number(b.absorption_pct) || 0))}%` }}
                     />
                   </div>
                   <div className="flex flex-wrap justify-between text-[11px] text-slate-600">
@@ -519,6 +621,62 @@ export default function KasRkasPage() {
           </div>
         )}
       </div>
+
+      {confirmDeleteEntry && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-bku-title"
+          onClick={() => {
+            if (!deletingId) setConfirmDeleteEntry(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h2 id="delete-bku-title" className="text-base font-bold text-slate-900">
+                Hapus Transaksi Buku Kas Umum?
+              </h2>
+              <button
+                type="button"
+                disabled={Boolean(deletingId)}
+                onClick={() => setConfirmDeleteEntry(null)}
+                aria-label="Tutup dialog"
+                className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed [overflow-wrap:anywhere]">
+              Entri <strong>&ldquo;{confirmDeleteEntry.description}&rdquo;</strong> sebesar{' '}
+              <strong>{formatRupiah(Number(confirmDeleteEntry.amount))}</strong> akan dihapus
+              permanen dan saldo kas akan dihitung ulang.
+            </p>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={Boolean(deletingId)}
+                onClick={() => setConfirmDeleteEntry(null)}
+                className="min-h-[40px] px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(deletingId)}
+                onClick={() => void handleDeleteEntry(confirmDeleteEntry)}
+                className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-xs font-semibold transition"
+              >
+                {deletingId && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Ya, Hapus Entri</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

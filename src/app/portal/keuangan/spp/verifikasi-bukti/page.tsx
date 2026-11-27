@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -9,6 +9,7 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
+  X,
   XCircle,
 } from 'lucide-react';
 
@@ -54,70 +55,118 @@ function formatRupiah(n: number) {
   }).format(n || 0);
 }
 
+function isSafeProofUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return /^https?:\/\//i.test(url.trim()) || url.trim().startsWith('/') || url.trim().startsWith('data:image/');
+}
+
 export default function SppVerifikasiBuktiPage() {
   const [tab, setTab] = useState<'PROOFS' | 'BULK'>('PROOFS');
   const [proofs, setProofs] = useState<ProofRow[]>([]);
   const [feeTypes, setFeeTypes] = useState<FeeTypeOpt[]>([]);
   const [classrooms, setClassrooms] = useState<ClassroomOpt[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<ProofRow | null>(null);
+  const [rejectNotes, setRejectNotes] = useState('');
   const [submittingBulk, setSubmittingBulk] = useState(false);
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  const now = new Date();
-  const [bulkForm, setBulkForm] = useState({
-    fee_type_id: '',
-    classroom_id: '',
-    billing_month: now.getMonth() + 1,
-    billing_year: now.getFullYear(),
-    amount: 0,
-    due_date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-20`,
+  const [bulkForm, setBulkForm] = useState(() => {
+    const now = new Date();
+    return {
+      fee_type_id: '',
+      classroom_id: '',
+      billing_month: now.getMonth() + 1,
+      billing_year: now.getFullYear(),
+      amount: 0,
+      due_date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-20`,
+    };
   });
 
-  const showToast = (text: string, type: 'ok' | 'err' = 'ok') => {
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const showToast = useCallback((text: string, type: 'ok' | 'err' = 'ok') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ type, text });
-    setTimeout(() => setToast(null), 5000);
-  };
+    toastTimerRef.current = setTimeout(() => setToast(null), 5000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!rejectTarget) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busyId) setRejectTarget(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [rejectTarget, busyId]);
 
   const loadAll = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
+    setLoadError(null);
     try {
       const [proofRes, sppRes, clsRes] = await Promise.all([
-        fetch('/api/keuangan/spp/proofs', { cache: 'no-store' }),
-        fetch('/api/keuangan/spp', { cache: 'no-store' }),
-        fetch('/api/akademik/kelas-jadwal', { cache: 'no-store' }),
+        fetch('/api/keuangan/spp/proofs', { cache: 'no-store', signal: controller.signal }),
+        fetch('/api/keuangan/spp', { cache: 'no-store', signal: controller.signal }),
+        fetch('/api/akademik/kelas-jadwal', { cache: 'no-store', signal: controller.signal }),
       ]);
-      const proofData = await proofRes.json().catch(() => ({}));
-      const sppData = await sppRes.json().catch(() => ({}));
-      const clsData = await clsRes.json().catch(() => ({}));
+      const [proofData, sppData, clsData] = await Promise.all([
+        proofRes.json().catch(() => ({})),
+        sppRes.json().catch(() => ({})),
+        clsRes.json().catch(() => ({})),
+      ]);
+      if (controller.signal.aborted) return;
       if (proofRes.ok) setProofs(proofData.proofs || []);
+      else setLoadError(proofData.error || 'Gagal memuat antrean bukti transfer SPP.');
       if (sppRes.ok) setFeeTypes(sppData.feeTypes || []);
       if (clsRes.ok) setClassrooms(clsData.classrooms || []);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      if (!controller.signal.aborted) {
+        setLoadError('Tidak dapat terhubung ke server untuk memuat data verifikasi SPP.');
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadAll();
+    const timer = window.setTimeout(() => {
+      void loadAll();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadAll]);
 
-  async function handleReview(id: string, decision: 'DISETUJUI' | 'DITOLAK') {
-    const reviewer_notes =
-      decision === 'DITOLAK'
-        ? window.prompt('Masukkan alasan penolakan bukti transfer (opsional):') || ''
-        : '';
+  async function handleReview(id: string, decision: 'DISETUJUI' | 'DITOLAK', notes = '') {
+    if (busyId) return;
     setBusyId(id);
     try {
       const res = await fetch('/api/keuangan/spp/proofs', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, decision, reviewer_notes }),
+        body: JSON.stringify({ id, decision, reviewer_notes: notes.trim() }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         showToast(data.error || 'Gagal memproses verifikasi.', 'err');
         return;
+      }
+      if (decision === 'DITOLAK') {
+        setRejectTarget(null);
+        setRejectNotes('');
       }
       showToast(
         decision === 'DISETUJUI'
@@ -125,6 +174,8 @@ export default function SppVerifikasiBuktiPage() {
           : 'Bukti transfer ditolak dan notifikasi dikirim ke keluarga.'
       );
       await loadAll();
+    } catch {
+      showToast('Terjadi kesalahan jaringan saat memproses verifikasi.', 'err');
     } finally {
       setBusyId(null);
     }
@@ -132,6 +183,7 @@ export default function SppVerifikasiBuktiPage() {
 
   async function handleGenerateBulk(e: FormEvent) {
     e.preventDefault();
+    if (submittingBulk) return;
     if (!bulkForm.fee_type_id || bulkForm.amount <= 0) {
       showToast('Pilih jenis biaya dan isi nominal tagihan > 0.', 'err');
       return;
@@ -159,6 +211,8 @@ export default function SppVerifikasiBuktiPage() {
       showToast(
         `Berhasil menerbitkan ${data.insertedCount} tagihan SPP (${data.exemptCount || 0} gratis Kelompok Saudara, ${data.skippedCount || 0} dilewati karena sudah ada).`
       );
+    } catch {
+      showToast('Terjadi kesalahan jaringan saat menerbitkan tagihan massal.', 'err');
     } finally {
       setSubmittingBulk(false);
     }
@@ -230,6 +284,25 @@ export default function SppVerifikasiBuktiPage() {
           </button>
         </div>
 
+        {loadError && (
+          <div
+            role="alert"
+            className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-wrap items-center justify-between gap-2"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{loadError}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => void loadAll()}
+              className="min-h-[34px] px-3 py-1 rounded-lg bg-white border border-rose-200 font-semibold hover:bg-rose-100/60 transition"
+            >
+              Coba Lagi
+            </button>
+          </div>
+        )}
+
         {tab === 'PROOFS' ? (
           loading ? (
             <div className="py-10 text-center text-xs text-slate-500">Memuat antrean bukti transfer...</div>
@@ -268,14 +341,16 @@ export default function SppVerifikasiBuktiPage() {
                       Tagihan: {p.bill?.fee_type?.name || 'SPP'} ({p.bill?.billing_month}/{p.bill?.billing_year}) • Tgl Transfer: {p.transfer_date}
                     </p>
                     {p.notes && <p className="text-slate-500">Catatan: {p.notes}</p>}
-                    <a
-                      href={p.proof_file_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-emerald-700 font-semibold hover:underline"
-                    >
-                      Lihat Bukti Transfer <ExternalLink className="w-3 h-3" />
-                    </a>
+                    {isSafeProofUrl(p.proof_file_url) && (
+                      <a
+                        href={p.proof_file_url.trim()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-emerald-700 font-semibold hover:underline"
+                      >
+                        Lihat Bukti Transfer <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
                   </div>
 
                   {p.status === 'MENUNGGU_VERIFIKASI' && (
@@ -284,15 +359,23 @@ export default function SppVerifikasiBuktiPage() {
                         type="button"
                         disabled={busyId === p.id}
                         onClick={() => void handleReview(p.id, 'DISETUJUI')}
-                        className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold"
+                        className="min-h-[38px] inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold transition"
                       >
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Setujui
+                        {busyId === p.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}
+                        Setujui
                       </button>
                       <button
                         type="button"
                         disabled={busyId === p.id}
-                        onClick={() => void handleReview(p.id, 'DITOLAK')}
-                        className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-rose-50 border border-rose-200 hover:bg-rose-100 disabled:opacity-50 text-rose-700 font-semibold"
+                        onClick={() => {
+                          setRejectTarget(p);
+                          setRejectNotes('');
+                        }}
+                        className="min-h-[38px] inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-rose-50 border border-rose-200 hover:bg-rose-100 disabled:opacity-50 text-rose-700 font-semibold transition"
                       >
                         <XCircle className="w-3.5 h-3.5" /> Tolak
                       </button>
@@ -406,6 +489,75 @@ export default function SppVerifikasiBuktiPage() {
           </form>
         )}
       </div>
+
+      {rejectTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reject-proof-title"
+          onClick={() => {
+            if (!busyId) setRejectTarget(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h2 id="reject-proof-title" className="text-base font-bold text-slate-900">
+                Tolak Bukti Transfer SPP?
+              </h2>
+              <button
+                type="button"
+                disabled={Boolean(busyId)}
+                onClick={() => setRejectTarget(null)}
+                aria-label="Tutup dialog"
+                className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed [overflow-wrap:anywhere]">
+              Bukti transfer dari <strong>{rejectTarget.student?.full_name || 'Siswa'}</strong>{' '}
+              sebesar <strong>{formatRupiah(Number(rejectTarget.amount_claimed))}</strong> akan
+              ditolak dan notifikasi akan dikirim ke keluarga.
+            </p>
+            <div className="space-y-1.5">
+              <label htmlFor="reject-proof-notes" className="block text-xs font-semibold text-slate-700">
+                Alasan Penolakan (Opsional)
+              </label>
+              <textarea
+                id="reject-proof-notes"
+                rows={3}
+                value={rejectNotes}
+                onChange={(e) => setRejectNotes(e.target.value)}
+                placeholder="Mis. Nominal transfer tidak sesuai atau foto struk buram..."
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/25 focus:border-rose-500"
+              />
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={Boolean(busyId)}
+                onClick={() => setRejectTarget(null)}
+                className="min-h-[40px] px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(busyId)}
+                onClick={() => void handleReview(rejectTarget.id, 'DITOLAK', rejectNotes)}
+                className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-xs font-semibold transition"
+              >
+                {busyId === rejectTarget.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Ya, Tolak Bukti</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

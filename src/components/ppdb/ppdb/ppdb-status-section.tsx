@@ -35,10 +35,24 @@ export function PpdbStatusSection({
   const [revFileName, setRevFileName] = useState('');
   const [revSubmitting, setRevSubmitting] = useState(false);
   const [revFeedback, setRevFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [revForRegNumber, setRevForRegNumber] = useState<string | null>(null);
+
+  const currentRegNumber = checkCard?.registrationNumber ?? null;
+  if (currentRegNumber !== revForRegNumber) {
+    setRevForRegNumber(currentRegNumber);
+    setRevNik('');
+    setRevFileUrl('');
+    setRevFileName('');
+    setRevFeedback(null);
+  }
 
   async function handleSubmitRevision(e: FormEvent) {
     e.preventDefault();
     if (!checkCard || revSubmitting) return;
+    if (!/^\d{16}$/.test(revNik.trim())) {
+      setRevFeedback({ type: 'err', text: 'NIK calon siswa harus terdiri dari tepat 16 digit angka.' });
+      return;
+    }
     setRevSubmitting(true);
     setRevFeedback(null);
     try {
@@ -123,7 +137,7 @@ export function PpdbStatusSection({
             <button
               type="button"
               onClick={onReset}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-emerald-700 transition"
+              className="min-h-[36px] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/70 transition"
             >
               <RotateCcw className="w-3.5 h-3.5" /> Cari Nomor Lain
             </button>
@@ -167,11 +181,14 @@ export function PpdbStatusSection({
                   </label>
                   <input
                     required
+                    type="text"
+                    inputMode="numeric"
+                    minLength={16}
                     maxLength={16}
                     value={revNik}
-                    onChange={(e) => setRevNik(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setRevNik(e.target.value.replace(/\D/g, '').slice(0, 16))}
                     placeholder="16 digit NIK"
-                    className={INPUT_CLASS}
+                    className={`${INPUT_CLASS} font-mono`}
                   />
                 </div>
                 <div>

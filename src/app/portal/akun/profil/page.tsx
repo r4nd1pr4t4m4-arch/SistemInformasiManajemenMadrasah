@@ -31,6 +31,8 @@ export default function AkunProfilPage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profileAbortRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
   const [profile, setProfile] = useState<AccountProfile>(DEFAULT_ACCOUNT_PROFILE);
 
   const showToast = useCallback((type: 'ok' | 'err', msg: string) => {
@@ -40,16 +42,26 @@ export default function AkunProfilPage() {
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
+      profileAbortRef.current?.abort();
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
 
   const loadProfile = useCallback(async () => {
+    profileAbortRef.current?.abort();
+    const controller = new AbortController();
+    profileAbortRef.current = controller;
     setLoadError(null);
     try {
-      const res = await fetch('/api/akun/profil', { cache: 'no-store' });
+      const res = await fetch('/api/akun/profil', {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const data = await res.json().catch(() => ({}));
+      if (controller.signal.aborted) return;
       if (!res.ok) {
         setLoadError(data.error || 'Gagal memuat profil akun.');
         return;
@@ -57,10 +69,15 @@ export default function AkunProfilPage() {
       if (data.profile) {
         setProfile(normalizeAccountProfile(data.profile));
       }
-    } catch {
-      setLoadError('Tidak dapat terhubung ke server untuk memuat profil akun.');
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      if (!controller.signal.aborted) {
+        setLoadError('Tidak dapat terhubung ke server untuk memuat profil akun.');
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -109,9 +126,11 @@ export default function AkunProfilPage() {
 
     const reader = new FileReader();
     reader.onerror = () => {
+      if (!isMountedRef.current) return;
       showToast('err', 'Gagal membaca file foto yang dipilih.');
     };
     reader.onload = async () => {
+      if (!isMountedRef.current) return;
       const dataUrl = typeof reader.result === 'string' ? reader.result : '';
       if (!dataUrl) return;
 
@@ -125,6 +144,7 @@ export default function AkunProfilPage() {
           }),
         });
         const data = await res.json().catch(() => ({}));
+        if (!isMountedRef.current) return;
         if (res.ok) {
           showToast('ok', 'Foto profil berhasil diunggah dan menunggu persetujuan Admin.');
           await loadProfile();
@@ -132,9 +152,13 @@ export default function AkunProfilPage() {
           showToast('err', data.error || 'Gagal mengunggah foto profil.');
         }
       } catch {
-        showToast('err', 'Tidak dapat terhubung ke server saat mengunggah foto.');
+        if (isMountedRef.current) {
+          showToast('err', 'Tidak dapat terhubung ke server saat mengunggah foto.');
+        }
       } finally {
-        setUploadingAvatar(false);
+        if (isMountedRef.current) {
+          setUploadingAvatar(false);
+        }
       }
     };
     reader.readAsDataURL(file);

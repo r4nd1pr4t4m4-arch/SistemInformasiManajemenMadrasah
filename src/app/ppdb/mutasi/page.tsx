@@ -1,8 +1,15 @@
+import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRightLeft, Loader2 } from 'lucide-react';
 import { PublicShell } from '@/components/layout/public-shell';
 import { MutasiContent } from '@/components/ppdb/mutasi-content';
+
+export const metadata: Metadata = {
+  title: 'PPDB Khusus Mutasi Masuk',
+  description:
+    'Layanan pengajuan mutasi masuk siswa pindahan. Lengkapi biodata, alasan mutasi, unggah berkas persyaratan, dan pantau status verifikasi.',
+};
 
 export default function PpdbMutasiPage() {
   return (

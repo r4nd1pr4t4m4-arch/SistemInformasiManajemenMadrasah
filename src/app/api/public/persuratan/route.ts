@@ -104,15 +104,25 @@ export async function GET(request: NextRequest) {
   }
 
   // Filter hanya surat edaran yang berstatus TERBIT / DIARSIPKAN (bukan DRAFT atau DIBATALKAN)
-  const circulars = rawCirculars.filter((c) => {
-    const st = String(c.status || 'TERBIT').toUpperCase();
-    return st !== 'DRAFT' && st !== 'DIBATALKAN';
-  });
+  // dan arahkan file_url melalui proxy internal agar tidak terkena SSL/Privacy Error di browser
+  const circulars = rawCirculars
+    .filter((c) => {
+      const st = String(c.status || 'TERBIT').toUpperCase();
+      return st !== 'DRAFT' && st !== 'DIBATALKAN';
+    })
+    .map((c) => ({
+      ...c,
+      file_url:
+        typeof c.file_url === 'string' && c.file_url.trim()
+          ? `/api/public/persuratan/attachment?id=${encodeURIComponent(String(c.id))}`
+          : null,
+    }));
 
   // 2. Pelacakan Surat Masuk berdasarkan Nomor Resi (SM-...) atau Nomor Surat Asal
   let trackedLetter: Record<string, unknown> | null = null;
   if (ticket.length >= 2) {
-    const safeTicket = ticket.replace(/[\\%_]/g, '\\$&');
+    const safeTicket = ticket.replace(/[\\%_]/g, '\\$&').replace(/[(),]/g, ' ').trim();
+    if (safeTicket.length >= 2) {
     const isReceiptFormat = /^SM-\d{8}-[A-Z0-9]+$/i.test(ticket);
 
     // Coba query dengan kolom receipt_ticket terlebih dahulu (hanya untuk direction = 'MASUK')
@@ -175,6 +185,7 @@ export async function GET(request: NextRequest) {
         dispositions: disps || [],
       };
     }
+    }
   }
 
   return NextResponse.json({
@@ -227,7 +238,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = createSupabaseAdminClient();
     const todayCompact = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomCode = Math.random().toString(36).slice(2, 6).toUpperCase();
+    const randomCode = crypto.randomUUID().replace(/-/g, '').slice(0, 4).toUpperCase();
     const receiptTicket = `SM-${todayCompact}-${randomCode}`;
 
     const summaryWithMeta = `[Resi: ${receiptTicket} | Kontak: ${parsed.data.sender_contact}] ${parsed.data.summary}`;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, Clock, KeyRound, ShieldAlert, X } from 'lucide-react';
 import type {
@@ -19,14 +19,22 @@ export function DuplicateEmailModal({
   onClose,
   onSwitchToLogin,
 }: DuplicateEmailModalProps) {
+  const primaryBtnRef = useRef<HTMLButtonElement | null>(null);
+
   useEffect(() => {
+    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    primaryBtnRef.current?.focus();
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      previousActive?.focus();
+    };
   }, [onClose]);
 
   return (
@@ -42,19 +50,29 @@ export function DuplicateEmailModal({
       className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4"
     >
       <div className="bg-white rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
-            <AlertTriangle className="w-5 h-5 text-amber-600" />
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+            </div>
+            <div className="space-y-1 min-w-0">
+              <h2 id="duplicate-email-title" className="text-base font-bold text-slate-900">
+                Alamat Email Sudah Terdaftar
+              </h2>
+              <p className="text-xs text-slate-600 leading-relaxed [overflow-wrap:anywhere]">
+                Email <strong>{modal.email}</strong> sudah digunakan pada akun lain, sehingga kode OTP
+                pendaftaran tidak dapat dikirimkan.
+              </p>
+            </div>
           </div>
-          <div className="space-y-1 min-w-0">
-            <h2 id="duplicate-email-title" className="text-base font-bold text-slate-900">
-              Alamat Email Sudah Terdaftar
-            </h2>
-            <p className="text-xs text-slate-600 leading-relaxed break-words">
-              Email <strong>{modal.email}</strong> sudah digunakan pada akun lain, sehingga kode OTP
-              pendaftaran tidak dapat dikirimkan.
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Tutup dialog"
+            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs text-slate-700 leading-relaxed">
@@ -103,9 +121,10 @@ export function DuplicateEmailModal({
             Ganti Email
           </button>
           <button
+            ref={primaryBtnRef}
             type="button"
             onClick={onSwitchToLogin}
-            className="min-h-[40px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
+            className="min-h-[40px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
           >
             Pindah ke Tab Masuk
           </button>
@@ -121,14 +140,22 @@ interface LoginWarningModalProps {
 }
 
 export function LoginWarningModal({ modal, onClose }: LoginWarningModalProps) {
+  const retryBtnRef = useRef<HTMLButtonElement | null>(null);
+
   useEffect(() => {
+    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    retryBtnRef.current?.focus();
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      previousActive?.focus();
+    };
   }, [onClose]);
 
   return (
@@ -140,7 +167,7 @@ export function LoginWarningModal({ modal, onClose }: LoginWarningModalProps) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-3xl bg-white border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-white border border-slate-200 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-gradient-to-r from-amber-50 via-orange-50/70 to-rose-50/60 border-b border-amber-200/70 px-5 sm:px-6 py-4 flex items-start justify-between gap-3">
@@ -156,14 +183,14 @@ export function LoginWarningModal({ modal, onClose }: LoginWarningModalProps) {
                 id="login-warning-modal-title"
                 className="text-base font-bold text-slate-900 leading-snug"
               >
-                2 Kesempatan Lagi Sebelum Dibekukan
+                {modal.remainingAttempts} Kesempatan Lagi Sebelum Dibekukan
               </h2>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-white/80 transition"
+            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-white/80 transition shrink-0"
             aria-label="Tutup peringatan"
           >
             <X className="w-4 h-4" />
@@ -199,10 +226,11 @@ export function LoginWarningModal({ modal, onClose }: LoginWarningModalProps) {
 
           <div className="rounded-2xl bg-amber-50/70 border border-amber-200/80 p-3.5 text-xs text-slate-700 leading-relaxed space-y-2">
             <p>
-              Anda telah <strong>3 kali gagal masuk</strong> karena alamat email atau kata sandi
-              tidak sesuai. Jika terjadi <strong>2 kali kegagalan lagi</strong>, akses masuk ke akun
-              ini akan <strong>diblokir / dibekukan sementara selama 15 menit</strong> untuk
-              mencegah penyalahgunaan.
+              Anda telah <strong>{modal.failedAttempts} kali gagal masuk</strong> karena alamat email
+              atau kata sandi tidak sesuai. Jika terjadi{' '}
+              <strong>{modal.remainingAttempts} kali kegagalan lagi</strong>, akses masuk ke akun ini
+              akan <strong>diblokir / dibekukan sementara selama 15 menit</strong> untuk mencegah
+              penyalahgunaan.
             </p>
           </div>
 
@@ -244,9 +272,10 @@ export function LoginWarningModal({ modal, onClose }: LoginWarningModalProps) {
 
           <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
             <button
+              ref={retryBtnRef}
               type="button"
               onClick={onClose}
-              className="min-h-[42px] px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition"
+              className="min-h-[42px] px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
             >
               Coba Masuk Lagi
             </button>

@@ -128,14 +128,14 @@ export default function CmsBeritaPage() {
   useEffect(() => {
     if (!previewPost && !confirmDeletePost) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !deletingId) {
         setPreviewPost(null);
         setConfirmDeletePost(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [previewPost, confirmDeletePost]);
+  }, [previewPost, confirmDeletePost, deletingId]);
 
   function showToast(type: ToastState['type'], message: string) {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -221,6 +221,18 @@ export default function CmsBeritaPage() {
       if (res.ok) {
         setPosts((prev) => prev.filter((p) => p.id !== id));
         setConfirmDeletePost(null);
+        if (editingPostId === id) {
+          setEditingPostId(null);
+          setNewPost({
+            title: '',
+            category: 'BERITA',
+            status: 'PUBLISHED',
+            excerpt: '',
+            content: '',
+            author_display_name: 'Humas Lembaga',
+            cover_image_url: '',
+          });
+        }
         showToast('success', 'Artikel berhasil dihapus.');
       } else {
         showToast('error', data?.error || 'Gagal menghapus artikel.');
@@ -342,8 +354,12 @@ export default function CmsBeritaPage() {
             className="lg:col-span-5 glass-card rounded-3xl p-5 sm:p-6 space-y-4 min-w-0"
           >
             <h1 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Plus className="w-4 h-4 text-emerald-700 shrink-0" />
-              <span>Publikasi Konten Baru</span>
+              {editingPostId ? (
+                <Pencil className="w-4 h-4 text-emerald-700 shrink-0" />
+              ) : (
+                <Plus className="w-4 h-4 text-emerald-700 shrink-0" />
+              )}
+              <span>{editingPostId ? 'Edit Artikel' : 'Publikasi Konten Baru'}</span>
             </h1>
 
             <div className="min-w-0">
@@ -511,7 +527,7 @@ export default function CmsBeritaPage() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Cari judul, ringkasan, atau penulis..."
                   aria-label="Cari artikel"
-                  className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                  className="w-full min-h-[40px] rounded-xl border border-slate-300/90 bg-white pl-9 pr-8 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                 />
                 {searchQuery && (
                   <button
@@ -676,7 +692,7 @@ export default function CmsBeritaPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-7 shadow-2xl border border-slate-200 space-y-4"
+            className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-7 shadow-2xl border border-slate-200 space-y-4"
           >
             <div className="flex items-start justify-between gap-3">
               <span className="text-[11px] font-bold uppercase px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/70">
@@ -721,7 +737,7 @@ export default function CmsBeritaPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
           >
             <h2 id="cms-delete-title" className="text-base font-bold text-slate-900">
               Hapus Artikel Ini?

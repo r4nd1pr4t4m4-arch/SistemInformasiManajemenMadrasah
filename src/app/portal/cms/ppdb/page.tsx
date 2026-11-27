@@ -173,10 +173,6 @@ export default function CmsPpdbPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [detailRow]);
 
-  useEffect(() => {
-    setDetailNotesDraft(detailRow?.admin_notes || '');
-  }, [detailRow?.id, detailRow?.admin_notes]);
-
   async function handleSaveAdminNotes() {
     if (!detailRow) return;
     setSavingNotes(true);
@@ -246,37 +242,6 @@ export default function CmsPpdbPage() {
     } catch {
       showToast('Gagal terhubung ke server.', 'err');
     }
-  }
-
-  function handleExportPpdbExcel() {
-    const headers = [
-      'No. Pendaftaran',
-      'Nama Lengkap',
-      'NISN',
-      'NIK',
-      'Asal Sekolah',
-      'Jalur',
-      'Orang Tua/Wali',
-      'No. WA',
-      'Status',
-      'Catatan Admin',
-    ];
-    const rows = filtered.map((r) => [
-      r.registration_number,
-      r.full_name,
-      r.nisn || '-',
-      r.nik || '-',
-      r.previous_school || '-',
-      r.pathway,
-      r.parent_name,
-      r.parent_phone,
-      r.status,
-      r.admin_notes || '',
-    ]);
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Pendaftar PPDB');
-    XLSX.writeFile(wb, `Rekap_PPDB_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
   async function handleUpdatePpdbStatus(id: string, status: string) {
@@ -384,6 +349,37 @@ export default function CmsPpdbPage() {
   const hasMore = visibleCount < filtered.length;
   const hasActiveFilter = search.trim().length > 0 || filterTab !== 'ALL';
 
+  function handleExportPpdbExcel() {
+    const headers = [
+      'No. Pendaftaran',
+      'Nama Lengkap',
+      'NISN',
+      'NIK',
+      'Asal Sekolah',
+      'Jalur',
+      'Orang Tua/Wali',
+      'No. WA',
+      'Status',
+      'Catatan Admin',
+    ];
+    const rows = filtered.map((r) => [
+      r.registration_number,
+      r.full_name,
+      r.nisn || '-',
+      r.nik || '-',
+      r.previous_school || '-',
+      r.pathway,
+      r.parent_name,
+      r.parent_phone,
+      r.status,
+      r.admin_notes || '',
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pendaftar PPDB');
+    XLSX.writeFile(wb, `Rekap_PPDB_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto glass-card rounded-3xl p-8 sm:p-10 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
@@ -490,6 +486,16 @@ export default function CmsPpdbPage() {
               <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
               <span>Segarkan</span>
             </button>
+            {filtered.length > 0 && (
+              <button
+                type="button"
+                onClick={handleExportPpdbExcel}
+                className="min-h-[38px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold transition"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Ekspor Excel</span>
+              </button>
+            )}
             {canManage && unsyncedLulusIds.length > 0 && (
               <button
                 type="button"
@@ -562,7 +568,7 @@ export default function CmsPpdbPage() {
               }}
               placeholder="Cari nama, no. daftar, NISN..."
               aria-label="Cari pendaftar PPDB"
-              className="w-full min-h-[40px] pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+              className="w-full min-h-[40px] pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
             />
             {search && (
               <button
@@ -650,7 +656,10 @@ export default function CmsPpdbPage() {
                       <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 pt-0.5">
                         <button
                           type="button"
-                          onClick={() => setDetailRow(row)}
+                          onClick={() => {
+                            setDetailRow(row);
+                            setDetailNotesDraft(row.admin_notes || '');
+                          }}
                           className="inline-flex items-center gap-1 text-emerald-700 font-semibold hover:underline"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -739,7 +748,7 @@ export default function CmsPpdbPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
+            className="w-full max-w-xl max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
           >
             <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
               <div className="min-w-0">
@@ -866,7 +875,7 @@ export default function CmsPpdbPage() {
                         )}
                         {isSafeDocUrl(doc.file_url) && (
                           <a
-                            href={doc.file_url}
+                            href={`/api/cms/ppdb/document?id=${encodeURIComponent(doc.id)}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-emerald-300 text-emerald-700 font-semibold transition"

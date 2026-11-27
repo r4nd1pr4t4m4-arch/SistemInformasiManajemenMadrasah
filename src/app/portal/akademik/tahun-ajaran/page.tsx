@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   AlertCircle,
   ArrowRightLeft,
@@ -11,6 +11,7 @@ import {
   Plus,
   RefreshCw,
   UserMinus,
+  X,
 } from 'lucide-react';
 
 interface AcademicYearRow {
@@ -42,10 +43,16 @@ interface ActiveStudentOpt {
   nisn: string | null;
 }
 
+function getTodayWibIso(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+}
+
 export default function TahunAjaranPage() {
   const [tab, setTab] = useState<'TAHUN' | 'KENAIKAN' | 'MUTASI'>('TAHUN');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmGraduateOpen, setConfirmGraduateOpen] = useState(false);
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const [years, setYears] = useState<AcademicYearRow[]>([]);
@@ -65,40 +72,79 @@ export default function TahunAjaranPage() {
   const [targetYearId, setTargetYearId] = useState('');
   const [targetClassId, setTargetClassId] = useState('');
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
-  const [graduationYear, setGraduationYear] = useState(new Date().getFullYear());
+  const [graduationYear, setGraduationYear] = useState(() => new Date().getFullYear());
 
   // Form Mutasi Keluar
-  const [mutasiForm, setMutasiForm] = useState({
+  const [mutasiForm, setMutasiForm] = useState(() => ({
     student_id: '',
     destination_school: '',
     reason: '',
-    mutation_date: new Date().toISOString().slice(0, 10),
+    mutation_date: getTodayWibIso(),
     create_letter: true,
-  });
+  }));
 
-  const showToast = (text: string, type: 'ok' | 'err' = 'ok') => {
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const showToast = useCallback((text: string, type: 'ok' | 'err' = 'ok') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ type, text });
-    setTimeout(() => setToast(null), 5000);
-  };
+    toastTimerRef.current = setTimeout(() => setToast(null), 5000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!confirmGraduateOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !submitting) setConfirmGraduateOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [confirmGraduateOpen, submitting]);
 
   const loadData = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch('/api/akademik/tahun-ajaran', { cache: 'no-store' });
+      const res = await fetch('/api/akademik/tahun-ajaran', {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const data = await res.json().catch(() => ({}));
+      if (controller.signal.aborted) return;
       if (res.ok) {
         setYears(data.academicYears || []);
         setClassrooms(data.classrooms || []);
         setEnrollments(data.enrollments || []);
         setActiveStudents(data.activeStudents || []);
+      } else {
+        setLoadError(data.error || 'Gagal memuat data tahun ajaran & rombel.');
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      if (!controller.signal.aborted) {
+        setLoadError('Tidak dapat terhubung ke server untuk memuat data tahun ajaran.');
       }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadData();
+    const timer = window.setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadData]);
 
   const sourceStudents = useMemo(() => {
@@ -134,6 +180,9 @@ export default function TahunAjaranPage() {
       showToast(successMsg);
       await loadData();
       return data;
+    } catch {
+      showToast('Terjadi kesalahan jaringan saat memproses permintaan.', 'err');
+      return null;
     } finally {
       setSubmitting(false);
     }
@@ -165,14 +214,16 @@ export default function TahunAjaranPage() {
     if (res) setSelectedStudentIds([]);
   }
 
-  async function handleGraduateBatch() {
+  function handleRequestGraduateBatch() {
     if (selectedStudentIds.length === 0) {
       showToast('Pilih minimal 1 siswa untuk diluluskan.', 'err');
       return;
     }
-    if (!confirm(`Luluskan ${selectedStudentIds.length} siswa terpilih ke status LULUS / Alumni?`)) {
-      return;
-    }
+    setConfirmGraduateOpen(true);
+  }
+
+  async function handleConfirmGraduateBatch() {
+    if (selectedStudentIds.length === 0 || submitting) return;
     const res = await postAction(
       {
         action: 'GRADUATE_CLASS_BATCH',
@@ -181,7 +232,10 @@ export default function TahunAjaranPage() {
       },
       `${selectedStudentIds.length} siswa berhasil diluluskan (Angkatan ${graduationYear}).`
     );
-    if (res) setSelectedStudentIds([]);
+    if (res) {
+      setSelectedStudentIds([]);
+      setConfirmGraduateOpen(false);
+    }
   }
 
   async function handleMutasiKeluar(e: FormEvent) {
@@ -200,7 +254,7 @@ export default function TahunAjaranPage() {
         student_id: '',
         destination_school: '',
         reason: '',
-        mutation_date: new Date().toISOString().slice(0, 10),
+        mutation_date: getTodayWibIso(),
         create_letter: true,
       });
     }
@@ -271,6 +325,25 @@ export default function TahunAjaranPage() {
             );
           })}
         </div>
+
+        {loadError && (
+          <div
+            role="alert"
+            className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-wrap items-center justify-between gap-2"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{loadError}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => void loadData()}
+              className="min-h-[34px] px-3 py-1 rounded-lg bg-white border border-rose-200 font-semibold hover:bg-rose-100/60 transition"
+            >
+              Coba Lagi
+            </button>
+          </div>
+        )}
 
         {tab === 'TAHUN' && (
           <div className="space-y-5">
@@ -390,8 +463,11 @@ export default function TahunAjaranPage() {
                 <label className="block font-semibold text-slate-700 mb-1">2. Tahun Ajaran Tujuan</label>
                 <select
                   value={targetYearId}
-                  onChange={(e) => setTargetYearId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
+                  onChange={(e) => {
+                    setTargetYearId(e.target.value);
+                    setTargetClassId('');
+                  }}
+                  className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
                 >
                   <option value="">-- Pilih Tahun Ajaran Tujuan --</option>
                   {years.map((y) => (
@@ -456,8 +532,8 @@ export default function TahunAjaranPage() {
                     <button
                       type="button"
                       disabled={submitting || selectedStudentIds.length === 0}
-                      onClick={() => void handleGraduateBatch()}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold"
+                      onClick={handleRequestGraduateBatch}
+                      className="min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold transition"
                     >
                       <GraduationCap className="w-3.5 h-3.5" />
                       Luluskan ke Alumni ({selectedStudentIds.length})
@@ -575,6 +651,62 @@ export default function TahunAjaranPage() {
           </form>
         )}
       </div>
+
+      {confirmGraduateOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-graduate-title"
+          onClick={() => {
+            if (!submitting) setConfirmGraduateOpen(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h2 id="confirm-graduate-title" className="text-base font-bold text-slate-900">
+                Konfirmasi Kelulusan Massal
+              </h2>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setConfirmGraduateOpen(false)}
+                aria-label="Tutup dialog"
+                className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Anda akan meluluskan <strong>{selectedStudentIds.length} siswa terpilih</strong> ke
+              status <strong>LULUS / Alumni (Angkatan {graduationYear})</strong>. Pastikan daftar
+              siswa sudah sesuai sebelum melanjutkan.
+            </p>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setConfirmGraduateOpen(false)}
+                className="min-h-[40px] px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => void handleConfirmGraduateBatch()}
+                className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-700 hover:bg-indigo-800 disabled:opacity-60 text-white text-xs font-semibold transition"
+              >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Ya, Luluskan Siswa</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

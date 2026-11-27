@@ -5,6 +5,7 @@ import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { sanitizeApiError } from '@/lib/security/api-error';
 import { notifyCmsPostPublished } from '@/lib/notifications/event-hooks';
+import { toPublicMediaProxyUrl } from '@/lib/storage/r2-url-helper';
 
 const CreatePostSchema = z.object({
   title: z.string().min(4),
@@ -52,7 +53,11 @@ export async function GET() {
   const { data, error } = await query;
 
   if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
-  return NextResponse.json({ posts: data || [] });
+  const posts = (data || []).map((post) => ({
+    ...post,
+    cover_image_url: post.cover_image_url ? toPublicMediaProxyUrl(post.cover_image_url) : null,
+  }));
+  return NextResponse.json({ posts });
 }
 
 export async function POST(request: Request) {

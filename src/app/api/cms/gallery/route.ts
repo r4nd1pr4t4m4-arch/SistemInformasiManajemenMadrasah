@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { toPublicMediaProxyUrl } from '@/lib/storage/r2-url-helper';
 
 const GalleryCreateSchema = z.object({
   title: z.string().trim().min(2, 'Judul media minimal 2 karakter.'),
@@ -31,7 +32,12 @@ export async function GET() {
     .limit(200);
 
   if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
-  return NextResponse.json({ items: data || [] });
+  const items = (data || []).map((item) => ({
+    ...item,
+    media_url: item.media_url ? toPublicMediaProxyUrl(item.media_url) : item.media_url,
+    thumbnail_url: item.thumbnail_url ? toPublicMediaProxyUrl(item.thumbnail_url) : null,
+  }));
+  return NextResponse.json({ items });
 }
 
 export async function POST(request: Request) {

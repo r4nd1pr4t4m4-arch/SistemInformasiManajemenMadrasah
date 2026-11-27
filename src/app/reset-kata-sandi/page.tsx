@@ -348,7 +348,7 @@ export default function ResetKataSandiPage() {
             <div
               role="alert"
               aria-live="polite"
-              className={`p-3.5 rounded-2xl text-xs font-medium flex items-start gap-2.5 leading-relaxed break-words ${
+              className={`p-3.5 rounded-2xl text-xs font-medium flex items-start gap-2.5 leading-relaxed [overflow-wrap:anywhere] ${
                 feedback.type === 'error'
                   ? 'bg-rose-50 border border-rose-200 text-rose-700'
                   : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
@@ -395,6 +395,7 @@ export default function ResetKataSandiPage() {
                       onChange={(e) => {
                         setEmail(e.target.value);
                         setOtpSent(false);
+                        setVerificationCode('');
                         setResendCooldown(0);
                       }}
                       placeholder="nama@lembaga.sch.id"
@@ -503,20 +504,41 @@ export default function ResetKataSandiPage() {
               autoComplete="new-password"
             />
 
-            <PasswordInput
-              id="reset-confirm-password"
-              label="Konfirmasi Kata Sandi Baru"
-              value={confirmPassword}
-              onChange={setConfirmPassword}
-              placeholder="Ulangi kata sandi baru"
-              autoComplete="new-password"
-            />
+            <div className="space-y-1.5">
+              <PasswordInput
+                id="reset-confirm-password"
+                label="Konfirmasi Kata Sandi Baru"
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+                placeholder="Ulangi kata sandi baru"
+                autoComplete="new-password"
+              />
+              {confirmPassword.length > 0 && (
+                <p
+                  className={`text-[11px] font-medium flex items-center gap-1 ${
+                    newPassword === confirmPassword ? 'text-emerald-700' : 'text-rose-600'
+                  }`}
+                >
+                  {newPassword === confirmPassword ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Konfirmasi kata sandi cocok.</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Konfirmasi kata sandi belum cocok.</span>
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
 
             <button
               type="submit"
               aria-busy={submitting || undefined}
               disabled={
-                submitting ||
+                isBusy ||
                 (method === 'mfa' && factors.length === 0) ||
                 !newPassword.trim() ||
                 !confirmPassword.trim()

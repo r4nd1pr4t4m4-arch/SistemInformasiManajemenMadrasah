@@ -2,7 +2,7 @@
 
 import type { FormEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CalendarCheck, Search, UserPlus } from 'lucide-react';
+import { AlertCircle, CalendarCheck, RefreshCw, Search, UserPlus } from 'lucide-react';
 import type { RegistrationCardData } from '@/components/ppdb/registration-card';
 import { SmartCaptchaMount, useSmartCaptcha } from '@/components/security/smart-captcha';
 import { MutasiFinalGradeModal } from './mutasi/mutasi-documents-section';
@@ -29,6 +29,8 @@ export function MutasiContent() {
   const [activePeriod, setActivePeriod] = useState<ActivePeriod | null>(null);
   const [gradeLevels, setGradeLevels] = useState<string[]>(['VII', 'VIII', 'IX']);
   const [loadingPeriod, setLoadingPeriod] = useState(true);
+  const [periodError, setPeriodError] = useState<string | null>(null);
+  const [periodRetryTick, setPeriodRetryTick] = useState(0);
 
   const [form, setForm] = useState<MutasiFormValues>(INITIAL_MUTASI_FORM);
   const [fullAddress, setFullAddress] = useState('');
@@ -43,27 +45,45 @@ export function MutasiContent() {
   const [checkCode, setCheckCode] = useState('');
 
   const errorBannerRef = useRef<HTMLDivElement | null>(null);
-  const todayIso = new Date().toISOString().split('T')[0];
+  const isMountedRef = useRef(true);
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
 
     fetch('/api/ppdb?info=active', { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
+      .then(async (res) => {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData?.error || 'Gagal memuat informasi periode & tingkat kelas.');
+        }
+        return res.json();
+      })
       .then((data) => {
         if (!data) return;
         setActivePeriod(data.period ?? null);
+        setPeriodError(null);
         if (Array.isArray(data.gradeLevels) && data.gradeLevels.length > 0) {
           setGradeLevels(data.gradeLevels);
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setPeriodError(err?.message || 'Gagal terhubung ke server untuk memuat info periode.');
+      })
       .finally(() => {
         if (!controller.signal.aborted) setLoadingPeriod(false);
       });
 
     return () => controller.abort();
-  }, []);
+  }, [periodRetryTick]);
 
   const handleFieldChange = useCallback(
     <K extends keyof MutasiFormValues>(field: K, value: MutasiFormValues[K]) => {
@@ -123,6 +143,7 @@ export function MutasiContent() {
     setErrorMsg('');
     const reader = new FileReader();
     reader.onload = () => {
+      if (!isMountedRef.current) return;
       const result = typeof reader.result === 'string' ? reader.result : '';
       if (!result) {
         showFormError(`Gagal membaca berkas "${label}". Silakan pilih ulang.`);
@@ -140,6 +161,7 @@ export function MutasiContent() {
       }));
     };
     reader.onerror = () => {
+      if (!isMountedRef.current) return;
       showFormError(`Gagal membaca berkas "${label}". Pastikan file tidak rusak.`);
     };
     reader.readAsDataURL(file);
@@ -336,6 +358,26 @@ export function MutasiContent() {
       </div>
 
       <div className="p-4 sm:p-6 md:p-8 space-y-6">
+        {!loadingPeriod && periodError && (
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-wrap items-center justify-between gap-3 print:hidden">
+            <span className="flex items-center gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>{periodError}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setLoadingPeriod(true);
+                setPeriodError(null);
+                setPeriodRetryTick((t) => t + 1);
+              }}
+              className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-amber-300 font-semibold hover:bg-amber-100/60 transition"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Muat Ulang
+            </button>
+          </div>
+        )}
+
         {!loadingPeriod && activePeriod && (
           <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-emerald-900 print:hidden">
             <span className="font-semibold flex items-center gap-2">

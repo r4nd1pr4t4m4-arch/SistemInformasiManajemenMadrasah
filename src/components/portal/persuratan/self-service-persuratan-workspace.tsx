@@ -1205,7 +1205,7 @@ export function SelfServicePersuratanWorkspace({
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2 border-t border-slate-200/70">
                             {letterObj?.file_url ? (
                               <a
-                                href={letterObj.file_url}
+                                href={`/api/layanan/persuratan/attachment?id=${encodeURIComponent(d.letter_id)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold w-fit"
@@ -1620,7 +1620,7 @@ export function SelfServicePersuratanWorkspace({
 
                           {l.file_url && (
                             <a
-                              href={l.file_url}
+                              href={`/api/layanan/persuratan/attachment?id=${encodeURIComponent(l.id)}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[11px] font-semibold"
@@ -1685,7 +1685,7 @@ export function SelfServicePersuratanWorkspace({
         >
           <div
             ref={dispModalRef}
-            className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
+            className="bg-white rounded-3xl max-w-lg w-full max-h-[90dvh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
               <div className="space-y-1 min-w-0">

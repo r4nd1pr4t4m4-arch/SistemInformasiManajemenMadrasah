@@ -333,9 +333,9 @@ export function SdmDocumentSection({
                     </>
                   )}
                   <a
-                    href={doc.file_url}
+                    href={`/api/sdm/documents/file?id=${encodeURIComponent(doc.id)}&entityType=${encodeURIComponent(entityType)}`}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     className="min-w-[36px] min-h-[36px] inline-flex items-center justify-center p-2 rounded-xl text-blue-600 hover:bg-blue-50 transition"
                     title="Buka / Pratinjau"
                     aria-label={`Buka ${doc.file_name}`}

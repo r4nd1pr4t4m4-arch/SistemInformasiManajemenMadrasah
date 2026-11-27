@@ -645,7 +645,7 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
         >
           <div
             ref={deleteModalRef}
-            className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
+            className="bg-white rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
           >
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">

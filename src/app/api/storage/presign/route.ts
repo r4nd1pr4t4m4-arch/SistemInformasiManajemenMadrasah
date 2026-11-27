@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createR2PresignedUploadUrl, isR2Configured } from '@/lib/storage/r2';
+import { PUBLIC_R2_MEDIA_PREFIXES } from '@/lib/storage/r2-url-helper';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import type { AppRole } from '@/types/database';
@@ -100,7 +101,15 @@ export async function POST(request: Request) {
     }
 
     const result = await createR2PresignedUploadUrl(parsed.data);
-    return NextResponse.json(result);
+    const isPublicMediaFolder = PUBLIC_R2_MEDIA_PREFIXES.some((prefix) =>
+      result.objectKey.startsWith(prefix)
+    );
+    return NextResponse.json({
+      ...result,
+      publicUrl: isPublicMediaFolder
+        ? `/api/public/media?key=${encodeURIComponent(result.objectKey)}`
+        : result.publicUrl,
+    });
   } catch (error) {
     console.error('Presign R2 error:', error);
     return NextResponse.json(

@@ -89,9 +89,9 @@ export function SelfSdmDocumentsSection({
                         {doc.verification_status || 'MENUNGGU'}
                       </span>
                       <a
-                        href={doc.file_url}
+                        href={`/api/sdm/documents/file?id=${encodeURIComponent(doc.id)}&entityType=SISWA`}
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                         className="min-h-[32px] inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100 transition"
                       >
                         Lihat

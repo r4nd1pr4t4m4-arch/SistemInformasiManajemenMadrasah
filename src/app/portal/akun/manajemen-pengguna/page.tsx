@@ -86,14 +86,14 @@ export default function ManajemenPenggunaPage() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || busyId) return;
+      if (e.key !== 'Escape' || busyId || bulkBusy) return;
       if (rejectModalUser) setRejectModalUser(null);
       else if (rejectNameModalReq) setRejectNameModalReq(null);
       else if (rejectAvatarModalReq) setRejectAvatarModalReq(null);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [busyId, rejectModalUser, rejectNameModalReq, rejectAvatarModalReq]);
+  }, [busyId, bulkBusy, rejectModalUser, rejectNameModalReq, rejectAvatarModalReq]);
 
   const usersUrl = useMemo(() => {
     const qs = new URLSearchParams({
@@ -521,6 +521,7 @@ export default function ManajemenPenggunaPage() {
                     onClick={() => {
                       setFilterStatus(tab.key);
                       setCurrentPage(1);
+                      setSelectedUserIds([]);
                     }}
                     className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 whitespace-nowrap ${
                       filterStatus === tab.key
@@ -542,6 +543,7 @@ export default function ManajemenPenggunaPage() {
                   onChange={(e) => {
                     setSearch(e.target.value);
                     setCurrentPage(1);
+                    setSelectedUserIds([]);
                   }}
                   placeholder="Cari nama, email, telepon, atau role..."
                   className="w-full min-h-[40px] pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-white text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600"
@@ -692,11 +694,13 @@ export default function ManajemenPenggunaPage() {
                           <span>•</span>
                           <span>
                             Daftar:{' '}
-                            {new Date(u.created_at).toLocaleDateString('id-ID', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric',
-                            })}
+                            {!Number.isNaN(new Date(u.created_at).getTime())
+                              ? new Date(u.created_at).toLocaleDateString('id-ID', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })
+                              : '-'}
                           </span>
                         </div>
                         {u.rejection_reason &&
@@ -936,7 +940,7 @@ export default function ManajemenPenggunaPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
+            className="bg-white rounded-3xl max-w-lg w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
           >
             <h2 id="modal-reject-name-title" className="text-base font-bold text-slate-900">
               Tolak Pengajuan Perubahan Nama
@@ -1001,7 +1005,7 @@ export default function ManajemenPenggunaPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
+            className="bg-white rounded-3xl max-w-lg w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
           >
             <h2 id="modal-reject-user-title" className="text-base font-bold text-slate-900">
               Tolak Pendaftaran Akun
@@ -1094,7 +1098,7 @@ export default function ManajemenPenggunaPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
+            className="bg-white rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
           >
             <h3 id="modal-reject-avatar-title" className="text-sm font-bold text-slate-900">
               Tolak Pengajuan Foto Profil

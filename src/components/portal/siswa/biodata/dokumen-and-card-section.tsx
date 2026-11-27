@@ -227,7 +227,7 @@ export function DokumenSection({
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <a
-                            href={existing.file_url}
+                            href={`/api/siswa/biodata-dokumen/file?id=${encodeURIComponent(existing.id)}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-emerald-700 font-semibold hover:underline"
@@ -375,7 +375,7 @@ export function DokumenSection({
                 </div>
                 <div className="flex items-center gap-2.5 shrink-0">
                   <a
-                    href={d.file_url}
+                    href={`/api/siswa/biodata-dokumen/file?id=${encodeURIComponent(d.id)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-emerald-700 font-semibold hover:underline"

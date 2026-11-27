@@ -1,6 +1,6 @@
 'use client';
 
-import type { Dispatch, FormEvent, RefObject, SetStateAction } from 'react';
+import { useId, type Dispatch, type FormEvent, type RefObject, type SetStateAction } from 'react';
 import {
   AlertCircle,
   FileCheck2,
@@ -71,7 +71,8 @@ function PpdbDocUploadCard({
               type="button"
               onClick={() => onRemoveFile(doc.key)}
               title="Hapus berkas"
-              className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+              aria-label={`Hapus berkas ${doc.label}`}
+              className="shrink-0 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
             >
               <X className="w-4 h-4" />
             </button>
@@ -142,6 +143,7 @@ export function PpdbFormSection({
   onRemoveFile,
   onSubmit,
 }: PpdbFormSectionProps) {
+  const idPrefix = useId();
   const docUploadDisabled = !hasActivePeriod || submitting;
 
   return (
@@ -177,14 +179,15 @@ export function PpdbFormSection({
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="min-w-0">
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label htmlFor={`${idPrefix}-fullName`} className="block text-xs font-semibold text-slate-700 mb-1.5">
               Nama Lengkap Calon Siswa <span className="text-rose-600">*</span>
             </label>
             <input
+              id={`${idPrefix}-fullName`}
               required
               type="text"
               value={form.fullName}
-              onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+              onChange={(e) => setForm((prev) => ({ ...prev, fullName: e.target.value }))}
               placeholder="Sesuai Ijazah / Akta"
               className={INPUT_CLASS}
             />
@@ -192,7 +195,7 @@ export function PpdbFormSection({
 
           <div className="min-w-0">
             <div className="flex justify-between items-center mb-1.5">
-              <label className="text-xs font-semibold text-slate-700">
+              <label htmlFor={`${idPrefix}-nisn`} className="text-xs font-semibold text-slate-700">
                 NISN (10 Digit Angka) <span className="text-rose-600">*</span>
               </label>
               <span
@@ -204,6 +207,7 @@ export function PpdbFormSection({
               </span>
             </div>
             <input
+              id={`${idPrefix}-nisn`}
               required
               type="text"
               inputMode="numeric"
@@ -211,10 +215,10 @@ export function PpdbFormSection({
               maxLength={10}
               value={form.nisn}
               onChange={(e) =>
-                setForm({
-                  ...form,
+                setForm((prev) => ({
+                  ...prev,
                   nisn: e.target.value.replace(/\D/g, '').slice(0, 10),
-                })
+                }))
               }
               placeholder="10 digit angka NISN"
               className={`${INPUT_CLASS} font-mono`}
@@ -223,7 +227,7 @@ export function PpdbFormSection({
 
           <div className="min-w-0">
             <div className="flex justify-between items-center mb-1.5">
-              <label className="text-xs font-semibold text-slate-700">
+              <label htmlFor={`${idPrefix}-nik`} className="text-xs font-semibold text-slate-700">
                 NIK (16 Digit Angka) <span className="text-rose-600">*</span>
               </label>
               <span
@@ -235,6 +239,7 @@ export function PpdbFormSection({
               </span>
             </div>
             <input
+              id={`${idPrefix}-nik`}
               required
               type="text"
               inputMode="numeric"
@@ -242,10 +247,10 @@ export function PpdbFormSection({
               maxLength={16}
               value={form.nik}
               onChange={(e) =>
-                setForm({
-                  ...form,
+                setForm((prev) => ({
+                  ...prev,
                   nik: e.target.value.replace(/\D/g, '').slice(0, 16),
-                })
+                }))
               }
               placeholder="16 digit angka NIK"
               className={`${INPUT_CLASS} font-mono`}
@@ -253,12 +258,13 @@ export function PpdbFormSection({
           </div>
 
           <div className="min-w-0">
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label htmlFor={`${idPrefix}-gender`} className="block text-xs font-semibold text-slate-700 mb-1.5">
               Jenis Kelamin <span className="text-rose-600">*</span>
             </label>
             <select
+              id={`${idPrefix}-gender`}
               value={form.gender}
-              onChange={(e) => setForm({ ...form, gender: e.target.value as 'L' | 'P' })}
+              onChange={(e) => setForm((prev) => ({ ...prev, gender: e.target.value as 'L' | 'P' }))}
               className={INPUT_CLASS}
             >
               <option value="L">Laki-laki</option>
@@ -267,42 +273,45 @@ export function PpdbFormSection({
           </div>
 
           <div className="min-w-0">
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label htmlFor={`${idPrefix}-birthPlace`} className="block text-xs font-semibold text-slate-700 mb-1.5">
               Tempat Lahir <span className="text-rose-600">*</span>
             </label>
             <input
+              id={`${idPrefix}-birthPlace`}
               required
               type="text"
               value={form.birthPlace}
-              onChange={(e) => setForm({ ...form, birthPlace: e.target.value })}
+              onChange={(e) => setForm((prev) => ({ ...prev, birthPlace: e.target.value }))}
               placeholder="Kota / Kabupaten"
               className={INPUT_CLASS}
             />
           </div>
 
           <div className="min-w-0">
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label htmlFor={`${idPrefix}-birthDate`} className="block text-xs font-semibold text-slate-700 mb-1.5">
               Tanggal Lahir <span className="text-rose-600">*</span>
             </label>
             <input
+              id={`${idPrefix}-birthDate`}
               required
               type="date"
               max={todayIso}
               value={form.birthDate}
-              onChange={(e) => setForm({ ...form, birthDate: e.target.value })}
+              onChange={(e) => setForm((prev) => ({ ...prev, birthDate: e.target.value }))}
               className={INPUT_CLASS}
             />
           </div>
 
           <div className="sm:col-span-2 min-w-0">
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label htmlFor={`${idPrefix}-previousSchool`} className="block text-xs font-semibold text-slate-700 mb-1.5">
               Asal Sekolah / Madrasah <span className="text-rose-600">*</span>
             </label>
             <input
+              id={`${idPrefix}-previousSchool`}
               required
               type="text"
               value={form.previousSchool}
-              onChange={(e) => setForm({ ...form, previousSchool: e.target.value })}
+              onChange={(e) => setForm((prev) => ({ ...prev, previousSchool: e.target.value }))}
               placeholder="Contoh: MTsN 1 / SMPN 2"
               className={INPUT_CLASS}
             />
@@ -316,14 +325,15 @@ export function PpdbFormSection({
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="min-w-0">
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label htmlFor={`${idPrefix}-parentName`} className="block text-xs font-semibold text-slate-700 mb-1.5">
               Nama Orang Tua / Wali <span className="text-rose-600">*</span>
             </label>
             <input
+              id={`${idPrefix}-parentName`}
               required
               type="text"
               value={form.parentName}
-              onChange={(e) => setForm({ ...form, parentName: e.target.value })}
+              onChange={(e) => setForm((prev) => ({ ...prev, parentName: e.target.value }))}
               placeholder="Nama lengkap orang tua/wali"
               className={INPUT_CLASS}
             />
@@ -331,7 +341,7 @@ export function PpdbFormSection({
 
           <div className="min-w-0">
             <div className="flex justify-between items-center mb-1.5">
-              <label className="text-xs font-semibold text-slate-700">
+              <label htmlFor={`${idPrefix}-parentPhone`} className="text-xs font-semibold text-slate-700">
                 No. WhatsApp (12 Digit) <span className="text-rose-600">*</span>
               </label>
               <span
@@ -345,6 +355,7 @@ export function PpdbFormSection({
               </span>
             </div>
             <input
+              id={`${idPrefix}-parentPhone`}
               required
               type="text"
               inputMode="numeric"
@@ -352,10 +363,10 @@ export function PpdbFormSection({
               maxLength={12}
               value={form.parentPhone}
               onChange={(e) =>
-                setForm({
-                  ...form,
+                setForm((prev) => ({
+                  ...prev,
                   parentPhone: e.target.value.replace(/\D/g, '').slice(0, 12),
-                })
+                }))
               }
               placeholder="08xxxxxxxxxx (12 digit angka)"
               className={`${INPUT_CLASS} font-mono`}

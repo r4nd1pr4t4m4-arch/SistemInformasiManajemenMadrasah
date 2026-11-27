@@ -59,7 +59,14 @@ export function PpdbContent() {
   const [checkCard, setCheckCard] = useState<RegistrationCardData | null>(null);
 
   const errorBannerRef = useRef<HTMLDivElement | null>(null);
-  const todayIso = new Date().toISOString().split('T')[0];
+  const checkAbortRef = useRef<AbortController | null>(null);
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+
+  useEffect(() => {
+    return () => {
+      checkAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -225,6 +232,9 @@ export function PpdbContent() {
           createdAt: new Date().toISOString(),
           documents: uploadedDocs.map((d) => ({ label: d.fileName })),
         });
+        if (data.registrationNumber) {
+          setCheckCode(data.registrationNumber);
+        }
       }
     } catch {
       showFormError('Terjadi kesalahan koneksi ke server. Silakan coba kembali.');
@@ -238,27 +248,41 @@ export function PpdbContent() {
     e.preventDefault();
     const normalizedCode = checkCode.trim().toUpperCase();
     if (!normalizedCode) {
+      checkAbortRef.current?.abort();
       setCheckError('Masukkan nomor pendaftaran PPDB Anda terlebih dahulu.');
       setCheckCard(null);
       return;
     }
+
+    checkAbortRef.current?.abort();
+    const controller = new AbortController();
+    checkAbortRef.current = controller;
 
     setChecking(true);
     setCheckError(null);
     setCheckCard(null);
 
     try {
-      const res = await fetch(`/api/ppdb?code=${encodeURIComponent(normalizedCode)}`);
+      const res = await fetch(`/api/ppdb?code=${encodeURIComponent(normalizedCode)}`, {
+        signal: controller.signal,
+        cache: 'no-store',
+      });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      if (controller.signal.aborted) return;
+      if (!res.ok || !data.registration) {
         setCheckError(data.error || 'Nomor pendaftaran tidak ditemukan.');
       } else {
         setCheckCard(mapRegistrationRecordToCard(data.registration));
       }
-    } catch {
-      setCheckError('Gagal terhubung ke server. Periksa koneksi internet Anda.');
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      if (!controller.signal.aborted) {
+        setCheckError('Gagal terhubung ke server. Periksa koneksi internet Anda.');
+      }
     } finally {
-      setChecking(false);
+      if (!controller.signal.aborted) {
+        setChecking(false);
+      }
     }
   }
 
@@ -368,6 +392,8 @@ export function PpdbContent() {
             onCheckCodeChange={setCheckCode}
             onSubmit={handleCheckStatus}
             onReset={() => {
+              checkAbortRef.current?.abort();
+              setChecking(false);
               setCheckCard(null);
               setCheckCode('');
               setCheckError(null);

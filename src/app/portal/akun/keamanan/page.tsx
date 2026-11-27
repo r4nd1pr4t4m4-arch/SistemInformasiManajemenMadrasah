@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   KeyRound,
   Loader2,
   LogOut,
@@ -32,6 +34,20 @@ interface AuditLogRow {
   created_at: string;
 }
 
+const LOGS_PAGE_SIZE = 20;
+
+function formatSafeAuditTime(dateStr: string): string {
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return '-';
+  return parsed.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export default function AkunKeamananPage() {
   const { hasPermission } = usePortalSession();
   const canViewAuditLogs = hasPermission(PERMISSIONS.USER_MANAGEMENT_VIEW);
@@ -41,27 +57,54 @@ export default function AkunKeamananPage() {
 
   const [logs, setLogs] = useState<AuditLogRow[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
   const [moduleFilter, setModuleFilter] = useState('ALL');
   const [search, setSearch] = useState('');
+  const [logPage, setLogPage] = useState(1);
+  const logsAbortRef = useRef<AbortController | null>(null);
 
   const loadAuditLogs = useCallback(async () => {
     if (!canViewAuditLogs) return;
+    logsAbortRef.current?.abort();
+    const controller = new AbortController();
+    logsAbortRef.current = controller;
+
     setLoadingLogs(true);
+    setLogsError(null);
     try {
       const qs = new URLSearchParams({ limit: '100' });
       if (moduleFilter !== 'ALL') qs.set('module', moduleFilter);
-      const res = await fetch(`/api/akun/audit-logs?${qs.toString()}`, { cache: 'no-store' });
+      const res = await fetch(`/api/akun/audit-logs?${qs.toString()}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const data = await res.json().catch(() => ({}));
+      if (controller.signal.aborted) return;
       if (res.ok) {
         setLogs(Array.isArray(data.logs) ? data.logs : []);
+      } else {
+        setLogsError(data.error || 'Gagal memuat log audit keamanan.');
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      if (!controller.signal.aborted) {
+        setLogsError('Tidak dapat terhubung ke server saat memuat log audit.');
       }
     } finally {
-      setLoadingLogs(false);
+      if (!controller.signal.aborted) {
+        setLoadingLogs(false);
+      }
     }
   }, [canViewAuditLogs, moduleFilter]);
 
   useEffect(() => {
-    void loadAuditLogs();
+    const timer = window.setTimeout(() => {
+      void loadAuditLogs();
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      logsAbortRef.current?.abort();
+    };
   }, [loadAuditLogs]);
 
   async function handleRevokeOtherSessions() {
@@ -105,6 +148,13 @@ export default function AkunKeamananPage() {
       return hay.includes(q);
     });
   }, [logs, search]);
+
+  const totalLogPages = Math.max(1, Math.ceil(filteredLogs.length / LOGS_PAGE_SIZE));
+  const safeLogPage = Math.min(logPage, totalLogPages);
+  const paginatedLogs = useMemo(() => {
+    const start = (safeLogPage - 1) * LOGS_PAGE_SIZE;
+    return filteredLogs.slice(start, start + LOGS_PAGE_SIZE);
+  }, [filteredLogs, safeLogPage]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -214,16 +264,24 @@ export default function AkunKeamananPage() {
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
+                aria-label="Cari log audit keamanan"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setLogPage(1);
+                }}
                 placeholder="Cari email aktor, aksi, ringkasan, atau IP..."
-                className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                className="w-full min-h-[40px] pl-8 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-sm sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
               />
             </div>
             <select
+              aria-label="Filter modul log audit"
               value={moduleFilter}
-              onChange={(e) => setModuleFilter(e.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              onChange={(e) => {
+                setModuleFilter(e.target.value);
+                setLogPage(1);
+              }}
+              className="min-h-[40px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm sm:text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
             >
               <option value="ALL">Semua Modul</option>
               {availableModules.map((mod) => (
@@ -233,6 +291,25 @@ export default function AkunKeamananPage() {
               ))}
             </select>
           </div>
+
+          {logsError && (
+            <div
+              role="alert"
+              className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-wrap items-center justify-between gap-2"
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{logsError}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => void loadAuditLogs()}
+                className="min-h-[34px] px-3 py-1 rounded-lg bg-white border border-rose-200 font-semibold hover:bg-rose-100/60 transition"
+              >
+                Coba Lagi
+              </button>
+            </div>
+          )}
 
           {loadingLogs && logs.length === 0 ? (
             <div className="py-10 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
@@ -244,51 +321,84 @@ export default function AkunKeamananPage() {
               Belum ada catatan audit keamanan yang sesuai filter.
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                  <tr>
-                    <th className="px-3.5 py-2.5">Waktu</th>
-                    <th className="px-3.5 py-2.5">Aktor</th>
-                    <th className="px-3.5 py-2.5">Modul &amp; Aksi</th>
-                    <th className="px-3.5 py-2.5">Ringkasan</th>
-                    <th className="px-3.5 py-2.5">IP</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {filteredLogs.map((row) => (
-                    <tr key={row.id} className="hover:bg-slate-50/70">
-                      <td className="px-3.5 py-2.5 whitespace-nowrap font-mono text-[11px] text-slate-500">
-                        {new Date(row.created_at).toLocaleString('id-ID', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </td>
-                      <td className="px-3.5 py-2.5">
-                        <p className="font-semibold text-slate-800">{row.actor_email || '-'}</p>
-                        {row.actor_roles && row.actor_roles.length > 0 && (
-                          <p className="text-[10px] text-slate-400">{row.actor_roles.join(', ')}</p>
-                        )}
-                      </td>
-                      <td className="px-3.5 py-2.5 whitespace-nowrap">
-                        <span className="inline-block px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-bold text-[10px]">
-                          {row.module}
-                        </span>
-                        <p className="font-mono text-[11px] text-slate-700 mt-0.5">{row.action}</p>
-                      </td>
-                      <td className="px-3.5 py-2.5 text-slate-700 max-w-md break-words">
-                        {row.summary || '-'}
-                      </td>
-                      <td className="px-3.5 py-2.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">
-                        {row.ip_address || '-'}
-                      </td>
+            <div className="space-y-3">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="px-3.5 py-2.5">Waktu</th>
+                      <th className="px-3.5 py-2.5">Aktor</th>
+                      <th className="px-3.5 py-2.5">Modul &amp; Aksi</th>
+                      <th className="px-3.5 py-2.5">Ringkasan</th>
+                      <th className="px-3.5 py-2.5">IP</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {paginatedLogs.map((row) => (
+                      <tr key={row.id} className="hover:bg-slate-50/70">
+                        <td className="px-3.5 py-2.5 whitespace-nowrap font-mono text-[11px] text-slate-500">
+                          {formatSafeAuditTime(row.created_at)}
+                        </td>
+                        <td className="px-3.5 py-2.5">
+                          <p className="font-semibold text-slate-800">{row.actor_email || '-'}</p>
+                          {row.actor_roles && row.actor_roles.length > 0 && (
+                            <p className="text-[10px] text-slate-400">{row.actor_roles.join(', ')}</p>
+                          )}
+                        </td>
+                        <td className="px-3.5 py-2.5 whitespace-nowrap">
+                          <span className="inline-block px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-bold text-[10px]">
+                            {row.module}
+                          </span>
+                          <p className="font-mono text-[11px] text-slate-700 mt-0.5">{row.action}</p>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-slate-700 max-w-md [overflow-wrap:anywhere]">
+                          {row.summary || '-'}
+                        </td>
+                        <td className="px-3.5 py-2.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                          {row.ip_address || '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {totalLogPages > 1 && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-600 pt-1">
+                  <span>
+                    Menampilkan{' '}
+                    <strong className="text-slate-900">
+                      {(safeLogPage - 1) * LOGS_PAGE_SIZE + 1}
+                    </strong>
+                    –
+                    <strong className="text-slate-900">
+                      {Math.min(safeLogPage * LOGS_PAGE_SIZE, filteredLogs.length)}
+                    </strong>{' '}
+                    dari <strong className="text-slate-900">{filteredLogs.length}</strong> log
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={safeLogPage <= 1}
+                      onClick={() => setLogPage((p) => Math.max(1, p - 1))}
+                      className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 font-semibold text-slate-700 disabled:opacity-50"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" /> Sebelumnya
+                    </button>
+                    <span className="px-2 font-semibold text-slate-700">
+                      Hal. {safeLogPage} / {totalLogPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={safeLogPage >= totalLogPages}
+                      onClick={() => setLogPage((p) => Math.min(totalLogPages, p + 1))}
+                      className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 font-semibold text-slate-700 disabled:opacity-50"
+                    >
+                      Berikutnya <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

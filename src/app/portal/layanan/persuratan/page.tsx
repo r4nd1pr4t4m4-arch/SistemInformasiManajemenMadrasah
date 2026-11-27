@@ -1759,7 +1759,7 @@ export default function PersuratanPage() {
 
                       {req.attachment_url && (
                         <a
-                          href={req.attachment_url}
+                          href={`/api/layanan/persuratan/attachment?id=${encodeURIComponent(req.id)}&type=request`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-semibold"
@@ -2003,7 +2003,7 @@ export default function PersuratanPage() {
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2 border-t border-slate-200/70">
                       {letterObj?.file_url ? (
                         <a
-                          href={letterObj.file_url}
+                          href={`/api/layanan/persuratan/attachment?id=${encodeURIComponent(d.letter_id)}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold w-fit"
@@ -3112,7 +3112,7 @@ export default function PersuratanPage() {
 
                             {l.file_url && (
                               <a
-                                href={l.file_url}
+                                href={`/api/layanan/persuratan/attachment?id=${encodeURIComponent(l.id)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-semibold transition"
@@ -3286,7 +3286,7 @@ export default function PersuratanPage() {
         >
           <div
             ref={deleteConfirmModalRef}
-            className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
+            className="bg-white rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
           >
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
@@ -3353,7 +3353,7 @@ export default function PersuratanPage() {
         >
           <div
             ref={reviewModalRef}
-            className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
+            className="bg-white rounded-3xl max-w-lg w-full max-h-[90dvh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
               <div className="space-y-1 min-w-0">
@@ -3493,7 +3493,7 @@ export default function PersuratanPage() {
         >
           <div
             ref={dispositionModalRef}
-            className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
+            className="bg-white rounded-3xl max-w-lg w-full max-h-[90dvh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
               <div className="min-w-0">
@@ -3934,7 +3934,7 @@ export default function PersuratanPage() {
         >
           <div
             ref={previewModalRef}
-            className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
+            className="bg-white rounded-3xl max-w-2xl w-full max-h-[90dvh] overflow-y-auto shadow-2xl border border-slate-200 p-5 sm:p-6 space-y-4"
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
               <div className="min-w-0">
@@ -4041,7 +4041,7 @@ export default function PersuratanPage() {
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <p className="text-xs font-bold text-slate-800">Pratinjau Lampiran Digital</p>
                   <a
-                    href={previewLetter.file_url}
+                    href={`/api/layanan/persuratan/attachment?id=${encodeURIComponent(previewLetter.id)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
@@ -4054,7 +4054,7 @@ export default function PersuratanPage() {
                 /\.(jpg|jpeg|png|webp)(\?|$)/i.test(previewLetter.file_url) ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={previewLetter.file_url}
+                    src={`/api/layanan/persuratan/attachment?id=${encodeURIComponent(previewLetter.id)}`}
                     alt={previewLetter.subject}
                     className="max-h-80 w-auto max-w-full mx-auto rounded-xl border border-slate-200"
                   />
@@ -4072,7 +4072,7 @@ export default function PersuratanPage() {
                       </div>
                     </div>
                     <a
-                      href={previewLetter.file_url}
+                      href={`/api/layanan/persuratan/attachment?id=${encodeURIComponent(previewLetter.id)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center justify-center px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold shrink-0"

@@ -288,6 +288,7 @@ export function DigitalStudentCard({
                 <div className="shrink-0 space-y-1.5">
                   <div className="w-16 h-20 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white font-bold text-lg flex items-center justify-center overflow-hidden border border-slate-300 shadow-inner">
                     {student.photo_url ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img
                         src={student.photo_url}
                         alt={student.full_name}
@@ -339,6 +340,7 @@ export function DigitalStudentCard({
 
                 {qrDataUrl && (
                   <div className="shrink-0 bg-white p-1.5 rounded-xl border border-slate-200 text-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={qrDataUrl} alt="QR Verifikasi" className="w-16 h-16" />
                     <p className="text-[8px] font-bold text-slate-500 mt-0.5">VERIFIKASI</p>
                   </div>
@@ -394,6 +396,7 @@ export function DigitalStudentCard({
                   <div className="col-span-5 text-center text-[10px] space-y-1">
                     <p className="text-slate-500">{institution.head_title_label || 'Kepala Lembaga'}</p>
                     {qrDataUrl && (
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img src={qrDataUrl} alt="QR" className="w-10 h-10 mx-auto opacity-90" />
                     )}
                     <p className="font-bold text-slate-900 truncate">
@@ -612,6 +615,7 @@ export function DigitalLibraryCard({
                 <div className="shrink-0 space-y-1.5">
                   <div className="w-16 h-18 rounded-xl bg-gradient-to-br from-blue-900 to-sky-600 text-white font-bold text-lg flex items-center justify-center overflow-hidden border border-sky-200 shadow-inner">
                     {profilePhotoUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img
                         src={profilePhotoUrl}
                         alt={member.full_name}
@@ -659,6 +663,7 @@ export function DigitalLibraryCard({
 
                 {qrDataUrl && (
                   <div className="shrink-0 bg-white p-1.5 rounded-xl border border-sky-200 text-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={qrDataUrl} alt="QR Anggota" className="w-16 h-16" />
                     <p className="text-[8px] font-bold text-sky-700 mt-0.5">PINJAM</p>
                   </div>
@@ -713,6 +718,7 @@ export function DigitalLibraryCard({
                   <div className="col-span-5 text-center text-[10px] space-y-1">
                     <p className="text-slate-500">Pengelola Perpustakaan</p>
                     {qrDataUrl && (
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img src={qrDataUrl} alt="QR" className="w-10 h-10 mx-auto opacity-90" />
                     )}
                     <p className="font-bold text-slate-900 truncate">

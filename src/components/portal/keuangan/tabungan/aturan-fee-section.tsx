@@ -578,7 +578,7 @@ export function AturanFeeSection({
           }}
           className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
         >
-          <div className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200">
+          <div className="bg-white rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 id="tier-modal-title" className="text-sm font-bold text-slate-900">
                 {editingTierIdx === null ? 'Tambah Tingkatan Aturan Fee' : 'Edit Tingkatan Aturan Fee'}

@@ -28,6 +28,7 @@ function PortalCommandPaletteContent({ open, onClose, items }: PortalCommandPale
   const router = useRouter();
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   useFocusTrap(dialogRef, open);
 
   const [query, setQuery] = useState('');
@@ -54,6 +55,10 @@ function PortalCommandPaletteContent({ open, onClose, items }: PortalCommandPale
     }, 10);
     return () => window.clearTimeout(id);
   }, []);
+
+  useEffect(() => {
+    itemRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex, filtered.length]);
 
   function navigateTo(href: string) {
     onClose();
@@ -86,7 +91,7 @@ function PortalCommandPaletteContent({ open, onClose, items }: PortalCommandPale
       aria-modal="true"
       aria-label="Pencarian Cepat Menu Portal"
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-start justify-center pt-[10vh] px-3 sm:px-4"
+      className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-start justify-center pt-[8dvh] sm:pt-[10dvh] px-3 sm:px-4"
     >
       <div
         ref={dialogRef}
@@ -126,7 +131,7 @@ function PortalCommandPaletteContent({ open, onClose, items }: PortalCommandPale
           </kbd>
         </div>
 
-        <div className="max-h-[55vh] overflow-y-auto p-2.5 space-y-1">
+        <div className="max-h-[55dvh] overflow-y-auto p-2.5 space-y-1">
           {filtered.length === 0 ? (
             <NoSearchResultState
               compact
@@ -143,6 +148,9 @@ function PortalCommandPaletteContent({ open, onClose, items }: PortalCommandPale
               return (
                 <button
                   key={`${item.href}-${item.label}`}
+                  ref={(el) => {
+                    itemRefs.current[idx] = el;
+                  }}
                   type="button"
                   onMouseEnter={() => setSelectedIndex(idx)}
                   onClick={() => navigateTo(item.href)}

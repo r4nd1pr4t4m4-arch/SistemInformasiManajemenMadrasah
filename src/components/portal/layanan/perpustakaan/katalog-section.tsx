@@ -658,6 +658,7 @@ export function KatalogSection({
                     <div className="flex items-start gap-3.5 min-w-0">
                       <div className="relative shrink-0">
                         {b.cover_url ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
                           <img
                             src={b.cover_url}
                             alt={b.title}

@@ -4,6 +4,17 @@ import { formatRupiah } from '@/lib/domain/honorarium';
 import { extractVerificationParams } from '@/lib/verification/document-verify';
 import { parseCaptchaHeader, verifyCaptchaToken } from '@/lib/security/captcha-server';
 
+function formatSafeDateTime(raw?: string | null): string {
+  if (!raw) return '-';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '-';
+  return parsed.toLocaleString('id-ID');
+}
+
+function escapePostgrestLikeValue(raw: string): string {
+  return raw.replace(/[\\%_]/g, '\\$&').replace(/[(),]/g, ' ').trim();
+}
+
 export async function GET(request: NextRequest) {
   const rawRef = request.nextUrl.searchParams.get('ref') || '';
   const typeHint = request.nextUrl.searchParams.get('type') || undefined;
@@ -278,7 +289,7 @@ export async function GET(request: NextRequest) {
               : []),
             {
               label: 'Waktu Terbit',
-              value: new Date(ledgerRow.issued_at).toLocaleString('id-ID'),
+              value: formatSafeDateTime(ledgerRow.issued_at),
             },
           ],
         });
@@ -295,16 +306,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { data: letter } = await supabase
-      .from('letters')
-      .select(
-        '*, student:students(full_name, nis), teacher:teachers_staff(full_name, nip)'
-      )
-      .or(
-        `letter_number.ilike.${ref.replace(/[\\%_]/g, '\\$&')},summary.ilike.%${ref.replace(/[\\%_]/g, '\\$&')}%`
-      )
-      .limit(1)
-      .maybeSingle();
+    const safeLetterRef = escapePostgrestLikeValue(ref);
+    const { data: letter } = safeLetterRef
+      ? await supabase
+          .from('letters')
+          .select(
+            '*, student:students(full_name, nis), teacher:teachers_staff(full_name, nip)'
+          )
+          .or(`letter_number.ilike.${safeLetterRef},summary.ilike.%${safeLetterRef}%`)
+          .limit(1)
+          .maybeSingle()
+      : { data: null };
 
     if (letter) {
       const student = Array.isArray(letter.student) ? letter.student[0] : letter.student;
@@ -381,7 +393,7 @@ export async function GET(request: NextRequest) {
           { label: 'Kode Referensi', value: ledgerRow.reference_code },
           {
             label: 'Waktu Terbit',
-            value: new Date(ledgerRow.issued_at).toLocaleString('id-ID'),
+            value: formatSafeDateTime(ledgerRow.issued_at),
           },
         ],
       });
@@ -414,7 +426,7 @@ export async function GET(request: NextRequest) {
           { label: 'Kode Referensi', value: ledgerRow.reference_code },
           {
             label: 'Waktu Terbit',
-            value: new Date(ledgerRow.issued_at).toLocaleString('id-ID'),
+            value: formatSafeDateTime(ledgerRow.issued_at),
           },
         ],
       });

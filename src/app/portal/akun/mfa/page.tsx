@@ -51,6 +51,7 @@ export default function ManajemenMfaPage() {
   const [resetOtp, setResetOtp] = useState('');
   const [sendingResetOtp, setSendingResetOtp] = useState(false);
   const [resetOtpSent, setResetOtpSent] = useState(false);
+  const [resetOtpCooldown, setResetOtpCooldown] = useState(0);
   const [resettingMfa, setResettingMfa] = useState(false);
 
   // Backup Recovery Codes MFA
@@ -62,6 +63,15 @@ export default function ManajemenMfaPage() {
   const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
   const [generatingCodes, setGeneratingCodes] = useState(false);
   const [copiedCodes, setCopiedCodes] = useState(false);
+  const copyCodesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (resetOtpCooldown <= 0) return;
+    const timer = window.setInterval(() => {
+      setResetOtpCooldown((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resetOtpCooldown]);
 
   const loadRecoveryStats = useCallback(async () => {
     try {
@@ -114,6 +124,7 @@ export default function ManajemenMfaPage() {
   useEffect(() => {
     return () => {
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      if (copyCodesTimerRef.current) clearTimeout(copyCodesTimerRef.current);
     };
   }, []);
 
@@ -203,16 +214,54 @@ export default function ManajemenMfaPage() {
     }
   }
 
+  async function copyTextSafely(text: string): Promise<boolean> {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        // Lanjut ke fallback textarea
+      }
+    }
+    if (typeof document === 'undefined') return false;
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
   async function handleCopySecret() {
     if (!enrolling?.secret) return;
-    try {
-      await navigator.clipboard.writeText(enrolling.secret);
-      setCopiedSecret(true);
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-      copyTimerRef.current = setTimeout(() => setCopiedSecret(false), 2000);
-    } catch {
+    const ok = await copyTextSafely(enrolling.secret);
+    if (!ok) {
       setFeedback({ type: 'error', text: 'Gagal menyalin secret ke clipboard.' });
+      return;
     }
+    setCopiedSecret(true);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopiedSecret(false), 2000);
+  }
+
+  async function handleCopyRecoveryCodes() {
+    if (generatedCodes.length === 0) return;
+    const ok = await copyTextSafely(generatedCodes.join('\n'));
+    if (!ok) {
+      setFeedback({ type: 'error', text: 'Gagal menyalin kode pemulihan ke clipboard.' });
+      return;
+    }
+    setCopiedCodes(true);
+    if (copyCodesTimerRef.current) clearTimeout(copyCodesTimerRef.current);
+    copyCodesTimerRef.current = setTimeout(() => setCopiedCodes(false), 2500);
   }
 
   async function handleVerifyEnroll(e: React.FormEvent) {
@@ -272,6 +321,7 @@ export default function ManajemenMfaPage() {
   }
 
   async function handleSendResetOtp() {
+    if (sendingResetOtp || resettingMfa || resetOtpCooldown > 0) return;
     setFeedback(null);
     setSendingResetOtp(true);
     try {
@@ -281,6 +331,7 @@ export default function ManajemenMfaPage() {
         setFeedback({ type: 'error', text: data.error || 'Gagal mengirim OTP.' });
       } else {
         setResetOtpSent(true);
+        setResetOtpCooldown(60);
         setFeedback({ type: 'success', text: data.message || 'Kode OTP dikirim ke email Anda.' });
       }
     } catch {
@@ -619,7 +670,7 @@ export default function ManajemenMfaPage() {
                 />
                 <button
                   type="button"
-                  disabled={sendingResetOtp || resettingMfa}
+                  disabled={sendingResetOtp || resettingMfa || resetOtpCooldown > 0}
                   onClick={handleSendResetOtp}
                   className="w-full sm:w-auto min-h-[42px] inline-flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-emerald-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-xs font-semibold transition shrink-0"
                 >
@@ -629,7 +680,13 @@ export default function ManajemenMfaPage() {
                     <Send className="w-3.5 h-3.5" />
                   )}
                   <span>
-                    {sendingResetOtp ? 'Mengirim...' : resetOtpSent ? 'Kirim Ulang' : 'Kirim OTP'}
+                    {sendingResetOtp
+                      ? 'Mengirim...'
+                      : resetOtpCooldown > 0
+                        ? `Kirim Ulang (${resetOtpCooldown}d)`
+                        : resetOtpSent
+                          ? 'Kirim Ulang'
+                          : 'Kirim OTP'}
                   </span>
                 </button>
               </div>
@@ -687,14 +744,15 @@ export default function ManajemenMfaPage() {
                 {recoveryStats.remainingCount} / {recoveryStats.totalCount}
               </strong>
             </span>
-            {recoveryStats.lastGeneratedAt && (
-              <span>
-                • Terakhir dibuat:{' '}
-                <strong>
-                  {new Date(recoveryStats.lastGeneratedAt).toLocaleString('id-ID')}
-                </strong>
-              </span>
-            )}
+            {recoveryStats.lastGeneratedAt &&
+              !Number.isNaN(new Date(recoveryStats.lastGeneratedAt).getTime()) && (
+                <span>
+                  • Terakhir dibuat:{' '}
+                  <strong>
+                    {new Date(recoveryStats.lastGeneratedAt).toLocaleString('id-ID')}
+                  </strong>
+                </span>
+              )}
           </div>
         )}
 
@@ -706,12 +764,8 @@ export default function ManajemenMfaPage() {
               </p>
               <button
                 type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(generatedCodes.join('\n'));
-                  setCopiedCodes(true);
-                  setTimeout(() => setCopiedCodes(false), 2500);
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-900 text-[11px] font-semibold hover:bg-amber-100/50 transition"
+                onClick={() => void handleCopyRecoveryCodes()}
+                className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-900 text-[11px] font-semibold hover:bg-amber-100/50 transition"
               >
                 {copiedCodes ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copiedCodes ? 'Tersalin!' : 'Salin Semua Kode'}</span>
@@ -743,7 +797,7 @@ export default function ManajemenMfaPage() {
           }}
         >
           <div
-            className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-4"
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-3">

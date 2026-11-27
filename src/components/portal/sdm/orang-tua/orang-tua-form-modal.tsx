@@ -59,7 +59,7 @@ export function OrangTuaFormModal({
       }}
       className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-[1px] flex items-center justify-center p-3 sm:p-4"
     >
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl">
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <h2 id="ortu-modal-title" className="text-lg font-bold text-slate-900">
             {editingId ? 'Edit Data Orang Tua / Wali' : 'Tambah Data Orang Tua / Wali'}

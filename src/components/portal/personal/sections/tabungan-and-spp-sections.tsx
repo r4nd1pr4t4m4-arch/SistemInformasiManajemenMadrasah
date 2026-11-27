@@ -184,11 +184,10 @@ export function TabunganSection({
   return (
     <div className="space-y-6">
       <div
-        className={`grid gap-4 ${
-          data.savingsAccounts.length === 1
+        className={`grid gap-4 ${data.savingsAccounts.length === 1
             ? 'grid-cols-1 max-w-xl'
             : 'grid-cols-1 md:grid-cols-2'
-        }`}
+          }`}
       >
         {data.savingsAccounts.map((acc) => (
           <div
@@ -200,11 +199,10 @@ export function TabunganSection({
                 {acc.account_number}
               </span>
               <span
-                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full shrink-0 ${
-                  acc.is_active
+                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full shrink-0 ${acc.is_active
                     ? 'bg-emerald-400 text-emerald-950'
                     : 'bg-slate-400 text-slate-900'
-                }`}
+                  }`}
               >
                 {acc.is_active ? 'REKENING AKTIF' : 'NONAKTIF'}
               </span>
@@ -365,11 +363,10 @@ export function TabunganSection({
                       setTrxTypeFilter(tp);
                       setTrxVisibleCount(15);
                     }}
-                    className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 ${
-                      trxTypeFilter === tp
+                    className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 ${trxTypeFilter === tp
                         ? 'bg-emerald-700 text-white border-emerald-700'
                         : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
-                    }`}
+                      }`}
                   >
                     {tp === 'ALL' ? 'Semua Jenis' : tp === 'SETOR' ? 'Transaksi Setor' : 'Transaksi Tarik'}
                   </button>
@@ -406,11 +403,10 @@ export function TabunganSection({
                           if (!customStartDate) setCustomStartDate(todayIso);
                         }
                       }}
-                      className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
-                        trxDatePreset === preset.key
+                      className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${trxDatePreset === preset.key
                           ? 'bg-slate-900 text-white border-slate-900'
                           : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                      }`}
+                        }`}
                     >
                       {preset.label}
                     </button>
@@ -521,11 +517,10 @@ export function TabunganSection({
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                            isTarik
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isTarik
                               ? 'bg-amber-100 text-amber-800'
                               : 'bg-emerald-100 text-emerald-800'
-                          }`}
+                            }`}
                         >
                           {isTarik ? (
                             <ArrowDownRight className="w-3 h-3" />
@@ -618,11 +613,10 @@ export function TabunganSection({
                         </td>
                         <td className="py-2.5 px-3 whitespace-nowrap">
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              isTarik
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${isTarik
                                 ? 'bg-amber-100 text-amber-800'
                                 : 'bg-emerald-100 text-emerald-800'
-                            }`}
+                              }`}
                           >
                             {isTarik ? (
                               <ArrowDownRight className="w-3 h-3" />
@@ -703,6 +697,19 @@ const SPP_MONTH_NAMES = [
   'Desember',
 ];
 
+function getTodayWibIso(): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 export function SppSection({
   data,
   scope,
@@ -716,6 +723,16 @@ export function SppSection({
     'ALL'
   );
   const [sppSearch, setSppSearch] = useState('');
+  const [proofBill, setProofBill] = useState<PersonalPayload['bills'][number] | null>(null);
+  const [proofForm, setProofForm] = useState(() => ({
+    amount_claimed: 0,
+    payment_method: 'TRANSFER' as 'TRANSFER' | 'QRIS',
+    transfer_date: getTodayWibIso(),
+    proof_file_url: '',
+    notes: '',
+  }));
+  const [proofSubmitting, setProofSubmitting] = useState(false);
+  const [proofMsg, setProofMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   if (data.bills.length === 0) {
     return (
@@ -797,17 +814,6 @@ export function SppSection({
 
   const hasSppFilter = sppSearch.trim().length > 0 || sppStatusFilter !== 'ALL';
 
-  const [proofBill, setProofBill] = useState<PersonalPayload['bills'][number] | null>(null);
-  const [proofForm, setProofForm] = useState({
-    amount_claimed: 0,
-    payment_method: 'TRANSFER' as 'TRANSFER' | 'QRIS',
-    transfer_date: new Date().toISOString().slice(0, 10),
-    proof_file_url: '',
-    notes: '',
-  });
-  const [proofSubmitting, setProofSubmitting] = useState(false);
-  const [proofMsg, setProofMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-
   function openProofModal(b: PersonalPayload['bills'][number]) {
     const rem = Math.max(0, (Number(b.amount) || 0) - (Number(b.paid_amount) || 0));
     setProofBill(b);
@@ -815,7 +821,7 @@ export function SppSection({
     setProofForm({
       amount_claimed: rem,
       payment_method: 'TRANSFER',
-      transfer_date: new Date().toISOString().slice(0, 10),
+      transfer_date: getTodayWibIso(),
       proof_file_url: '',
       notes: '',
     });
@@ -927,11 +933,10 @@ export function SppSection({
                 type="button"
                 aria-pressed={sppStatusFilter === tab.key}
                 onClick={() => setSppStatusFilter(tab.key)}
-                className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 whitespace-nowrap ${
-                  sppStatusFilter === tab.key
+                className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 whitespace-nowrap ${sppStatusFilter === tab.key
                     ? 'bg-slate-900 text-white border-slate-900'
                     : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
@@ -986,13 +991,12 @@ export function SppSection({
                         </p>
                       </div>
                       <span
-                        className={`shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          b.status === 'LUNAS'
+                        className={`shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${b.status === 'LUNAS'
                             ? 'bg-emerald-100 text-emerald-800'
                             : b.status === 'CICILAN'
                               ? 'bg-amber-100 text-amber-800'
                               : 'bg-rose-100 text-rose-800'
-                        }`}
+                          }`}
                       >
                         {b.status}
                       </span>
@@ -1087,13 +1091,12 @@ export function SppSection({
                         </td>
                         <td className="py-2.5 px-3 text-center whitespace-nowrap">
                           <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              b.status === 'LUNAS'
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${b.status === 'LUNAS'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : b.status === 'CICILAN'
                                   ? 'bg-amber-100 text-amber-800'
                                   : 'bg-rose-100 text-rose-800'
-                            }`}
+                              }`}
                           >
                             {b.status}
                           </span>
@@ -1137,13 +1140,15 @@ export function SppSection({
         <div
           role="dialog"
           aria-modal="true"
-          onClick={() => setProofBill(null)}
+          onClick={() => {
+            if (!proofSubmitting) setProofBill(null);
+          }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-xs p-4"
         >
           <form
             onSubmit={handleSubmitProof}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4 text-xs"
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 text-xs"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900">Kirim Bukti Transfer SPP</h3>
@@ -1160,11 +1165,10 @@ export function SppSection({
             </p>
             {proofMsg && (
               <div
-                className={`p-3 rounded-xl border ${
-                  proofMsg.type === 'ok'
+                className={`p-3 rounded-xl border ${proofMsg.type === 'ok'
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
                     : 'bg-rose-50 border-rose-200 text-rose-900'
-                }`}
+                  }`}
               >
                 {proofMsg.text}
               </div>

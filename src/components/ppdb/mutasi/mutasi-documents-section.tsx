@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { FileCheck2, FileUp, ShieldAlert, Upload, X } from 'lucide-react';
 import { DocType, formatFileSize, MUTATION_DOCS, MutasiDocItem } from './types';
 
@@ -64,7 +64,8 @@ export function MutasiDocumentsSection({
                       type="button"
                       onClick={() => onRemoveFile(doc.key)}
                       title="Hapus berkas"
-                      className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                      aria-label={`Hapus berkas ${doc.label}`}
+                      className="shrink-0 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -112,13 +113,21 @@ interface MutasiFinalGradeModalProps {
 }
 
 export function MutasiFinalGradeModal({ open, targetGrade, onClose }: MutasiFinalGradeModalProps) {
+  const confirmButtonRef = useRef<HTMLButtonElement | null>(null);
+
   useEffect(() => {
     if (!open) return;
+    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    confirmButtonRef.current?.focus();
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      previousActive?.focus();
+    };
   }, [open, onClose]);
 
   if (!open) return null;
@@ -133,7 +142,7 @@ export function MutasiFinalGradeModal({ open, targetGrade, onClose }: MutasiFina
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150"
+        className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
@@ -172,9 +181,10 @@ export function MutasiFinalGradeModal({ open, targetGrade, onClose }: MutasiFina
 
         <div className="mt-6 flex justify-end">
           <button
+            ref={confirmButtonRef}
             type="button"
             onClick={onClose}
-            className="w-full sm:w-auto rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition"
+            className="w-full sm:w-auto min-h-[42px] rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
           >
             Mengerti, Ubah Pilihan
           </button>

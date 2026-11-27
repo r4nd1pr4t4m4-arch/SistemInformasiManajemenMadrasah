@@ -1,6 +1,7 @@
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { DEFAULT_INSTITUTION_SETTINGS, DEFAULT_POSTS } from '@/lib/data/demo-seed';
 import type { InstitutionSettings, PostItem } from '@/types/database';
+import { toPublicMediaProxyUrl } from '@/lib/storage/r2-url-helper';
 
 function normalizeInstitutionLogoUrl(rawUrl?: string | null): string | null {
   const trimmed = rawUrl?.trim();
@@ -16,7 +17,13 @@ function normalizeInstitutionLogoUrl(rawUrl?: string | null): string | null {
     const objectKey = trimmed.slice(r2PublicBase.length + 1);
     return `/api/cms/logo?key=${encodeURIComponent(objectKey)}`;
   }
-  return trimmed;
+  return toPublicMediaProxyUrl(trimmed);
+}
+
+function normalizeNullableMediaUrl(rawUrl?: string | null): string | null {
+  if (!rawUrl) return null;
+  const normalized = toPublicMediaProxyUrl(rawUrl);
+  return normalized || null;
 }
 
 export async function getInstitutionSettings(): Promise<InstitutionSettings> {
@@ -57,7 +64,10 @@ export async function getPublishedPosts(limit = 12): Promise<PostItem[]> {
       .limit(limit);
 
     if (error) return [];
-    return (data || []) as PostItem[];
+    return (data || []).map((post) => ({
+      ...post,
+      cover_image_url: normalizeNullableMediaUrl(post.cover_image_url),
+    })) as PostItem[];
   } catch {
     return [];
   }
@@ -170,6 +180,7 @@ export async function getPublicDirectoryData() {
 
     const enrichedTeachers = teacherRows.map((t) => ({
       ...t,
+      photo_url: normalizeNullableMediaUrl(t.photo_url),
       thesis_keywords: Array.isArray(t.thesis_keywords) ? t.thesis_keywords : [],
       additional_duties: dutiesMap.get(t.id) || [],
       subjects: subjectsMap.get(t.id) || [],
@@ -187,6 +198,31 @@ export async function getPublicDirectoryData() {
   }
 }
 
+export async function getPublicGallery(limit = 60) {
+  if (!isSupabaseAdminConfigured()) {
+    return [];
+  }
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from('media_gallery')
+      .select('id, title, media_type, media_url, thumbnail_url, description, event_date')
+      .order('event_date', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) return [];
+    return (data || []).map((item) => ({
+      ...item,
+      media_url: toPublicMediaProxyUrl(item.media_url),
+      thumbnail_url: normalizeNullableMediaUrl(item.thumbnail_url),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export async function getPublicFacilities() {
   if (!isSupabaseAdminConfigured()) {
     return [];
@@ -200,7 +236,10 @@ export async function getPublicFacilities() {
       .order('name');
 
     if (error) return [];
-    return data || [];
+    return (data || []).map((f) => ({
+      ...f,
+      image_url: normalizeNullableMediaUrl(f.image_url),
+    }));
   } catch {
     return [];
   }
@@ -226,7 +265,10 @@ export async function getPublicFacilitiesHighlight(limit = 6) {
     }
 
     return {
-      facilities: data || [],
+      facilities: (data || []).map((f) => ({
+        ...f,
+        image_url: normalizeNullableMediaUrl(f.image_url),
+      })),
       totalCount: count ?? (data?.length || 0),
     };
   } catch {
@@ -259,8 +301,15 @@ export async function getPublicGalleryAndFacilities() {
     ]);
 
     return {
-      gallery: gallery || [],
-      facilities: facilities || [],
+      gallery: (gallery || []).map((item) => ({
+        ...item,
+        media_url: toPublicMediaProxyUrl(item.media_url),
+        thumbnail_url: normalizeNullableMediaUrl(item.thumbnail_url),
+      })),
+      facilities: (facilities || []).map((f) => ({
+        ...f,
+        image_url: normalizeNullableMediaUrl(f.image_url),
+      })),
       faqs: faqs || [],
     };
   } catch {
@@ -284,7 +333,10 @@ export async function getPostBySlug(slug: string): Promise<PostItem | null> {
       .maybeSingle();
 
     if (error || !data) return null;
-    return data as PostItem;
+    return {
+      ...data,
+      cover_image_url: normalizeNullableMediaUrl(data.cover_image_url),
+    } as PostItem;
   } catch {
     return null;
   }
@@ -349,7 +401,7 @@ export async function getPublicLeadershipStructure() {
         id: row.id,
         roleName: duty.name,
         personName: teacher.full_name,
-        photoUrl: teacher.photo_url || null,
+        photoUrl: normalizeNullableMediaUrl(teacher.photo_url),
       });
     }
     return result.slice(0, 12);

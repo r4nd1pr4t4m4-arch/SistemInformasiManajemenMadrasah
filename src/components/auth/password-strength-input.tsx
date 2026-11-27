@@ -66,7 +66,7 @@ export function PasswordInput({
         <button
           type="button"
           onClick={() => setVisible((v) => !v)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100/80 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100/80 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
           aria-label={visible ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
         >
           {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

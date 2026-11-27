@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2, MapPin, RefreshCw } from 'lucide-react';
 
 interface RegionItem {
@@ -23,6 +23,7 @@ const INPUT_CLASS =
   'w-full min-h-[42px] rounded-xl border border-slate-300/90 bg-white px-3 py-2 text-sm text-slate-800 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600';
 
 export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFieldsProps) {
+  const idPrefix = useId();
   const [provinces, setProvinces] = useState<RegionItem[]>([]);
   const [regencies, setRegencies] = useState<RegionItem[]>([]);
   const [districts, setDistricts] = useState<RegionItem[]>([]);
@@ -33,7 +34,10 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
   const [loadingDistricts, setLoadingDistricts] = useState(false);
   const [loadingVillages, setLoadingVillages] = useState(false);
   const [regionError, setRegionError] = useState<string | null>(null);
-  const [retryTick, setRetryTick] = useState(0);
+  const [provinceRetryTick, setProvinceRetryTick] = useState(0);
+  const [regencyRetryTick, setRegencyRetryTick] = useState(0);
+  const [districtRetryTick, setDistrictRetryTick] = useState(0);
+  const [villageRetryTick, setVillageRetryTick] = useState(0);
 
   const [provinceId, setProvinceId] = useState('');
   const [regencyId, setRegencyId] = useState('');
@@ -73,7 +77,7 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
       });
 
     return () => controller.abort();
-  }, [retryTick]);
+  }, [provinceRetryTick]);
 
   useEffect(() => {
     if (!provinceId) return;
@@ -99,7 +103,7 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
       });
 
     return () => controller.abort();
-  }, [provinceId, retryTick]);
+  }, [provinceId, regencyRetryTick]);
 
   useEffect(() => {
     if (!regencyId) return;
@@ -125,7 +129,7 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
       });
 
     return () => controller.abort();
-  }, [regencyId, retryTick]);
+  }, [regencyId, districtRetryTick]);
 
   useEffect(() => {
     if (!districtId) return;
@@ -151,7 +155,7 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
       });
 
     return () => controller.abort();
-  }, [districtId, retryTick]);
+  }, [districtId, villageRetryTick]);
 
   const provName = provinces.find((p) => p.id === provinceId)?.name || '';
   const regName = regencies.find((r) => r.id === regencyId)?.name || '';
@@ -200,13 +204,24 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
             type="button"
             onClick={() => {
               setRegionError(null);
-              if (provinces.length === 0) setLoadingProvinces(true);
-              if (provinceId) setLoadingRegencies(true);
-              if (regencyId) setLoadingDistricts(true);
-              if (districtId) setLoadingVillages(true);
-              setRetryTick((t) => t + 1);
+              if (provinces.length === 0) {
+                setLoadingProvinces(true);
+                setProvinceRetryTick((t) => t + 1);
+              }
+              if (provinceId && regencies.length === 0) {
+                setLoadingRegencies(true);
+                setRegencyRetryTick((t) => t + 1);
+              }
+              if (regencyId && districts.length === 0) {
+                setLoadingDistricts(true);
+                setDistrictRetryTick((t) => t + 1);
+              }
+              if (districtId && villages.length === 0) {
+                setLoadingVillages(true);
+                setVillageRetryTick((t) => t + 1);
+              }
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100/60 transition"
+            className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100/60 transition"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Muat Ulang
           </button>
@@ -215,13 +230,17 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
         <div className="min-w-0">
-          <label className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
+          <label
+            htmlFor={`${idPrefix}-province`}
+            className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5"
+          >
             <span>
               Provinsi <span className="text-rose-600">*</span>
             </span>
             {loadingProvinces && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" />}
           </label>
           <select
+            id={`${idPrefix}-province`}
             required
             disabled={loadingProvinces}
             value={provinceId}
@@ -253,13 +272,17 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
         </div>
 
         <div className="min-w-0">
-          <label className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
+          <label
+            htmlFor={`${idPrefix}-regency`}
+            className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5"
+          >
             <span>
               Kabupaten / Kota <span className="text-rose-600">*</span>
             </span>
             {loadingRegencies && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" />}
           </label>
           <select
+            id={`${idPrefix}-regency`}
             required
             disabled={!provinceId || loadingRegencies}
             value={regencyId}
@@ -288,13 +311,17 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
         </div>
 
         <div className="min-w-0">
-          <label className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
+          <label
+            htmlFor={`${idPrefix}-district`}
+            className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5"
+          >
             <span>
               Kecamatan <span className="text-rose-600">*</span>
             </span>
             {loadingDistricts && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" />}
           </label>
           <select
+            id={`${idPrefix}-district`}
             required
             disabled={!regencyId || loadingDistricts}
             value={districtId}
@@ -320,13 +347,17 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
         </div>
 
         <div className="min-w-0">
-          <label className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
+          <label
+            htmlFor={`${idPrefix}-village`}
+            className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5"
+          >
             <span>
               Kelurahan / Desa <span className="text-rose-600">*</span>
             </span>
             {loadingVillages && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" />}
           </label>
           <select
+            id={`${idPrefix}-village`}
             required
             disabled={!districtId || loadingVillages}
             value={villageId}
@@ -345,10 +376,11 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
         </div>
 
         <div className="min-w-0">
-          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+          <label htmlFor={`${idPrefix}-rt`} className="block text-xs font-semibold text-slate-700 mb-1.5">
             RT <span className="text-rose-600">*</span>
           </label>
           <select
+            id={`${idPrefix}-rt`}
             required
             value={rtCustomMode ? LAINNYA_VALUE : rt}
             onChange={(e) => {
@@ -386,10 +418,11 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
         </div>
 
         <div className="min-w-0">
-          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+          <label htmlFor={`${idPrefix}-rw`} className="block text-xs font-semibold text-slate-700 mb-1.5">
             RW <span className="text-rose-600">*</span>
           </label>
           <select
+            id={`${idPrefix}-rw`}
             required
             value={rwCustomMode ? LAINNYA_VALUE : rw}
             onChange={(e) => {
@@ -428,10 +461,11 @@ export function IndonesianAddressFields({ onAddressChange }: IndonesianAddressFi
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+        <label htmlFor={`${idPrefix}-street`} className="block text-xs font-semibold text-slate-700 mb-1.5">
           Alamat Lengkap (Jalan / Dusun / Blok / Nomor Rumah) <span className="text-rose-600">*</span>
         </label>
         <input
+          id={`${idPrefix}-street`}
           required
           type="text"
           value={street}

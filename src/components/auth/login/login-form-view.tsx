@@ -288,14 +288,35 @@ export function LoginFormView({
         />
 
         {mode === 'register' && (
-          <PasswordInput
-            id="login-confirm-password"
-            label="Konfirmasi Kata Sandi"
-            value={confirmPassword}
-            onChange={onConfirmPasswordChange}
-            placeholder="Ulangi kata sandi"
-            autoComplete="new-password"
-          />
+          <div className="space-y-1.5">
+            <PasswordInput
+              id="login-confirm-password"
+              label="Konfirmasi Kata Sandi"
+              value={confirmPassword}
+              onChange={onConfirmPasswordChange}
+              placeholder="Ulangi kata sandi"
+              autoComplete="new-password"
+            />
+            {confirmPassword.length > 0 && (
+              <p
+                className={`text-[11px] font-medium flex items-center gap-1 ${
+                  password === confirmPassword ? 'text-emerald-700' : 'text-rose-600'
+                }`}
+              >
+                {password === confirmPassword ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>Konfirmasi kata sandi cocok.</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Konfirmasi kata sandi belum cocok.</span>
+                  </>
+                )}
+              </p>
+            )}
+          </div>
         )}
 
         {mode === 'login' && (
@@ -313,7 +334,7 @@ export function LoginFormView({
           type="submit"
           aria-busy={loading || undefined}
           disabled={
-            loading ||
+            isBusy ||
             !email.trim() ||
             !password.trim() ||
             (mode === 'register' && (!otpVerified || !fullName.trim() || !confirmPassword.trim())) ||

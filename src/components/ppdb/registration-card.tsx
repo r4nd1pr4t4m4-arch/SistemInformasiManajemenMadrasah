@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, CheckCircle2, Clock, Copy, Printer } from 'lucide-react';
 import { useInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 import { getPathwayLabel } from '@/lib/ppdb/pathways';
@@ -33,24 +33,67 @@ function getStatusBadgeClass(status: string): string {
   return 'bg-amber-100 text-amber-800 border-amber-200';
 }
 
+function formatSafeRegistrationDate(dateStr?: string | null): string {
+  if (!dateStr) return 'Terdaftar Hari Ini';
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return 'Terdaftar Hari Ini';
+  return parsed.toLocaleDateString('id-ID', {
+    dateStyle: 'long',
+  });
+}
+
+async function copyTextSafely(text: string): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Lanjut ke fallback textarea
+    }
+  }
+  if (typeof document === 'undefined') return false;
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function PpdbRegistrationCard({ data }: { data: RegistrationCardData }) {
   const school = useInstitutionSettings();
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
 
-  const formattedDate = data.createdAt
-    ? new Date(data.createdAt).toLocaleDateString('id-ID', {
-        dateStyle: 'long',
-      })
-    : 'Terdaftar Hari Ini';
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const formattedDate = formatSafeRegistrationDate(data.createdAt);
 
   async function handleCopyCode() {
-    try {
-      await navigator.clipboard.writeText(data.registrationNumber);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Abaikan jika clipboard tidak tersedia
+    const ok = await copyTextSafely(data.registrationNumber);
+    if (!ok) return;
+    setCopied(true);
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
     }
+    copyTimerRef.current = window.setTimeout(() => {
+      setCopied(false);
+      copyTimerRef.current = null;
+    }, 2000);
   }
 
   return (
@@ -81,7 +124,8 @@ export function PpdbRegistrationCard({ data }: { data: RegistrationCardData }) {
                 type="button"
                 onClick={handleCopyCode}
                 title="Salin Nomor Pendaftaran"
-                className="print:hidden inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-[11px] font-semibold transition"
+                aria-label="Salin Nomor Pendaftaran"
+                className="print:hidden min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-[11px] font-semibold transition"
               >
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copied ? 'Disalin' : 'Salin'}</span>
@@ -141,7 +185,7 @@ export function PpdbRegistrationCard({ data }: { data: RegistrationCardData }) {
           </div>
 
           {data.notes && (
-            <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/80 text-xs text-sky-900 break-words">
+            <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/80 text-xs text-sky-900 [overflow-wrap:anywhere]">
               <strong>Keterangan:</strong> {data.notes}
             </div>
           )}
@@ -187,7 +231,7 @@ export function PpdbRegistrationCard({ data }: { data: RegistrationCardData }) {
             <button
               type="button"
               onClick={() => window.print()}
-              className="print:hidden w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold transition shrink-0"
+              className="print:hidden w-full sm:w-auto min-h-[42px] inline-flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold transition shrink-0"
             >
               <Printer className="w-3.5 h-3.5" /> Cetak / Simpan PDF
             </button>

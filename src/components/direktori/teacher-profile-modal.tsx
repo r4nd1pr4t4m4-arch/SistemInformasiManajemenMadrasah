@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Award,
   BookOpen,
@@ -27,6 +27,46 @@ interface TeacherProfileModalProps {
   onPhotoError: () => void;
   onClose: () => void;
   onOpenAbstract: (teacher: PublicTeacherItem) => void;
+}
+
+function getSafeImageUrl(url: string | null | undefined): string | null {
+  const trimmed = url?.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('/') || trimmed.startsWith('data:image/')) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function copyTextSafely(text: string): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback ke execCommand
+    }
+  }
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
 }
 
 function getInitials(name: string | null | undefined): string {
@@ -69,7 +109,10 @@ function formatJoinInfo(joinDate: string | null | undefined): {
   return { label: formatted, tenure: '< 1 tahun pengabdian' };
 }
 
-function formatHistoryPeriod(startDate: string | null | undefined, endDate: string | null | undefined): string {
+function formatHistoryPeriod(
+  startDate: string | null | undefined,
+  endDate: string | null | undefined
+): string {
   const formatPart = (val: string | null | undefined) => {
     if (!val) return '';
     const d = new Date(val);
@@ -90,22 +133,28 @@ export function TeacherProfileModal({
   onOpenAbstract,
 }: TeacherProfileModalProps) {
   const [copiedId, setCopiedId] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
     }
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', onKeyDown);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, [onClose]);
 
-  const showPhoto = Boolean(teacher.photo_url) && !photoBroken;
-  const hasAbstract = Boolean((teacher.thesis_title || '').trim() || (teacher.thesis_abstract || '').trim());
+  const safePhotoUrl = getSafeImageUrl(teacher.photo_url);
+  const showPhoto = Boolean(safePhotoUrl) && !photoBroken;
+  const hasAbstract = Boolean(
+    (teacher.thesis_title || '').trim() || (teacher.thesis_abstract || '').trim()
+  );
   const subjects = teacher.subjects || [];
   const subjectGroups = teacher.subject_groups || [];
   const duties = teacher.additional_duties || [];
@@ -127,13 +176,11 @@ export function TeacherProfileModal({
   const degreeLabel = [teacher.education_level, teacher.major].filter(Boolean).join(' ').trim();
 
   async function handleCopyIdentifier(value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopiedId(true);
-      setTimeout(() => setCopiedId(false), 1800);
-    } catch {
-      // Ignore clipboard errors when blocked
-    }
+    const ok = await copyTextSafely(value);
+    if (!ok) return;
+    setCopiedId(true);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopiedId(false), 1800);
   }
 
   return (
@@ -145,7 +192,7 @@ export function TeacherProfileModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden border border-slate-200/90 flex flex-col max-h-[90vh]"
+        className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden border border-slate-200/90 flex flex-col max-h-[90dvh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Hero */}
@@ -160,20 +207,23 @@ export function TeacherProfileModal({
           />
 
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             aria-label="Tutup modal profil singkat"
-            className="absolute top-4 right-4 z-10 p-2 rounded-xl text-emerald-100 hover:text-white hover:bg-white/15 transition"
+            className="absolute top-3.5 right-3.5 z-10 min-w-[38px] min-h-[38px] inline-flex items-center justify-center rounded-xl text-emerald-100 hover:text-white hover:bg-white/15 transition"
           >
             <X className="w-5 h-5" />
           </button>
 
-          <div className="relative flex flex-col sm:flex-row sm:items-center gap-4 pr-8">
+          <div className="relative flex flex-col sm:flex-row sm:items-center gap-4 pr-10">
             <div className="relative shrink-0 w-fit">
-              {showPhoto ? (
+              {showPhoto && safePhotoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={teacher.photo_url!}
-                  alt={teacher.full_name}
+                  src={safePhotoUrl}
+                  alt={teacher.full_name || 'Foto GTK'}
+                  decoding="async"
                   onError={onPhotoError}
                   className="w-20 h-20 rounded-2xl object-cover border-2 border-white/40 shadow-lg bg-emerald-900/30"
                 />
@@ -190,7 +240,7 @@ export function TeacherProfileModal({
 
             <div className="min-w-0 flex-1 space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-emerald-50 border border-white/20 backdrop-blur-xs">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-emerald-50 border border-white/20 backdrop-blur-xs max-w-full">
                   <Sparkles className="w-3 h-3 shrink-0" />
                   <span className="truncate max-w-[220px]">{badgeTitle}</span>
                 </span>
@@ -203,7 +253,7 @@ export function TeacherProfileModal({
 
               <h2
                 id="teacher-profile-modal-title"
-                className="text-xl sm:text-2xl font-bold leading-tight tracking-tight break-words"
+                className="text-xl sm:text-2xl font-bold leading-tight tracking-tight [overflow-wrap:anywhere]"
               >
                 {teacher.full_name || 'Nama GTK'}
               </h2>
@@ -225,22 +275,23 @@ export function TeacherProfileModal({
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-5 bg-slate-50/40">
+        <div className="p-5 sm:p-6 overflow-y-auto overscroll-contain flex-1 space-y-5 bg-slate-50/40">
           {/* Quick Highlight Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {/* Identitas NIP / NUPTK */}
-            <div className="rounded-2xl bg-white border border-slate-200/80 p-3.5 shadow-2xs space-y-1">
+            <div className="rounded-2xl bg-white border border-slate-200/80 p-3.5 shadow-2xs space-y-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  <IdCard className="w-3.5 h-3.5 text-emerald-600" />
+                  <IdCard className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                   <span>{primaryIdentifier ? primaryIdentifier.label : 'Identitas'}</span>
                 </span>
                 {primaryIdentifier && (
                   <button
                     type="button"
-                    onClick={() => handleCopyIdentifier(primaryIdentifier.value)}
+                    onClick={() => void handleCopyIdentifier(primaryIdentifier.value)}
                     title={`Salin ${primaryIdentifier.label}`}
-                    className="p-1 rounded-md text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition"
+                    aria-label={`Salin ${primaryIdentifier.label}`}
+                    className="min-w-[30px] min-h-[30px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition"
                   >
                     {copiedId ? (
                       <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -261,9 +312,9 @@ export function TeacherProfileModal({
             </div>
 
             {/* Masa Pengabdian */}
-            <div className="rounded-2xl bg-white border border-slate-200/80 p-3.5 shadow-2xs space-y-1">
+            <div className="rounded-2xl bg-white border border-slate-200/80 p-3.5 shadow-2xs space-y-1 min-w-0">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span>Bergabung</span>
               </span>
               <p className="text-xs sm:text-sm font-semibold text-slate-800">{joinInfo.label}</p>
@@ -273,9 +324,9 @@ export function TeacherProfileModal({
             </div>
 
             {/* Kualifikasi Akademik */}
-            <div className="rounded-2xl bg-white border border-slate-200/80 p-3.5 shadow-2xs space-y-1">
+            <div className="rounded-2xl bg-white border border-slate-200/80 p-3.5 shadow-2xs space-y-1 min-w-0">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                <GraduationCap className="w-3.5 h-3.5 text-emerald-600" />
+                <GraduationCap className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span>Pendidikan</span>
               </span>
               <p className="text-xs sm:text-sm font-semibold text-slate-800 truncate">
@@ -291,7 +342,7 @@ export function TeacherProfileModal({
           {/* Bidang Studi & Amanah */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Bidang Studi / Rumpun */}
-            <div className="rounded-2xl bg-white border border-slate-200/80 p-4 space-y-3">
+            <div className="rounded-2xl bg-white border border-slate-200/80 p-4 space-y-3 min-w-0">
               <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
                 <Layers className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span>Bidang Studi &amp; Pengajaran</span>
@@ -299,9 +350,9 @@ export function TeacherProfileModal({
 
               {subjects.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
-                  {subjects.map((subject) => (
+                  {subjects.map((subject, idx) => (
                     <span
-                      key={subject}
+                      key={`${subject}-${idx}`}
                       className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200/80 text-xs font-semibold"
                     >
                       {subject}
@@ -319,9 +370,9 @@ export function TeacherProfileModal({
               {subjectGroups.length > 0 && (
                 <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
                   <span className="text-[11px] font-medium text-slate-400 mr-1">Rumpun:</span>
-                  {subjectGroups.map((group) => (
+                  {subjectGroups.map((group, idx) => (
                     <span
-                      key={group}
+                      key={`${group}-${idx}`}
                       className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[11px] font-medium"
                     >
                       {group}
@@ -333,9 +384,9 @@ export function TeacherProfileModal({
               {taughtClasses.length > 0 && (
                 <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
                   <span className="text-[11px] font-medium text-slate-400 mr-1">Kelas:</span>
-                  {taughtClasses.map((cls) => (
+                  {taughtClasses.map((cls, idx) => (
                     <span
-                      key={cls}
+                      key={`${cls}-${idx}`}
                       className="px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200/70 text-[11px] font-semibold"
                     >
                       {cls}
@@ -346,7 +397,7 @@ export function TeacherProfileModal({
             </div>
 
             {/* Tugas Tambahan */}
-            <div className="rounded-2xl bg-white border border-slate-200/80 p-4 space-y-3">
+            <div className="rounded-2xl bg-white border border-slate-200/80 p-4 space-y-3 min-w-0">
               <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
                 <Briefcase className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span>Tugas Tambahan &amp; Amanah</span>
@@ -354,13 +405,13 @@ export function TeacherProfileModal({
 
               {duties.length > 0 ? (
                 <ul className="space-y-2">
-                  {duties.map((duty) => (
+                  {duties.map((duty, idx) => (
                     <li
-                      key={duty}
-                      className="flex items-start gap-2 text-xs sm:text-[13px] font-medium text-slate-700"
+                      key={`${duty}-${idx}`}
+                      className="flex items-start gap-2 text-xs sm:text-[13px] font-medium text-slate-700 min-w-0"
                     >
                       <Award className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                      <span className="leading-snug break-words">{duty}</span>
+                      <span className="leading-snug [overflow-wrap:anywhere]">{duty}</span>
                     </li>
                   ))}
                 </ul>
@@ -380,11 +431,11 @@ export function TeacherProfileModal({
             </p>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="space-y-0.5 min-w-0">
-                <p className="text-sm font-bold text-slate-900 break-words">
+                <p className="text-sm font-bold text-slate-900 [overflow-wrap:anywhere]">
                   {degreeLabel || 'Data pendidikan belum dilengkapi'}
                 </p>
                 {teacher.last_campus && (
-                  <p className="text-xs sm:text-sm text-slate-600 break-words">
+                  <p className="text-xs sm:text-sm text-slate-600 [overflow-wrap:anywhere]">
                     {teacher.last_campus}
                   </p>
                 )}
@@ -413,16 +464,16 @@ export function TeacherProfileModal({
               </div>
 
               {teacher.thesis_title && (
-                <p className="text-xs sm:text-sm font-semibold italic text-slate-800 leading-relaxed break-words">
+                <p className="text-xs sm:text-sm font-semibold italic text-slate-800 leading-relaxed [overflow-wrap:anywhere]">
                   &ldquo;{teacher.thesis_title}&rdquo;
                 </p>
               )}
 
               {teacher.thesis_keywords && teacher.thesis_keywords.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
-                  {teacher.thesis_keywords.slice(0, 6).map((kw) => (
+                  {teacher.thesis_keywords.slice(0, 6).map((kw, idx) => (
                     <span
-                      key={kw}
+                      key={`${kw}-${idx}`}
                       className="px-2.5 py-0.5 rounded-md bg-white/85 border border-emerald-200/70 text-[11px] font-medium text-emerald-900"
                     >
                       #{kw}
@@ -435,9 +486,9 @@ export function TeacherProfileModal({
                 <button
                   type="button"
                   onClick={() => onOpenAbstract(teacher)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 transition shadow-2xs"
+                  className="min-h-[38px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 transition shadow-2xs"
                 >
-                  <FileText className="w-3.5 h-3.5" />
+                  <FileText className="w-3.5 h-3.5 shrink-0" />
                   <span>Baca Abstrak Lengkap</span>
                 </button>
                 {teacher.thesis_article_url &&
@@ -446,9 +497,9 @@ export function TeacherProfileModal({
                       href={teacher.thesis_article_url.trim()}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-emerald-200 text-emerald-800 text-xs font-semibold hover:bg-emerald-50 transition"
+                      className="min-h-[38px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white border border-emerald-200 text-emerald-800 text-xs font-semibold hover:bg-emerald-50 transition"
                     >
-                      <ExternalLink className="w-3.5 h-3.5" />
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                       <span>Artikel Ilmiah</span>
                     </a>
                   )}
@@ -469,7 +520,7 @@ export function TeacherProfileModal({
                   <li key={item.id} className="relative">
                     <span className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-emerald-600 ring-4 ring-white" />
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                      <p className="text-xs sm:text-sm font-bold text-slate-800 break-words">
+                      <p className="text-xs sm:text-sm font-bold text-slate-800 [overflow-wrap:anywhere]">
                         {item.position_title}
                       </p>
                       <span className="text-[11px] font-medium text-slate-400 tabular-nums shrink-0">
@@ -477,7 +528,7 @@ export function TeacherProfileModal({
                       </span>
                     </div>
                     {item.unit_or_institution && (
-                      <p className="text-xs text-slate-500 break-words">
+                      <p className="text-xs text-slate-500 [overflow-wrap:anywhere]">
                         {item.unit_or_institution}
                       </p>
                     )}
@@ -489,25 +540,25 @@ export function TeacherProfileModal({
         </div>
 
         {/* Footer */}
-        <div className="px-5 sm:px-6 py-4 border-t border-slate-100 bg-white flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <span className="text-[11px] text-slate-400">
+        <div className="px-5 sm:px-6 py-3.5 border-t border-slate-100 bg-white flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+          <span className="text-[11px] text-slate-400 hidden sm:inline">
             Direktori Resmi GTK &bull; Informasi Publik
           </span>
-          <div className="flex items-center gap-2.5 ml-auto">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto sm:ml-auto">
             {hasAbstract && (
               <button
                 type="button"
                 onClick={() => onOpenAbstract(teacher)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-xs sm:text-sm font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                className="flex-1 sm:flex-none min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-xs sm:text-sm font-semibold text-emerald-800 hover:bg-emerald-100 transition"
               >
-                <FileText className="w-4 h-4" />
+                <FileText className="w-4 h-4 shrink-0" />
                 <span>Abstrak Skripsi</span>
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2 rounded-xl bg-emerald-700 text-white text-xs sm:text-sm font-semibold hover:bg-emerald-800 transition"
+              className="flex-1 sm:flex-none min-h-[40px] px-5 py-2 rounded-xl bg-emerald-700 text-white text-xs sm:text-sm font-semibold hover:bg-emerald-800 transition"
             >
               Tutup
             </button>

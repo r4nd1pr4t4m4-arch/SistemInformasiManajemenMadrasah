@@ -46,11 +46,11 @@ function LoginCardContent() {
   const captcha = useSmartCaptcha(mode === 'register' || loginCaptchaRequired);
 
   useEffect(() => {
-    let active = true;
-    fetch('/api/auth/login', { cache: 'no-store' })
+    const controller = new AbortController();
+    fetch('/api/auth/login', { cache: 'no-store', signal: controller.signal })
       .then((res) => res.json().catch(() => null))
       .then((data: LoginStatusResponse | null) => {
-        if (!active || !data) return;
+        if (controller.signal.aborted || !data) return;
         if (data.requireCaptcha) setLoginCaptchaRequired(true);
         if (data.isLocked && data.remainingLockSeconds) {
           setLockoutSeconds(data.remainingLockSeconds);
@@ -58,7 +58,7 @@ function LoginCardContent() {
       })
       .catch(() => {});
     return () => {
-      active = false;
+      controller.abort();
     };
   }, []);
 

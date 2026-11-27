@@ -254,14 +254,14 @@ export function PortalMobileNav({
     <nav
       ref={navRef}
       aria-label="Navigasi Cepat Mobile"
-      className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 py-1.5 shadow-[0_-6px_24px_-12px_rgba(15,23,42,0.12)]"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] shadow-[0_-6px_24px_-12px_rgba(15,23,42,0.12)]"
     >
       {/* Dropdown Popover di atas Bottom Navbar */}
       {activeDropdownSlot && (
         <div
           role="menu"
           aria-label={`Opsi ${activeDropdownSlot.label}`}
-          className="absolute bottom-[calc(100%+8px)] left-3 right-3 max-w-md mx-auto rounded-2xl bg-white border border-slate-200/90 shadow-2xl p-2 space-y-1"
+          className="absolute bottom-[calc(100%+8px)] left-3 right-3 max-w-md max-h-[65dvh] overflow-y-auto mx-auto rounded-2xl bg-white border border-slate-200/90 shadow-2xl p-2 space-y-1"
         >
           <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-100">
             <span className="text-xs font-bold text-slate-900">
@@ -317,7 +317,7 @@ export function PortalMobileNav({
                 aria-expanded={isOpen}
                 aria-haspopup="menu"
                 onClick={() => setOpenDropdown((prev) => (prev === slot.key ? null : slot.key))}
-                className={`flex flex-col items-center justify-center gap-0.5 py-1.5 px-1 rounded-xl text-[10px] font-semibold transition ${
+                className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 py-1.5 px-1 rounded-xl text-[10px] font-semibold transition ${
                   isOpen || hasActiveChild
                     ? 'bg-emerald-50 text-emerald-700'
                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
@@ -345,7 +345,7 @@ export function PortalMobileNav({
               key={slot.key}
               href={slot.href}
               onClick={() => setOpenDropdown(null)}
-              className={`flex flex-col items-center justify-center gap-0.5 py-1.5 px-1 rounded-xl text-[10px] font-semibold transition ${
+              className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 py-1.5 px-1 rounded-xl text-[10px] font-semibold transition ${
                 active
                   ? 'bg-emerald-50 text-emerald-700'
                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
@@ -364,7 +364,7 @@ export function PortalMobileNav({
             onOpenMenu();
           }}
           aria-label="Buka semua menu portal"
-          className="flex flex-col items-center justify-center gap-0.5 py-1.5 px-1 rounded-xl text-[10px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
+          className="min-h-[44px] flex flex-col items-center justify-center gap-0.5 py-1.5 px-1 rounded-xl text-[10px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
         >
           <Menu className="w-4 h-4" />
           <span>Menu</span>

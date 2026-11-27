@@ -32,6 +32,7 @@ export default function GantiKataSandiPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [verificationCode, setVerificationCode] = useState('');
   const [selectedFactorId, setSelectedFactorId] = useState('');
 
@@ -43,16 +44,29 @@ export default function GantiKataSandiPage() {
   );
 
   useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = window.setInterval(() => {
+      setResendCooldown((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCooldown]);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
     async function init() {
       if (!isSupabaseConfigured()) {
-        setLoading(false);
+        if (active) setLoading(false);
         return;
       }
       try {
         const [meRes, mfaResult] = await Promise.all([
-          fetch('/api/auth/me').then((r) => (r.ok ? r.json() : null)),
+          fetch('/api/auth/me', { signal: controller.signal, cache: 'no-store' }).then((r) =>
+            r.ok ? r.json() : null
+          ),
           createSupabaseBrowserClient().auth.mfa.listFactors(),
         ]);
+        if (!active) return;
 
         if (meRes?.user) {
           setEmail(meRes.user.email || '');
@@ -61,7 +75,7 @@ export default function GantiKataSandiPage() {
           const {
             data: { user },
           } = await createSupabaseBrowserClient().auth.getUser();
-          if (user?.email) setEmail(user.email);
+          if (active && user?.email) setEmail(user.email);
         }
 
         const verifiedTotp = (mfaResult.data?.totp || []).filter((f) => f.status === 'verified');
@@ -69,17 +83,27 @@ export default function GantiKataSandiPage() {
         if (verifiedTotp.length > 0) {
           setSelectedFactorId(verifiedTotp[0].id);
         }
-      } catch {
-        setFeedback({ type: 'error', text: 'Gagal memuat data keamanan akun. Silakan muat ulang halaman.' });
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        if (active) {
+          setFeedback({
+            type: 'error',
+            text: 'Gagal memuat data keamanan akun. Silakan muat ulang halaman.',
+          });
+        }
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
-    init();
+    void init();
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, []);
 
   async function handleSendOtp() {
-    if (!email) return;
+    if (!email || sendingOtp || resendCooldown > 0) return;
     setFeedback(null);
     setSendingOtp(true);
     try {
@@ -89,6 +113,7 @@ export default function GantiKataSandiPage() {
         setFeedback({ type: 'error', text: data.error || 'Gagal mengirim kode OTP.' });
       } else {
         setOtpSent(true);
+        setResendCooldown(60);
         setFeedback({
           type: 'success',
           text:
@@ -309,7 +334,7 @@ export default function GantiKataSandiPage() {
                 </div>
                 <button
                   type="button"
-                  disabled={sendingOtp || !email}
+                  disabled={sendingOtp || !email || resendCooldown > 0}
                   onClick={handleSendOtp}
                   className="w-full sm:w-auto min-h-[40px] inline-flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-emerald-700 disabled:opacity-60 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition shrink-0"
                 >
@@ -318,7 +343,13 @@ export default function GantiKataSandiPage() {
                   ) : (
                     <Send className="w-3.5 h-3.5" />
                   )}
-                  {sendingOtp ? 'Mengirim...' : otpSent ? 'Kirim Ulang OTP' : 'Kirim Kode OTP'}
+                  {sendingOtp
+                    ? 'Mengirim...'
+                    : resendCooldown > 0
+                      ? `Kirim Ulang (${resendCooldown}d)`
+                      : otpSent
+                        ? 'Kirim Ulang OTP'
+                        : 'Kirim Kode OTP'}
                 </button>
               </div>
               <div>
@@ -395,18 +426,41 @@ export default function GantiKataSandiPage() {
             userName={fullName}
           />
 
-          <PasswordInput
-            label="Konfirmasi Kata Sandi Baru"
-            value={confirmPassword}
-            onChange={setConfirmPassword}
-            placeholder="Ulangi kata sandi baru"
-          />
+          <div className="space-y-1.5">
+            <PasswordInput
+              label="Konfirmasi Kata Sandi Baru"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              placeholder="Ulangi kata sandi baru"
+            />
+            {confirmPassword.length > 0 && (
+              <p
+                className={`text-[11px] font-medium flex items-center gap-1 ${
+                  newPassword === confirmPassword ? 'text-emerald-700' : 'text-rose-600'
+                }`}
+              >
+                {newPassword === confirmPassword ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>Konfirmasi kata sandi cocok.</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Konfirmasi kata sandi belum cocok.</span>
+                  </>
+                )}
+              </p>
+            )}
+          </div>
 
           <button
             type="submit"
             aria-busy={submitting || undefined}
             disabled={
               submitting ||
+              sendingOtp ||
+              !currentPassword.trim() ||
               (method === 'mfa' && factors.length === 0) ||
               !newPassword.trim() ||
               !confirmPassword.trim()

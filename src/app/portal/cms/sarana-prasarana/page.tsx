@@ -160,11 +160,11 @@ export default function ManajemenSaranaPrasaranaPage() {
   useEffect(() => {
     if (!confirmDeleteItem) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setConfirmDeleteItem(null);
+      if (e.key === 'Escape' && !deletingId) setConfirmDeleteItem(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [confirmDeleteItem]);
+  }, [confirmDeleteItem, deletingId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -541,7 +541,7 @@ export default function ManajemenSaranaPrasaranaPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Cari fasilitas..."
                 aria-label="Cari sarana dan prasarana"
-                className="w-full min-h-[40px] pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                className="w-full min-h-[40px] pl-9 pr-8 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
               />
               {search && (
                 <button
@@ -683,7 +683,7 @@ export default function ManajemenSaranaPrasaranaPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
           >
             <h2 id="delete-facility-title" className="text-base font-bold text-slate-900">
               Hapus Sarana &amp; Prasarana?

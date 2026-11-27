@@ -1,7 +1,7 @@
 'use client';
 
 import type { FormEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Loader2, RotateCcw, Search } from 'lucide-react';
 import { PpdbRegistrationCard, RegistrationCardData } from '@/components/ppdb/registration-card';
 import { INPUT_CLASS } from './types';
@@ -15,24 +15,40 @@ export function MutasiStatusSection({ checkCode, onCheckCodeChange }: MutasiStat
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [checkCard, setCheckCard] = useState<RegistrationCardData | null>(null);
+  const checkAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      checkAbortRef.current?.abort();
+    };
+  }, []);
 
   async function handleCheckStatus(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const normalizedCode = checkCode.trim().toUpperCase();
     if (!normalizedCode) {
+      checkAbortRef.current?.abort();
       setCheckError('Masukkan nomor pendaftaran mutasi Anda terlebih dahulu.');
       setCheckCard(null);
       return;
     }
+
+    checkAbortRef.current?.abort();
+    const controller = new AbortController();
+    checkAbortRef.current = controller;
 
     setChecking(true);
     setCheckError(null);
     setCheckCard(null);
 
     try {
-      const res = await fetch(`/api/ppdb?code=${encodeURIComponent(normalizedCode)}`);
+      const res = await fetch(`/api/ppdb?code=${encodeURIComponent(normalizedCode)}`, {
+        signal: controller.signal,
+        cache: 'no-store',
+      });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      if (controller.signal.aborted) return;
+      if (!res.ok || !data.registration) {
         setCheckError(data.error || 'Nomor pendaftaran tidak ditemukan.');
       } else {
         const reg = data.registration;
@@ -55,10 +71,15 @@ export function MutasiStatusSection({ checkCode, onCheckCodeChange }: MutasiStat
           ),
         });
       }
-    } catch {
-      setCheckError('Gagal terhubung ke server. Periksa koneksi internet Anda.');
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      if (!controller.signal.aborted) {
+        setCheckError('Gagal terhubung ke server. Periksa koneksi internet Anda.');
+      }
     } finally {
-      setChecking(false);
+      if (!controller.signal.aborted) {
+        setChecking(false);
+      }
     }
   }
 
@@ -113,11 +134,13 @@ export function MutasiStatusSection({ checkCode, onCheckCodeChange }: MutasiStat
             <button
               type="button"
               onClick={() => {
+                checkAbortRef.current?.abort();
+                setChecking(false);
                 setCheckCard(null);
                 onCheckCodeChange('');
                 setCheckError(null);
               }}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-emerald-700 transition"
+              className="min-h-[36px] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/70 transition"
             >
               <RotateCcw className="w-3.5 h-3.5" /> Cari Nomor Lain
             </button>

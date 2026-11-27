@@ -183,7 +183,7 @@ export function AkademikModal({
     >
       <div
         ref={dialogRef}
-        className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
+        className="bg-white rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-xl border border-slate-200"
       >
         <div className="flex items-start justify-between gap-3">
           <h3 className="text-base font-bold text-slate-900 leading-snug">{title}</h3>

@@ -1,8 +1,15 @@
+import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { PublicShell } from '@/components/layout/public-shell';
 import { PpdbContent } from '@/components/ppdb/ppdb-content';
+
+export const metadata: Metadata = {
+  title: 'Penerimaan Peserta Didik Baru (PPDB)',
+  description:
+    'Portal pendaftaran PPDB online. Pilih jalur pendaftaran, lengkapi biodata dan berkas persyaratan, cek status seleksi, serta cetak Kartu Bukti Pendaftaran.',
+};
 
 export default function PpdbPage() {
   return (

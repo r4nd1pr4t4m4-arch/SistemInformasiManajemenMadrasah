@@ -730,7 +730,7 @@ export default function UserNotificationsPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-auto"
+            className="bg-white rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-auto"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">

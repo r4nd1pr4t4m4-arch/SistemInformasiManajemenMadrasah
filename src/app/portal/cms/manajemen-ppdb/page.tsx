@@ -37,7 +37,7 @@ interface ToastState {
 }
 
 const INPUT_CLASS =
-  'w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm text-slate-900 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600';
+  'w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600';
 
 export default function ManajemenPpdbPage() {
   const { hasPermission } = usePortalSession();
@@ -132,11 +132,11 @@ export default function ManajemenPpdbPage() {
   useEffect(() => {
     if (!confirmDeletePeriod) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setConfirmDeletePeriod(null);
+      if (e.key === 'Escape' && !deletingId) setConfirmDeletePeriod(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [confirmDeletePeriod]);
+  }, [confirmDeletePeriod, deletingId]);
 
   const totalQuota =
     (Number(form.pathway_quotas.DOMISILI) || 0) +
@@ -562,7 +562,7 @@ export default function ManajemenPpdbPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
           >
             <h2 id="delete-period-title" className="text-base font-bold text-slate-900">
               Hapus Periode PPDB?

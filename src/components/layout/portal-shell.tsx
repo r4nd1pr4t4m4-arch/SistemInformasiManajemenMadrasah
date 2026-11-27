@@ -1,7 +1,6 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { InstitutionLogo } from '@/components/ui/institution-logo';
@@ -82,6 +81,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   const [loggingOut, setLoggingOut] = useState(false);
   const [menuSearch, setMenuSearch] = useState('');
   const [commandOpen, setCommandOpen] = useState(false);
+  const [brokenAvatarUrl, setBrokenAvatarUrl] = useState<string | null>(null);
   const logoutDialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(logoutDialogRef, logoutModalOpen);
 
@@ -123,11 +123,9 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Lock body scroll & close mobile drawer / logout modal on Escape
+  // Close mobile drawer / logout modal on Escape (scroll lock is managed globally via CSS :has)
   useEffect(() => {
     if (!sidebarOpen && !logoutModalOpen) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -140,7 +138,6 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
-      document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [sidebarOpen, logoutModalOpen, loggingOut]);
@@ -441,7 +438,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             onChange={(e) => setMenuSearch(e.target.value)}
             placeholder="Cari menu cepat..."
             aria-label="Cari menu portal"
-            className="w-full pl-8 pr-7 py-2 rounded-xl border border-slate-200/80 bg-white/85 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full pl-8 pr-7 py-2 rounded-xl border border-slate-200/80 bg-white/85 text-sm lg:text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
           {menuSearch && (
             <button
@@ -721,17 +718,20 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
                 aria-label="Profil Akun"
                 className="flex items-center gap-2.5 bg-white/85 hover:bg-white border border-slate-200/80 rounded-xl p-1.5 sm:px-3 sm:py-1.5 transition"
               >
-                {user.avatarUrl ? (
-                  <Image
-                    src={user.avatarUrl}
+                {user.avatarUrl &&
+                brokenAvatarUrl !== user.avatarUrl &&
+                /^(https?:\/\/|\/|data:image\/)/i.test(user.avatarUrl.trim()) ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={user.avatarUrl.trim()}
                     alt={user.fullName}
                     width={28}
                     height={28}
-                    unoptimized={user.avatarUrl.startsWith('/api/')}
-                    className="w-7 h-7 rounded-full object-cover border border-emerald-200"
+                    onError={() => setBrokenAvatarUrl(user.avatarUrl || null)}
+                    className="w-7 h-7 rounded-full object-cover border border-emerald-200 shrink-0"
                   />
                 ) : (
-                  <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[11px] font-bold">
+                  <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[11px] font-bold shrink-0">
                     {(user.fullName || 'U').slice(0, 2).toUpperCase()}
                   </div>
                 )}
@@ -856,7 +856,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
           <div
             ref={logoutDialogRef}
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90dvh] overflow-y-auto"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">

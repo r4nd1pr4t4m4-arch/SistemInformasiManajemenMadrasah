@@ -35,6 +35,7 @@ export function ProfileOverviewAndAvatarSection({
     <div className="md:col-span-5 glass-card rounded-3xl p-4 sm:p-6 space-y-5 h-fit min-w-0">
       <div className="flex items-center gap-4">
         {profile.avatar_url ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={profile.avatar_url}
             alt={profile.full_name}
@@ -95,6 +96,7 @@ export function ProfileOverviewAndAvatarSection({
                 <strong>Menunggu Persetujuan Admin:</strong> Foto yang Anda unggah sedang ditinjau. Anda tidak dapat mengunggah foto kembali sebelum pengajuan ini disetujui atau ditolak.
               </span>
             </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={profile.pendingAvatarRequest.new_avatar_url}
               alt="Pratinjau pengajuan foto"

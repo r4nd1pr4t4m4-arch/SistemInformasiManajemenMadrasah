@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Award,
@@ -76,7 +76,12 @@ export default function LegerERaportPage() {
   const [error, setError] = useState<string | null>(null);
   const [editingRow, setEditingRow] = useState<LegerRow | null>(null);
   const [saving, setSaving] = useState(false);
+  const [downloadingStudentId, setDownloadingStudentId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const lastFetchedClassRef = useRef<string | null>(null);
 
   const [rcForm, setRcForm] = useState({
     attitude_spiritual: '',
@@ -91,35 +96,71 @@ export default function LegerERaportPage() {
     is_published: false,
   });
 
-  const showToast = (text: string, type: 'ok' | 'err' = 'ok') => {
+  const showToast = useCallback((text: string, type: 'ok' | 'err' = 'ok') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ type, text });
-    setTimeout(() => setToast(null), 4000);
-  };
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!editingRow) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving) setEditingRow(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editingRow, saving]);
 
   const loadLeger = useCallback(async (targetClassId?: string) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError(null);
     try {
       const qs = targetClassId ? `?classroomId=${encodeURIComponent(targetClassId)}` : '';
-      const res = await fetch(`/api/penilaian/leger${qs}`, { cache: 'no-store' });
+      const res = await fetch(`/api/penilaian/leger${qs}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const json = await res.json().catch(() => ({}));
+      if (controller.signal.aborted) return;
       if (!res.ok) {
         setError(json.error || 'Gagal memuat data Leger & E-Raport.');
       } else {
         setData(json as LegerPayload);
+        const resolvedId = json.selectedClassroom?.id || targetClassId || '';
+        lastFetchedClassRef.current = resolvedId;
         if (!targetClassId && json.selectedClassroom?.id) {
           setClassroomId(json.selectedClassroom.id);
         }
       }
-    } catch {
-      setError('Gagal terhubung ke server.');
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      if (!controller.signal.aborted) {
+        setError('Gagal terhubung ke server.');
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadLeger(classroomId || undefined);
+    if (classroomId && lastFetchedClassRef.current === classroomId) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void loadLeger(classroomId || undefined);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [classroomId, loadLeger]);
 
   function openEditModal(row: LegerRow) {
@@ -171,42 +212,51 @@ export default function LegerERaportPage() {
       showToast(`Catatan E-Raport ${editingRow.full_name} berhasil disimpan.`);
       setEditingRow(null);
       await loadLeger(data.selectedClassroom.id);
+    } catch {
+      showToast('Terjadi kesalahan jaringan saat menyimpan E-Raport.', 'err');
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDownloadStudentPdf(row: LegerRow) {
-    if (!data?.selectedClassroom) return;
-    await generateConsolidatedERaportPdf({
-      studentId: row.student_id,
-      fullName: row.full_name,
-      nis: row.nis,
-      nisn: row.nisn,
-      classroomName: data.selectedClassroom.name,
-      gradeLevel: data.selectedClassroom.grade_level,
-      homeroomTeacherName: data.selectedClassroom.homeroom_teacher_name,
-      academicYearName: data.academicYear.name,
-      semester: data.academicYear.semester,
-      subjects: data.subjects.map((sub) => ({
-        subjectId: sub.id,
-        subjectCode: sub.code,
-        subjectName: sub.name,
-        kkm: sub.kkm,
-        score: row.subjectScores[sub.id] ?? null,
-      })),
-      attendance: row.attendance,
-      attitudeSpiritual: row.reportCard?.attitude_spiritual,
-      attitudeSocial: row.reportCard?.attitude_social,
-      p5Summary: row.reportCard?.p5_summary,
-      extracurriculars: Array.isArray(row.reportCard?.extracurricular_notes)
-        ? row.reportCard?.extracurricular_notes
-        : [],
-      achievementsNotes: row.reportCard?.achievements_notes,
-      homeroomNotes: row.reportCard?.homeroom_notes,
-      promotionStatus: row.reportCard?.promotion_status,
-      nextGradeLabel: row.reportCard?.next_grade_label,
-    });
+    if (!data?.selectedClassroom || downloadingStudentId) return;
+    setDownloadingStudentId(row.student_id);
+    try {
+      await generateConsolidatedERaportPdf({
+        studentId: row.student_id,
+        fullName: row.full_name,
+        nis: row.nis,
+        nisn: row.nisn,
+        classroomName: data.selectedClassroom.name,
+        gradeLevel: data.selectedClassroom.grade_level,
+        homeroomTeacherName: data.selectedClassroom.homeroom_teacher_name,
+        academicYearName: data.academicYear.name,
+        semester: data.academicYear.semester,
+        subjects: data.subjects.map((sub) => ({
+          subjectId: sub.id,
+          subjectCode: sub.code,
+          subjectName: sub.name,
+          kkm: sub.kkm,
+          score: row.subjectScores[sub.id] ?? null,
+        })),
+        attendance: row.attendance,
+        attitudeSpiritual: row.reportCard?.attitude_spiritual,
+        attitudeSocial: row.reportCard?.attitude_social,
+        p5Summary: row.reportCard?.p5_summary,
+        extracurriculars: Array.isArray(row.reportCard?.extracurricular_notes)
+          ? row.reportCard?.extracurricular_notes
+          : [],
+        achievementsNotes: row.reportCard?.achievements_notes,
+        homeroomNotes: row.reportCard?.homeroom_notes,
+        promotionStatus: row.reportCard?.promotion_status,
+        nextGradeLabel: row.reportCard?.next_grade_label,
+      });
+    } catch {
+      showToast('Gagal membuat dokumen PDF E-Raport.', 'err');
+    } finally {
+      setDownloadingStudentId(null);
+    }
   }
 
   function handleExportLegerExcel() {
@@ -377,11 +427,17 @@ export default function LegerERaportPage() {
                       )}
                       <button
                         type="button"
+                        disabled={downloadingStudentId === row.student_id}
                         onClick={() => void handleDownloadStudentPdf(row)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-emerald-700 text-white font-semibold"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold transition"
                         title="Cetak Buku E-Raport PDF"
                       >
-                        <Download className="w-3 h-3" /> PDF
+                        {downloadingStudentId === row.student_id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Download className="w-3 h-3" />
+                        )}
+                        PDF
                       </button>
                     </td>
                   </tr>
@@ -402,7 +458,7 @@ export default function LegerERaportPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4 text-xs"
+            className="w-full max-w-xl max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 text-xs"
           >
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
