@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertCircle,
   Building2,
@@ -40,6 +40,26 @@ import {
 import { generateOfficialLetterPdf } from '@/lib/domain/official-letter-pdf';
 
 type PublicPersuratanTab = 'DROPBOX' | 'TRACKING' | 'EDARAN';
+
+const TAB_TO_SLUG: Record<PublicPersuratanTab, string> = {
+  DROPBOX: 'dropbox',
+  TRACKING: 'lacak',
+  EDARAN: 'edaran',
+};
+
+function parsePublicTabParam(
+  rawTab?: string | null,
+  hasTicket?: boolean
+): PublicPersuratanTab {
+  const normalized = (rawTab || '').trim().toLowerCase();
+  if (normalized === 'edaran' || normalized === 'surat-edaran') return 'EDARAN';
+  if (normalized === 'lacak' || normalized === 'tracking' || normalized === 'resi') {
+    return 'TRACKING';
+  }
+  if (normalized === 'dropbox' || normalized === 'kirim') return 'DROPBOX';
+  if (hasTicket) return 'TRACKING';
+  return 'DROPBOX';
+}
 
 interface TrackedDispositionItem {
   id: string;
@@ -184,15 +204,40 @@ function openAttachmentSafely(url: string, fileName?: string | null) {
 }
 
 export function PersuratanPublikClient() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const initialTicketParam = searchParams.get('ticket')?.trim() || '';
-  const initialTabParam = searchParams.get('tab')?.toUpperCase() || '';
+  const urlTabParam = searchParams.get('tab');
 
-  const [activeTab, setActiveTab] = useState<PublicPersuratanTab>(() => {
-    if (initialTicketParam || initialTabParam === 'TRACKING') return 'TRACKING';
-    if (initialTabParam === 'EDARAN') return 'EDARAN';
-    return 'DROPBOX';
-  });
+  const activeTab: PublicPersuratanTab = useMemo(
+    () => parsePublicTabParam(urlTabParam, Boolean(initialTicketParam)),
+    [urlTabParam, initialTicketParam]
+  );
+
+  const buildTabUrlPath = useCallback(
+    (tab: PublicPersuratanTab, ticketOverride?: string | null) => {
+      const params = new URLSearchParams();
+      params.set('tab', TAB_TO_SLUG[tab]);
+      if (tab === 'TRACKING') {
+        const ticketVal =
+          ticketOverride !== undefined ? ticketOverride?.trim() : initialTicketParam;
+        if (ticketVal) {
+          params.set('ticket', ticketVal);
+        }
+      }
+      return `${pathname}?${params.toString()}`;
+    },
+    [pathname, initialTicketParam]
+  );
+
+  const handleSelectTab = useCallback(
+    (nextTab: PublicPersuratanTab, ticketOverride?: string | null) => {
+      const nextUrl = buildTabUrlPath(nextTab, ticketOverride);
+      router.replace(nextUrl, { scroll: false });
+    },
+    [buildTabUrlPath, router]
+  );
 
   const [circulars, setCirculars] = useState<LetterRecord[]>([]);
   const [institution, setInstitution] = useState<InstitutionInfoForLetter | null>(null);
@@ -527,6 +572,10 @@ export function PersuratanPublikClient() {
 
   const handleTrackFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmed = ticketQuery.trim();
+    if (trimmed.length >= 2) {
+      handleSelectTab('TRACKING', trimmed);
+    }
     void runTrackTicket(ticketQuery);
   };
 
@@ -538,6 +587,7 @@ export function PersuratanPublikClient() {
     setTrackedResult(null);
     setTrackedNotFound(false);
     setTrackError(null);
+    handleSelectTab('TRACKING', null);
   };
 
   const handleDownloadCircularPdf = async (letter: LetterRecord) => {
@@ -643,7 +693,7 @@ export function PersuratanPublikClient() {
             type="button"
             role="tab"
             aria-selected={activeTab === 'DROPBOX'}
-            onClick={() => setActiveTab('DROPBOX')}
+            onClick={() => handleSelectTab('DROPBOX')}
             className={`inline-flex items-center justify-center sm:justify-start gap-2 min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition ${
               activeTab === 'DROPBOX'
                 ? 'bg-emerald-700 text-white shadow-xs'
@@ -658,7 +708,7 @@ export function PersuratanPublikClient() {
             type="button"
             role="tab"
             aria-selected={activeTab === 'TRACKING'}
-            onClick={() => setActiveTab('TRACKING')}
+            onClick={() => handleSelectTab('TRACKING')}
             className={`inline-flex items-center justify-center sm:justify-start gap-2 min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition ${
               activeTab === 'TRACKING'
                 ? 'bg-emerald-700 text-white shadow-xs'
@@ -673,7 +723,7 @@ export function PersuratanPublikClient() {
             type="button"
             role="tab"
             aria-selected={activeTab === 'EDARAN'}
-            onClick={() => setActiveTab('EDARAN')}
+            onClick={() => handleSelectTab('EDARAN')}
             className={`inline-flex items-center justify-center sm:justify-start gap-2 min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition tabular-nums ${
               activeTab === 'EDARAN'
                 ? 'bg-emerald-700 text-white shadow-xs'
@@ -760,7 +810,7 @@ export function PersuratanPublikClient() {
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveTab('TRACKING');
+                    handleSelectTab('TRACKING', submittedReceipt.ticket);
                     void runTrackTicket(submittedReceipt.ticket);
                   }}
                   className="inline-flex items-center gap-1.5 min-h-[40px] px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition"

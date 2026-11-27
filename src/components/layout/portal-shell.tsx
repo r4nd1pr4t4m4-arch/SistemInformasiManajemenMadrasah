@@ -1,8 +1,8 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { InstitutionLogo } from '@/components/ui/institution-logo';
 import { LoadingState, PermissionDeniedState } from '@/components/ui/state-views';
 import {
@@ -50,22 +50,6 @@ import {
   type TeacherDutyRequirement,
 } from '@/config/portal-navigation';
 
-function PortalSearchParamsSync({
-  onChange,
-}: {
-  onChange: (params: { chapterId: string | null; classroomId: string | null }) => void;
-}) {
-  const searchParams = useSearchParams();
-  const chapterId = searchParams.get('chapterId');
-  const classroomId = searchParams.get('classroomId');
-
-  useEffect(() => {
-    onChange({ chapterId, classroomId });
-  }, [chapterId, classroomId, onChange]);
-
-  return null;
-}
-
 export function PortalShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -73,6 +57,24 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     chapterId: string | null;
     classroomId: string | null;
   }>({ chapterId: null, classroomId: null });
+
+  // Sinkronkan query chapterId & classroomId di klien tanpa useSearchParams/Suspense SSR bailout
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncParams = () => {
+      const sp = new URLSearchParams(window.location.search);
+      const nextChapterId = sp.get('chapterId');
+      const nextClassroomId = sp.get('classroomId');
+      setQueryParams((prev) =>
+        prev.chapterId === nextChapterId && prev.classroomId === nextClassroomId
+          ? prev
+          : { chapterId: nextChapterId, classroomId: nextClassroomId }
+      );
+    };
+    syncParams();
+    window.addEventListener('popstate', syncParams);
+    return () => window.removeEventListener('popstate', syncParams);
+  }, [pathname]);
   const school = useInstitutionSettings();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState<PortalSessionUser | null>(null);
@@ -246,21 +248,24 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       ) {
         return false;
       }
+      let matchedAnyNavRule = false;
       for (const grp of ACCORDION_GROUPS) {
         for (const it of grp.items) {
           if (it.path === targetPath) {
-            return hasRoleAccess(it);
+            matchedAnyNavRule = true;
+            if (hasRoleAccess(it)) return true;
           }
           if (it.children) {
             for (const ch of it.children) {
               if (ch.path === targetPath) {
-                return hasRoleAccess(it) && hasRoleAccess(ch);
+                matchedAnyNavRule = true;
+                if (hasRoleAccess(it) && hasRoleAccess(ch)) return true;
               }
             }
           }
         }
       }
-      return true;
+      return !matchedAnyNavRule;
     },
     [user?.teacherAssignments, userRoles, hasRoleAccess]
   );
@@ -647,9 +652,6 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen simms-ambient flex">
-      <Suspense fallback={null}>
-        <PortalSearchParamsSync onChange={setQueryParams} />
-      </Suspense>
       {/* Desktop Sticky Sidebar */}
       <aside className="hidden lg:block w-64 shrink-0 border-r border-slate-200/80 bg-white/75 backdrop-blur-xl sticky top-0 h-screen">
         {SidebarContent}

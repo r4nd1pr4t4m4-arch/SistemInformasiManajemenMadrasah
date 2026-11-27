@@ -4,15 +4,37 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { sanitizeRichTextHtml, stripHtmlToPlainText } from '@/lib/security/rich-text';
 import { notifyCmsPostPublished } from '@/lib/notifications/event-hooks';
 import { toPublicMediaProxyUrl } from '@/lib/storage/r2-url-helper';
 
+function isValidCoverUrl(val: string | null | undefined): boolean {
+  if (!val) return true;
+  const trimmed = val.trim();
+  if (!trimmed) return true;
+  return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('/');
+}
+
 const CreatePostSchema = z.object({
-  title: z.string().min(4),
+  title: z
+    .string()
+    .refine((val) => stripHtmlToPlainText(val).length >= 4, {
+      message: 'Judul artikel minimal 4 karakter teks.',
+    }),
   category: z.enum(['BERITA', 'ARTIKEL', 'PENGUMUMAN', 'KARYA_GURU', 'KARYA_SISWA']),
   excerpt: z.string().optional().default(''),
-  content: z.string().min(10),
-  cover_image_url: z.string().optional().nullable(),
+  content: z
+    .string()
+    .refine((val) => stripHtmlToPlainText(val).length >= 10, {
+      message: 'Isi konten artikel minimal 10 karakter teks.',
+    }),
+  cover_image_url: z
+    .string()
+    .optional()
+    .nullable()
+    .refine((val) => isValidCoverUrl(val), {
+      message: 'URL gambar sampul harus diawali http://, https://, atau /.',
+    }),
   author_display_name: z.string().optional().default('Admin CMS'),
   status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']).default('PUBLISHED'),
 });
@@ -22,13 +44,13 @@ const UpdatePostSchema = CreatePostSchema.extend({
 });
 
 function toSlug(title: string): string {
-  const base = title
+  const base = stripHtmlToPlainText(title)
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
     .trim()
     .replace(/\s+/g, '-')
     .slice(0, 60);
-  return `${base}-${Date.now().toString().slice(-5)}`;
+  return `${base || 'artikel'}-${Date.now().toString().slice(-5)}`;
 }
 
 export async function GET() {
@@ -78,12 +100,19 @@ export async function POST(request: Request) {
       );
     }
 
+    const sanitizedTitle = sanitizeRichTextHtml(parsed.data.title, 'inline-single');
+    const sanitizedExcerpt = sanitizeRichTextHtml(parsed.data.excerpt, 'inline');
+    const sanitizedContent = sanitizeRichTextHtml(parsed.data.content, 'block');
+
     const supabase = createSupabaseAdminClient();
     const { data, error } = await supabase
       .from('posts')
       .insert({
         ...parsed.data,
-        slug: toSlug(parsed.data.title),
+        title: sanitizedTitle,
+        excerpt: sanitizedExcerpt,
+        content: sanitizedContent,
+        slug: toSlug(sanitizedTitle),
         published_at:
           parsed.data.status === 'PUBLISHED' ? new Date().toISOString() : null,
       })
@@ -94,13 +123,21 @@ export async function POST(request: Request) {
     if (data && data.status === 'PUBLISHED') {
       await notifyCmsPostPublished({
         postId: data.id,
-        title: data.title,
+        title: stripHtmlToPlainText(data.title),
         slug: data.slug,
         category: data.category,
         createdBy: guard.session.userId,
       });
     }
-    return NextResponse.json({ post: data });
+    const normalizedPost = data
+      ? {
+          ...data,
+          cover_image_url: data.cover_image_url
+            ? toPublicMediaProxyUrl(data.cover_image_url)
+            : null,
+        }
+      : data;
+    return NextResponse.json({ post: normalizedPost });
   } catch {
     return NextResponse.json({ error: 'Gagal menyimpan artikel.' }, { status: 500 });
   }
@@ -125,6 +162,12 @@ export async function PATCH(request: Request) {
     }
 
     const { id, ...fields } = parsed.data;
+    const sanitizedFields = {
+      ...fields,
+      title: sanitizeRichTextHtml(fields.title, 'inline-single'),
+      excerpt: sanitizeRichTextHtml(fields.excerpt, 'inline'),
+      content: sanitizeRichTextHtml(fields.content, 'block'),
+    };
     const supabase = createSupabaseAdminClient();
     const { data: existing } = await supabase
       .from('posts')
@@ -133,14 +176,14 @@ export async function PATCH(request: Request) {
       .maybeSingle();
 
     const becomingPublished =
-      fields.status === 'PUBLISHED' && (!existing || existing.status !== 'PUBLISHED');
+      sanitizedFields.status === 'PUBLISHED' && (!existing || existing.status !== 'PUBLISHED');
 
     const { data, error } = await supabase
       .from('posts')
       .update({
-        ...fields,
+        ...sanitizedFields,
         published_at:
-          fields.status === 'PUBLISHED'
+          sanitizedFields.status === 'PUBLISHED'
             ? existing?.published_at || new Date().toISOString()
             : null,
         updated_at: new Date().toISOString(),
@@ -153,13 +196,21 @@ export async function PATCH(request: Request) {
     if (data && becomingPublished) {
       await notifyCmsPostPublished({
         postId: data.id,
-        title: data.title,
+        title: stripHtmlToPlainText(data.title),
         slug: data.slug,
         category: data.category,
         createdBy: guard.session.userId,
       });
     }
-    return NextResponse.json({ post: data });
+    const normalizedPost = data
+      ? {
+          ...data,
+          cover_image_url: data.cover_image_url
+            ? toPublicMediaProxyUrl(data.cover_image_url)
+            : null,
+        }
+      : data;
+    return NextResponse.json({ post: normalizedPost });
   } catch {
     return NextResponse.json({ error: 'Gagal memperbarui artikel.' }, { status: 500 });
   }

@@ -93,6 +93,19 @@ export async function GET() {
     attempts = attempts.filter((a) => a.student_id === myStudentId);
   }
 
+  // Keamanan CBT: jangan kirim kunci jawaban (correctIndex) ke akun non-guru/siswa
+  if (!isTeacher) {
+    quizzes = quizzes.map((q) => ({
+      ...q,
+      questions: Array.isArray(q.questions)
+        ? q.questions.map((item: Record<string, unknown>) => ({
+            question: item?.question ?? '',
+            options: Array.isArray(item?.options) ? item.options : [],
+          }))
+        : [],
+    }));
+  }
+
   return NextResponse.json({
     isTeacher,
     studentId: myStudentId,
@@ -129,16 +142,35 @@ export async function POST(request: Request) {
           title: z.string().trim().min(3),
           chapter_label: z.string().optional().nullable(),
           material_type: z.enum(['MODUL_PDF', 'VIDEO', 'LINK', 'CATATAN']).default('MODUL_PDF'),
-          file_url: z.string().optional().nullable(),
+          file_url: z
+            .string()
+            .optional()
+            .nullable()
+            .refine(
+              (val) => {
+                if (!val || !val.trim()) return true;
+                const trimmed = val.trim();
+                return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('/');
+              },
+              { message: 'URL file/tautan harus diawali http://, https://, atau /.' }
+            ),
           content: z.string().optional().nullable(),
         })
         .safeParse(body);
-      if (!p.success) return NextResponse.json({ error: 'Data materi tidak valid.' }, { status: 400 });
+      if (!p.success) {
+        return NextResponse.json(
+          { error: p.error.issues[0]?.message || 'Data materi tidak valid.' },
+          { status: 400 }
+        );
+      }
 
       const { data, error } = await supabase
         .from('lms_materials')
         .insert({
           ...p.data,
+          file_url: p.data.file_url?.trim() || null,
+          content: p.data.content?.trim() || null,
+          chapter_label: p.data.chapter_label?.trim() || null,
           classroom_id: p.data.classroom_id || null,
           teacher_id: teacherId,
           created_by: session.userId,
@@ -248,11 +280,15 @@ export async function POST(request: Request) {
           duration_minutes: z.number().int().min(5).max(180).default(30),
           questions: z
             .array(
-              z.object({
-                question: z.string().min(2),
-                options: z.array(z.string().min(1)).min(2).max(5),
-                correctIndex: z.number().int().min(0).max(4),
-              })
+              z
+                .object({
+                  question: z.string().trim().min(2, 'Teks pertanyaan minimal 2 karakter.'),
+                  options: z.array(z.string().trim().min(1)).min(2, 'Minimal 2 pilihan jawaban.').max(5),
+                  correctIndex: z.number().int().min(0).max(4),
+                })
+                .refine((q) => q.correctIndex < q.options.length, {
+                  message: 'Kunci jawaban harus sesuai dengan pilihan yang tersedia.',
+                })
             )
             .min(1, 'Minimal 1 soal wajib diisi.'),
         })

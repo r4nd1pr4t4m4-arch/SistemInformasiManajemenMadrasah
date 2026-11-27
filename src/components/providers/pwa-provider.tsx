@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  Suspense,
   createContext,
   useCallback,
   useContext,
@@ -10,7 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { SwUpdateModal } from '@/components/pwa/sw-update-modal';
 import {
   LAST_PATH_STORAGE_KEY,
@@ -56,10 +55,11 @@ const PwaContext = createContext<PwaContextValue>({
   canInstallPrompt: false,
   updateAvailable: false,
   triggerInstallPrompt: async () => 'unavailable',
-  applySwUpdate: () => {},
+  applySwUpdate: () => { },
 });
 
 const LAUNCH_HANDLED_SESSION_KEY = 'simms_pwa_launch_handled';
+const SW_RELOAD_GUARD_KEY = 'simms_sw_last_reload_ts';
 const IGNORED_LAST_PATHS = ['/offline', '/login', '/reset-kata-sandi'];
 
 function detectPlatform(): PwaPlatform {
@@ -104,10 +104,104 @@ function detectMobileDevice(): boolean {
   return isSmallViewport || isMobileUa || isCoarseTouch;
 }
 
-function PwaProviderInner({ children }: { children: React.ReactNode }) {
+function PwaRouteTracker() {
   const pathname = usePathname() || '/';
-  const searchParams = useSearchParams();
   const router = useRouter();
+
+  // 4. Smart Launch Resume:
+  //    Simpan halaman terakhir yang dikunjungi, dan saat PWA dibuka dari Home Screen (/?source=pwa),
+  //    validasi sesi/akun jika halaman terakhir berada di /portal; jika tidak valid, tetap di beranda (/).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const currentParams = new URLSearchParams(window.location.search);
+    const isPwaLaunch =
+      pathname === '/' &&
+      (currentParams.get('source') === 'pwa' || detectStandalone());
+
+    if (isPwaLaunch && !window.sessionStorage.getItem(LAUNCH_HANDLED_SESSION_KEY)) {
+      window.sessionStorage.setItem(LAUNCH_HANDLED_SESSION_KEY, '1');
+
+      const savedPath = window.localStorage.getItem(LAST_PATH_STORAGE_KEY)?.trim() || '';
+      if (
+        savedPath &&
+        savedPath !== '/' &&
+        savedPath.startsWith('/') &&
+        !savedPath.startsWith('//') &&
+        !IGNORED_LAST_PATHS.some((prefix) => savedPath.startsWith(prefix))
+      ) {
+        if (savedPath.startsWith('/portal')) {
+          let cancelled = false;
+          fetch('/api/auth/me', { cache: 'no-store' })
+            .then(async (res) => {
+              if (cancelled) return;
+              if (!res.ok) {
+                window.localStorage.removeItem(LAST_PATH_STORAGE_KEY);
+                return;
+              }
+              const data = await res.json().catch(() => null);
+              if (data?.user) {
+                router.replace(savedPath);
+              } else {
+                window.localStorage.removeItem(LAST_PATH_STORAGE_KEY);
+              }
+            })
+            .catch(() => {
+              // Saat offline, jika tidak bisa memvalidasi sesi, biarkan tetap di beranda publik
+            });
+
+          return () => {
+            cancelled = true;
+          };
+        }
+
+        // Halaman publik terakhir (misalnya /berita, /verifikasi, /profil)
+        router.replace(savedPath);
+        return;
+      }
+    }
+  }, [pathname, router]);
+
+  // Catat halaman terakhir yang dibuka pengguna
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (IGNORED_LAST_PATHS.some((prefix) => pathname.startsWith(prefix))) {
+      return;
+    }
+
+    const saveCurrentPath = () => {
+      const cleanedParams = new URLSearchParams(window.location.search);
+      // Jangan menimpa halaman terakhir saat baru saja membuka /?source=pwa sebelum cek selesai
+      if (pathname === '/' && cleanedParams.get('source') === 'pwa') {
+        return;
+      }
+      cleanedParams.delete('source');
+      const cleanQs = cleanedParams.toString();
+      const fullPath = cleanQs ? `${pathname}?${cleanQs}` : pathname;
+
+      try {
+        window.localStorage.setItem(LAST_PATH_STORAGE_KEY, fullPath);
+      } catch {
+        // abaikan jika storage penuh/diblokir
+      }
+    };
+
+    saveCurrentPath();
+    window.addEventListener('popstate', saveCurrentPath);
+    return () => {
+      window.removeEventListener('popstate', saveCurrentPath);
+    };
+  }, [pathname]);
+
+  return null;
+}
+
+export function PwaProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
 
   const [ready, setReady] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -119,6 +213,7 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
   const [updatingSw, setUpdatingSw] = useState(false);
   const reloadingRef = useRef(false);
+  const userRequestedUpdateRef = useRef(false);
 
   // 1. Deteksi mode standalone, platform, viewport mobile (< 1024px), dan perangkat mobile (anti-bypass Desktop Site)
   useEffect(() => {
@@ -179,7 +274,16 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
     let isMounted = true;
 
     const handleControllerChange = () => {
-      if (reloadingRef.current) return;
+      // Hanya muat ulang halaman jika pengguna secara eksplisit menekan tombol pembaruan SW
+      // (mencegah reload loop otomatis saat klaim SW pertama kali atau dev HMR).
+      if (!userRequestedUpdateRef.current || reloadingRef.current) return;
+      try {
+        const lastReload = Number(window.sessionStorage.getItem(SW_RELOAD_GUARD_KEY) || '0');
+        if (Date.now() - lastReload < 10_000) return;
+        window.sessionStorage.setItem(SW_RELOAD_GUARD_KEY, String(Date.now()));
+      } catch {
+        // abaikan jika sessionStorage diblokir
+      }
       reloadingRef.current = true;
       window.location.reload();
     };
@@ -212,7 +316,7 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
           })
         );
       } else if (data.type === 'PUSH_NAVIGATE' && typeof data.url === 'string') {
-        router.push(data.url);
+        routerRef.current.push(data.url);
       }
     };
 
@@ -256,7 +360,7 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
             .then(() => {
               if (isMounted) warmLoadedStaticAssets();
             })
-            .catch(() => {});
+            .catch(() => { });
         }
 
         // Jika sudah ada SW baru menunggu saat halaman dimuat
@@ -287,7 +391,7 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
     // Cek pembaruan SW & sinkronkan antrean offline saat aplikasi kembali ke foreground
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        registrationRef?.update().catch(() => {});
+        registrationRef?.update().catch(() => { });
         if (navigator.onLine) {
           void flushOfflineQueue();
         }
@@ -308,86 +412,7 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('online', handleOnline);
     };
-  }, [router]);
-
-  // 4. Smart Launch Resume:
-  //    Simpan halaman terakhir yang dikunjungi, dan saat PWA dibuka dari Home Screen (/?source=pwa),
-  //    validasi sesi/akun jika halaman terakhir berada di /portal; jika tidak valid, tetap di beranda (/).
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const isPwaLaunch =
-      pathname === '/' &&
-      (searchParams.get('source') === 'pwa' || detectStandalone());
-
-    if (isPwaLaunch && !window.sessionStorage.getItem(LAUNCH_HANDLED_SESSION_KEY)) {
-      window.sessionStorage.setItem(LAUNCH_HANDLED_SESSION_KEY, '1');
-
-      const savedPath = window.localStorage.getItem(LAST_PATH_STORAGE_KEY)?.trim() || '';
-      if (
-        savedPath &&
-        savedPath !== '/' &&
-        savedPath.startsWith('/') &&
-        !savedPath.startsWith('//') &&
-        !IGNORED_LAST_PATHS.some((prefix) => savedPath.startsWith(prefix))
-      ) {
-        if (savedPath.startsWith('/portal')) {
-          let cancelled = false;
-          fetch('/api/auth/me', { cache: 'no-store' })
-            .then(async (res) => {
-              if (cancelled) return;
-              if (!res.ok) {
-                window.localStorage.removeItem(LAST_PATH_STORAGE_KEY);
-                return;
-              }
-              const data = await res.json().catch(() => null);
-              if (data?.user) {
-                router.replace(savedPath);
-              } else {
-                window.localStorage.removeItem(LAST_PATH_STORAGE_KEY);
-              }
-            })
-            .catch(() => {
-              // Saat offline, jika tidak bisa memvalidasi sesi, biarkan tetap di beranda publik
-            });
-
-          return () => {
-            cancelled = true;
-          };
-        }
-
-        // Halaman publik terakhir (misalnya /berita, /verifikasi, /profil)
-        router.replace(savedPath);
-        return;
-      }
-    }
-  }, [pathname, searchParams, router]);
-
-  // Catat halaman terakhir yang dibuka pengguna
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (
-      IGNORED_LAST_PATHS.some((prefix) => pathname.startsWith(prefix))
-    ) {
-      return;
-    }
-    const qs = searchParams.toString();
-    const cleanedParams = new URLSearchParams(qs);
-    cleanedParams.delete('source');
-    const cleanQs = cleanedParams.toString();
-    const fullPath = cleanQs ? `${pathname}?${cleanQs}` : pathname;
-
-    // Jangan menimpa halaman terakhir saat baru saja membuka /?source=pwa sebelum cek selesai
-    if (pathname === '/' && searchParams.get('source') === 'pwa') {
-      return;
-    }
-
-    try {
-      window.localStorage.setItem(LAST_PATH_STORAGE_KEY, fullPath);
-    } catch {
-      // abaikan jika storage penuh/diblokir
-    }
-  }, [pathname, searchParams]);
+  }, []);
 
   const triggerInstallPrompt = useCallback(async () => {
     if (!deferredPrompt) return 'unavailable' as const;
@@ -404,6 +429,7 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
   }, [deferredPrompt]);
 
   const applySwUpdate = useCallback(() => {
+    userRequestedUpdateRef.current = true;
     if (!waitingWorker) {
       window.location.reload();
       return;
@@ -446,6 +472,7 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
 
   return (
     <PwaContext.Provider value={contextValue}>
+      <PwaRouteTracker />
       {children}
       <SwUpdateModal
         open={Boolean(waitingWorker)}
@@ -453,14 +480,6 @@ function PwaProviderInner({ children }: { children: React.ReactNode }) {
         onReload={applySwUpdate}
       />
     </PwaContext.Provider>
-  );
-}
-
-export function PwaProvider({ children }: { children: React.ReactNode }) {
-  return (
-    <Suspense fallback={<>{children}</>}>
-      <PwaProviderInner>{children}</PwaProviderInner>
-    </Suspense>
   );
 }
 

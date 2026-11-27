@@ -212,3 +212,183 @@ a:focus-visible {
   outline-offset: 2px;
   border-radius: 6px;
 }
+
+/* ============================================================================
+ * Rich Text Editor (Tiptap) & Rendered Rich Content Typography
+ * ============================================================================ */
+.rich-text-content,
+.tiptap-editor .ProseMirror {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.tiptap-editor .ProseMirror:focus {
+  outline: none;
+}
+
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #94a3b8;
+  pointer-events: none;
+  height: 0;
+}
+
+.rich-text-content p + p,
+.tiptap-editor .ProseMirror p + p {
+  margin-top: 0.75em;
+}
+
+.rich-text-content h2,
+.tiptap-editor .ProseMirror h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+  margin-top: 1.15em;
+  margin-bottom: 0.45em;
+}
+
+.rich-text-content h3,
+.tiptap-editor .ProseMirror h3 {
+  font-size: 1.075rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.4;
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+
+.rich-text-content h4,
+.tiptap-editor .ProseMirror h4 {
+  font-size: 0.975rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.45;
+  margin-top: 0.9em;
+  margin-bottom: 0.35em;
+}
+
+.rich-text-content ul,
+.tiptap-editor .ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 1.35rem;
+  margin: 0.65em 0;
+}
+
+.rich-text-content ol,
+.tiptap-editor .ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.35rem;
+  margin: 0.65em 0;
+}
+
+.rich-text-content li + li,
+.tiptap-editor .ProseMirror li + li {
+  margin-top: 0.25em;
+}
+
+.rich-text-content blockquote,
+.tiptap-editor .ProseMirror blockquote {
+  border-left: 3px solid #10b981;
+  background-color: rgba(236, 253, 245, 0.6);
+  padding: 0.5rem 0.9rem;
+  margin: 0.75em 0;
+  border-radius: 0 0.75rem 0.75rem 0;
+  color: #334155;
+  font-style: italic;
+}
+
+.rich-text-content pre,
+.tiptap-editor .ProseMirror pre {
+  background-color: #0f172a;
+  color: #f8fafc;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.825rem;
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+
+.rich-text-content code,
+.tiptap-editor .ProseMirror code {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.875em;
+}
+
+.rich-text-content pre code,
+.tiptap-editor .ProseMirror pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.rich-text-content a,
+.tiptap-editor .ProseMirror a {
+  color: #047857;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.rich-text-content a:hover,
+.tiptap-editor .ProseMirror a:hover {
+  color: #065f46;
+}
+
+.rich-text-content hr,
+.tiptap-editor .ProseMirror hr {
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  margin: 1rem 0;
+}
+
+.rich-text-content mark,
+.tiptap-editor .ProseMirror mark {
+  background-color: #fef08a;
+  color: inherit;
+  padding: 0.05rem 0.2rem;
+  border-radius: 0.25rem;
+}
+
+/* Inline rich text (Judul / Ringkasan) */
+.rich-text-inline p + p {
+  margin-top: 0.45em;
+}
+
+.rich-text-inline strong,
+.rich-text-inline b {
+  font-weight: 800;
+}
+
+.rich-text-inline em,
+.rich-text-inline i {
+  font-style: italic;
+}
+
+.rich-text-inline u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.rich-text-inline s,
+.rich-text-inline del {
+  text-decoration: line-through;
+}
+
+.rich-text-inline mark {
+  background-color: #fef08a;
+  color: inherit;
+  padding: 0 0.2rem;
+  border-radius: 0.2rem;
+}
+
+.rich-text-inline a {
+  color: #047857;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

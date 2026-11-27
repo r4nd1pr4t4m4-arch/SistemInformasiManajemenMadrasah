@@ -752,6 +752,60 @@ export const PERMISSIONS = {
     'GURU_WALI',
     'PUSTAKAWAN',
   ] as AppRole[],
+
+  // Pembelajaran (LMS & CBT)
+  PEMBELAJARAN_VIEW: [
+    'SUPERADMIN',
+    'GURU',
+    'WALI_KELAS',
+    'GURU_WALI',
+    'GURU_BK',
+    'WAKA_KURIKULUM',
+    'WAKA_KESISWAAN',
+    'WAKA_HUMAS',
+    'WAKA_SARPRAS',
+    'KEPALA_LEMBAGA',
+    'KEPALA_TU',
+    'STAF_TU',
+    'OPERATOR',
+    'BENDAHARA',
+    'BENDAHARA_KOMITE',
+    'PENGELOLA_TABUNGAN',
+    'PUSTAKAWAN',
+    'PEMBINA_OSIM',
+    'PEMBINA_EKSTRAKURIKULER',
+    'SISWA',
+  ] as AppRole[],
+
+  // Komunikasi Orang Tua–Guru & Izin Cepat
+  KOMUNIKASI_STAFF: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KESISWAAN',
+    'WAKA_KURIKULUM',
+    'WALI_KELAS',
+    'GURU_WALI',
+    'GURU_BK',
+    'GURU',
+    'KEPALA_TU',
+    'STAF_TU',
+  ] as AppRole[],
+  KOMUNIKASI_VIEW: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_LEMBAGA',
+    'WAKA_KESISWAAN',
+    'WAKA_KURIKULUM',
+    'WALI_KELAS',
+    'GURU_WALI',
+    'GURU_BK',
+    'GURU',
+    'KEPALA_TU',
+    'STAF_TU',
+    'ORANG_TUA',
+    'SISWA',
+  ] as AppRole[],
 };
 
 export function hasRolePermission(
@@ -853,8 +907,13 @@ const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
   '/portal/akademik/buku-induk/penempatan-akun': PERMISSIONS.BUKU_INDUK_MANAGE,
   '/portal/akademik/kelas-jadwal/piket-kelas': PERMISSIONS.PIKET_KELAS_MANAGE,
   '/portal/akademik/kkm': PERMISSIONS.KKM_MANAGE,
+  '/portal/akademik/tahun-ajaran': ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'WAKA_KURIKULUM', 'KEPALA_TU'],
   '/portal/akademik/kalender/log-jtm': PERMISSIONS.KALENDER_LOG_JTM_VIEW,
+  '/portal/pembelajaran': PERMISSIONS.PEMBELAJARAN_VIEW,
+  '/portal/komunikasi': PERMISSIONS.KOMUNIKASI_VIEW,
   '/portal/penilaian/monitoring': PERMISSIONS.PENILAIAN_ADMIN_READ,
+  '/portal/penilaian/leger': [...PERMISSIONS.PENILAIAN_ADMIN_READ, 'WALI_KELAS'],
+  '/portal/sdm/gtk-kinerja': PERMISSIONS.GTK_BIODATA_VIEW,
   '/portal/siswa/jadwal-pelajaran': ['SISWA'],
   '/portal/siswa/jadwal-piket': ['SISWA'],
   '/portal/siswa/tabungan': ['SISWA'],
@@ -881,9 +940,11 @@ const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
   '/portal/gtk/honorarium': PERMISSIONS.GTK_PERSONAL_VIEW,
   '/portal/gtk/persuratan': PERMISSIONS.GTK_PERSONAL_VIEW,
   '/portal/keuangan/spp/terbitkan': PERMISSIONS.SPP_MANAGE,
+  '/portal/keuangan/spp/verifikasi-bukti': PERMISSIONS.SPP_MANAGE,
   '/portal/keuangan/tabungan/buka-rekening': PERMISSIONS.TABUNGAN_MANAGE,
   '/portal/keuangan/tabungan/transaksi': PERMISSIONS.TABUNGAN_MANAGE,
   '/portal/keuangan/tabungan/aturan-fee': PERMISSIONS.TABUNGAN_MANAGE,
+  '/portal/layanan/persuratan/template': PERMISSIONS.PERSURATAN_MANAGE,
   '/portal/layanan/perpustakaan/anggota': PERMISSIONS.PERPUSTAKAAN_VIEW,
   '/portal/cms/ppdb': PERMISSIONS.CMS_PPDB_VIEW,
   '/portal/cms/manajemen-ppdb': PERMISSIONS.CMS_PPDB_VIEW,
@@ -974,7 +1035,8 @@ export function canAccessPortalPath(
     normalized === '/portal/akun/profil' ||
     normalized === '/portal/akun/kata-sandi' ||
     normalized === '/portal/akun/mfa' ||
-    normalized === '/portal/akun/notifikasi'
+    normalized === '/portal/akun/notifikasi' ||
+    normalized === '/portal/akun/keamanan'
   ) {
     return true;
   }

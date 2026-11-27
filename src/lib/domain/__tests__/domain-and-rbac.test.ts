@@ -256,6 +256,29 @@ describe('Auth & RBAC: Role Mapping & Portal Path Guard (rbac.ts)', () => {
     assert.equal(canAccessPortalPath('/portal/tabungan-saya', ['ALUMNI', 'ORANG_TUA']), false);
     assert.equal(canAccessPortalPath('/portal/tabungan-saya', ['UMUM', 'BENDAHARA']), false);
     assert.equal(canAccessPortalPath('/portal/tabungan-saya', ['SUPERADMIN', 'UMUM']), false);
+
+    // Rute pembelajaran, komunikasi, keamanan akun, dan kinerja GTK dengan RBAC ketat
+    assert.equal(canAccessPortalPath('/portal/pembelajaran', ['GURU']), true);
+    assert.equal(canAccessPortalPath('/portal/pembelajaran', ['SISWA']), true);
+    assert.equal(canAccessPortalPath('/portal/pembelajaran', ['ORANG_TUA']), false);
+    assert.equal(canAccessPortalPath('/portal/pembelajaran', ['UMUM']), false);
+
+    assert.equal(canAccessPortalPath('/portal/komunikasi', ['ORANG_TUA']), true);
+    assert.equal(canAccessPortalPath('/portal/komunikasi', ['WALI_KELAS']), true);
+    assert.equal(canAccessPortalPath('/portal/komunikasi', ['SISWA']), true);
+    assert.equal(canAccessPortalPath('/portal/komunikasi', ['ALUMNI']), false);
+    assert.equal(canAccessPortalPath('/portal/komunikasi', ['UMUM']), false);
+
+    assert.equal(canAccessPortalPath('/portal/akun/keamanan', ['GURU']), true);
+    assert.equal(canAccessPortalPath('/portal/akun/keamanan', ['SISWA']), true);
+
+    assert.equal(canAccessPortalPath('/portal/sdm/gtk-kinerja', ['GURU']), true);
+    assert.equal(canAccessPortalPath('/portal/sdm/gtk-kinerja', ['SISWA']), false);
+
+    assert.equal(canAccessPortalPath('/portal/keuangan/spp/verifikasi-bukti', ['BENDAHARA']), true);
+    assert.equal(canAccessPortalPath('/portal/keuangan/spp/verifikasi-bukti', ['KEPALA_LEMBAGA']), false);
+    assert.equal(canAccessPortalPath('/portal/penilaian/leger', ['WALI_KELAS']), true);
+    assert.equal(canAccessPortalPath('/portal/penilaian/leger', ['GURU']), false);
   });
 });
 

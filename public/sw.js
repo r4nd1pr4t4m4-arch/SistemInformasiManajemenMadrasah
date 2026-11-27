@@ -352,7 +352,8 @@ function createSelfContainedOfflineResponse() {
 }
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
+  // Jangan panggil self.skipWaiting() otomatis saat ada controller aktif
+  // agar tidak memicu reload loop; pembaruan diaktifkan saat user menyetujui (SKIP_WAITING).
   event.waitUntil(precacheAppShell());
 });
 

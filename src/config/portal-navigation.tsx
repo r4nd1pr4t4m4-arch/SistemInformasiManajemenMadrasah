@@ -183,32 +183,28 @@ export const ACCORDION_GROUPS: AccordionGroup[] = [
         id: 'akademik-kelas-jadwal',
         label: 'Kelas & Jadwal',
         icon: <Calendar className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'WAKA_KURIKULUM',
-          'GURU',
-          'WALI_KELAS',
-        ],
+        allowedRoles: [...PERMISSIONS.KELAS_JADWAL_VIEW, 'WAKA_KESISWAAN'],
         children: [
           {
             href: '/portal/akademik/kelas-jadwal/rombel',
             path: '/portal/akademik/kelas-jadwal/rombel',
             label: 'Rombel & Wali Kelas',
             icon: <Users className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.KELAS_JADWAL_VIEW,
           },
           {
             href: '/portal/akademik/kelas-jadwal/mapel',
             path: '/portal/akademik/kelas-jadwal/mapel',
             label: 'Mata Pelajaran',
             icon: <BookOpen className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.KELAS_JADWAL_VIEW,
           },
           {
             href: '/portal/akademik/kelas-jadwal/jadwal',
             path: '/portal/akademik/kelas-jadwal/jadwal',
             label: 'Jadwal Pelajaran',
             icon: <Calendar className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.KELAS_JADWAL_VIEW,
           },
           {
             href: '/portal/akademik/kelas-jadwal/piket-kelas',
@@ -223,14 +219,7 @@ export const ACCORDION_GROUPS: AccordionGroup[] = [
         id: 'akademik-presensi',
         label: 'Presensi GPS & Delegasi',
         icon: <MapPin className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'WAKA_KURIKULUM',
-          'GURU',
-          'WALI_KELAS',
-        ],
+        allowedRoles: PERMISSIONS.PRESENSI_VIEW,
         children: [
           {
             href: '/portal/akademik/presensi/gps',
@@ -365,47 +354,34 @@ export const ACCORDION_GROUPS: AccordionGroup[] = [
         path: '/portal/pembelajaran',
         label: 'Ruang Belajar (LMS & CBT)',
         icon: <BookOpenCheck className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'WAKA_KURIKULUM',
-          'GURU',
-          'WALI_KELAS',
-        ],
+        allowedRoles: PERMISSIONS.PENILAIAN_TEACHER,
       },
       {
         id: 'akademik-ujian',
         label: 'Periode Ujian (JTM)',
         icon: <ClipboardCheck className="w-3.5 h-3.5" />,
-        allowedRoles: [
-          'SUPERADMIN',
-          'OPERATOR',
-          'KEPALA_LEMBAGA',
-          'WAKA_KURIKULUM',
-          'KEPALA_TU',
-          'STAF_TU',
-          'GURU',
-          'WALI_KELAS',
-        ],
+        allowedRoles: [...PERMISSIONS.UJIAN_VIEW, 'WAKA_KESISWAAN'],
         children: [
           {
             href: '/portal/akademik/ujian/periode',
             path: '/portal/akademik/ujian/periode',
             label: 'Periode Ujian',
             icon: <CalendarRange className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.UJIAN_VIEW,
           },
           {
             href: '/portal/akademik/ujian/pengawas',
             path: '/portal/akademik/ujian/pengawas',
             label: 'Pengawas Ruang',
             icon: <Users className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.UJIAN_VIEW,
           },
           {
             href: '/portal/akademik/ujian/panitia',
             path: '/portal/akademik/ujian/panitia',
             label: 'Panitia Ujian',
             icon: <Users className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.UJIAN_VIEW,
           },
           {
             href: '/portal/akademik/ujian/konfirmasi-pengawas',
@@ -567,13 +543,14 @@ export const ACCORDION_GROUPS: AccordionGroup[] = [
         id: 'akademik-rekap-absensi',
         label: 'Rekapitulasi Absensi',
         icon: <ClipboardCheck className="w-3.5 h-3.5" />,
-        allowedRoles: PERMISSIONS.REKAP_ABSENSI_VIEW,
+        allowedRoles: [...PERMISSIONS.REKAP_ABSENSI_VIEW, 'GURU_WALI'],
         children: [
           {
             href: '/portal/akademik/rekap-absensi/guru',
             path: '/portal/akademik/rekap-absensi/guru',
             label: 'Rekap Absensi Guru',
             icon: <User className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.REKAP_ABSENSI_VIEW,
           },
           {
             href: '/portal/akademik/rekap-absensi/siswa-harian',
@@ -599,6 +576,7 @@ export const ACCORDION_GROUPS: AccordionGroup[] = [
             path: '/portal/akademik/rekap-absensi/siswa-mapel',
             label: 'Rekap Siswa per Mapel',
             icon: <BookOpenCheck className="w-3 h-3" />,
+            allowedRoles: PERMISSIONS.REKAP_ABSENSI_VIEW,
           },
         ],
       },
@@ -880,6 +858,7 @@ export const ACCORDION_GROUPS: AccordionGroup[] = [
         path: '/portal/komunikasi',
         label: 'Komunikasi & Izin Cepat',
         icon: <MessageSquare className="w-3.5 h-3.5" />,
+        allowedRoles: [...PERMISSIONS.KOMUNIKASI_STAFF, 'SISWA'],
       },
       {
         href: '/portal/sdm/gtk-kinerja',

@@ -20,6 +20,10 @@ import {
   getPostBySlug,
   getPublishedPosts,
 } from '@/lib/data/public-queries';
+import {
+  prepareRichTextHtmlForRender,
+  stripHtmlToPlainText,
+} from '@/lib/security/rich-text';
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -91,8 +95,7 @@ function formatShortDate(raw?: string | null): string | null {
 }
 
 function cleanPlainSnippet(raw?: string | null, maxLength = 160): string {
-  const text = (raw || '')
-    .replace(/<[^>]*>/g, ' ')
+  const text = stripHtmlToPlainText(raw)
     .replace(/[#*_`>~]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -102,9 +105,7 @@ function cleanPlainSnippet(raw?: string | null, maxLength = 160): string {
 }
 
 function estimateReadingMinutes(excerpt?: string | null, content?: string | null): number {
-  const combined = `${excerpt || ''} ${content || ''}`
-    .replace(/<[^>]*>/g, ' ')
-    .trim();
+  const combined = `${stripHtmlToPlainText(excerpt)} ${stripHtmlToPlainText(content)}`.trim();
   if (!combined) return 1;
   const wordCount = combined.split(/\s+/).filter(Boolean).length;
   return Math.max(1, Math.ceil(wordCount / 200));
@@ -122,6 +123,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     return { title: 'Artikel Tidak Ditemukan — SIMMS' };
   }
 
+  const plainTitle = stripHtmlToPlainText(post.title) || 'Publikasi Lembaga';
   const description =
     cleanPlainSnippet(post.excerpt || post.content, 160) ||
     school.name ||
@@ -129,10 +131,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const safeOgImage = getSafeOpenGraphImage(post.cover_image_url);
 
   return {
-    title: `${post.title} — ${school.short_name || school.name}`,
+    title: `${plainTitle} — ${school.short_name || school.name}`,
     description,
     openGraph: {
-      title: post.title,
+      title: plainTitle,
       description,
       type: 'article',
       ...(safeOgImage ? { images: [safeOgImage] } : {}),
@@ -159,8 +161,9 @@ async function BeritaDetailContent({ params }: PageProps) {
     .slice(0, 3);
   const formattedDate = formatFullDate(post.published_at);
   const readingMinutes = estimateReadingMinutes(post.excerpt, post.content);
-  const hasExcerpt = Boolean(post.excerpt?.trim());
-  const hasContent = Boolean(post.content?.trim());
+  const plainTitle = stripHtmlToPlainText(post.title) || 'Publikasi Lembaga';
+  const hasExcerpt = Boolean(stripHtmlToPlainText(post.excerpt));
+  const hasContent = Boolean(stripHtmlToPlainText(post.content));
 
   return (
     <div className="max-w-4xl mx-auto py-6 sm:py-10 px-4 sm:px-6 space-y-6 sm:space-y-8">
@@ -195,7 +198,7 @@ async function BeritaDetailContent({ params }: PageProps) {
           <div className="p-4 sm:p-6 pb-0">
             <PostCoverImage
               coverUrl={post.cover_image_url}
-              alt={post.title || 'Sampul Publikasi'}
+              alt={plainTitle || 'Sampul Publikasi'}
             />
           </div>
         )}
@@ -210,9 +213,12 @@ async function BeritaDetailContent({ params }: PageProps) {
               {formatCategoryLabel(post.category)}
             </span>
 
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 leading-tight [overflow-wrap:anywhere]">
-              {post.title}
-            </h1>
+            <h1
+              className="text-2xl sm:text-3xl font-extrabold text-slate-900 leading-tight [overflow-wrap:anywhere] rich-text-inline"
+              dangerouslySetInnerHTML={{
+                __html: prepareRichTextHtmlForRender(post.title, 'inline-single'),
+              }}
+            />
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500 pt-1">
               <span className="inline-flex items-center gap-1.5 min-w-0">
@@ -238,15 +244,21 @@ async function BeritaDetailContent({ params }: PageProps) {
           </header>
 
           {hasExcerpt && (
-            <p className="text-sm sm:text-base font-medium text-slate-700 bg-emerald-50/50 border-l-4 border-emerald-500 px-4 py-3.5 rounded-r-xl leading-relaxed [overflow-wrap:anywhere]">
-              {post.excerpt}
-            </p>
+            <div
+              className="text-sm sm:text-base font-medium text-slate-700 bg-emerald-50/50 border-l-4 border-emerald-500 px-4 py-3.5 rounded-r-xl leading-relaxed [overflow-wrap:anywhere] rich-text-inline"
+              dangerouslySetInnerHTML={{
+                __html: prepareRichTextHtmlForRender(post.excerpt, 'inline'),
+              }}
+            />
           )}
 
           {hasContent ? (
-            <div className="text-sm sm:text-base text-slate-700 leading-[1.8] whitespace-pre-line [overflow-wrap:anywhere]">
-              {post.content}
-            </div>
+            <div
+              className="text-sm sm:text-base text-slate-700 leading-[1.8] rich-text-content"
+              dangerouslySetInnerHTML={{
+                __html: prepareRichTextHtmlForRender(post.content, 'block'),
+              }}
+            />
           ) : !hasExcerpt ? (
             <p className="text-sm text-slate-500 italic">
               Konten lengkap artikel belum tersedia.
@@ -257,7 +269,7 @@ async function BeritaDetailContent({ params }: PageProps) {
             <span className="text-xs font-semibold text-slate-500">
               Bagikan artikel ini:
             </span>
-            <BeritaShareBar title={post.title} />
+            <BeritaShareBar title={plainTitle} />
           </footer>
         </div>
       </article>
@@ -296,9 +308,12 @@ async function BeritaDetailContent({ params }: PageProps) {
                     >
                       {formatCategoryLabel(item.category)}
                     </span>
-                    <h3 className="text-sm font-bold text-slate-900 leading-snug line-clamp-2 [overflow-wrap:anywhere] group-hover:text-emerald-700 transition-colors">
-                      {item.title}
-                    </h3>
+                    <h3
+                      className="text-sm font-bold text-slate-900 leading-snug line-clamp-2 [overflow-wrap:anywhere] group-hover:text-emerald-700 transition-colors rich-text-inline"
+                      dangerouslySetInnerHTML={{
+                        __html: prepareRichTextHtmlForRender(item.title, 'inline-single'),
+                      }}
+                    />
                     <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed [overflow-wrap:anywhere]">
                       {cleanPlainSnippet(item.excerpt || item.content, 110) ||
                         'Baca informasi selengkapnya.'}

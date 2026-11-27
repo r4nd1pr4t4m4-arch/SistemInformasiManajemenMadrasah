@@ -41,7 +41,16 @@ export async function fetchPortalUser(): Promise<PortalSessionUser | null> {
   if (cachedUser) return cachedUser;
   if (!inflightPromise) {
     const versionAtStart = sessionVersion;
-    inflightPromise = fetch('/api/auth/me')
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId =
+      controller && typeof setTimeout !== 'undefined'
+        ? setTimeout(() => controller.abort(), 12_000)
+        : null;
+
+    inflightPromise = fetch('/api/auth/me', {
+      cache: 'no-store',
+      signal: controller?.signal,
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (versionAtStart !== sessionVersion) return null;
@@ -56,6 +65,7 @@ export async function fetchPortalUser(): Promise<PortalSessionUser | null> {
       })
       .catch(() => null)
       .finally(() => {
+        if (timeoutId) clearTimeout(timeoutId);
         if (versionAtStart === sessionVersion) {
           inflightPromise = null;
         }

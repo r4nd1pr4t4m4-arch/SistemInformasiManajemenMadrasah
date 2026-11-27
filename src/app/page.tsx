@@ -28,6 +28,10 @@ import {
 import { PublicNavbar } from '@/components/layout/public-shell';
 import { MissionList } from '@/components/home/mission-list';
 import { HeadmasterAvatar, PostCoverImage } from '@/components/home/safe-media';
+import {
+  prepareRichTextHtmlForRender,
+  stripHtmlToPlainText,
+} from '@/lib/security/rich-text';
 
 const getCachedInstitutionSettings = cache(getInstitutionSettings);
 
@@ -441,7 +445,7 @@ async function LatestPosts() {
             <article className="space-y-3 min-w-0">
               <PostCoverImage
                 coverUrl={post.cover_image_url}
-                alt={post.title || 'Sampul Publikasi'}
+                alt={stripHtmlToPlainText(post.title) || 'Sampul Publikasi'}
               />
               <div className="flex items-center justify-between gap-2">
                 <span className="inline-block text-[11px] font-semibold uppercase tracking-wide px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
@@ -456,9 +460,12 @@ async function LatestPosts() {
                   </time>
                 )}
               </div>
-              <h3 className="font-bold text-slate-900 leading-snug [overflow-wrap:anywhere] group-hover:text-emerald-700 transition-colors">
-                {post.title}
-              </h3>
+              <h3
+                className="font-bold text-slate-900 leading-snug [overflow-wrap:anywhere] group-hover:text-emerald-700 transition-colors rich-text-inline"
+                dangerouslySetInnerHTML={{
+                  __html: prepareRichTextHtmlForRender(post.title, 'inline-single'),
+                }}
+              />
               <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed [overflow-wrap:anywhere]">
                 {excerptText}
               </p>

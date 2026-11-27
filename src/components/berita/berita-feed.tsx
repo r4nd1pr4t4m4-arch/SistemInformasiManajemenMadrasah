@@ -13,6 +13,10 @@ import {
 } from 'lucide-react';
 import type { PostItem } from '@/types/database';
 import { EmptyState, NoSearchResultState } from '@/components/ui/state-views';
+import {
+  prepareRichTextHtmlForRender,
+  stripHtmlToPlainText,
+} from '@/lib/security/rich-text';
 
 const PAGE_SIZE = 9;
 
@@ -64,10 +68,7 @@ function formatPublishedDate(dateStr: string | null | undefined): string {
 }
 
 function buildExcerpt(post: PostItem, maxLength = 145): string {
-  const raw = (post.excerpt?.trim() || post.content?.trim() || '');
-  if (!raw) return 'Tidak ada ringkasan artikel.';
-  const cleaned = raw
-    .replace(/<[^>]*>/g, ' ')
+  const cleaned = stripHtmlToPlainText(post.excerpt || post.content)
     .replace(/[#*_`>~]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -137,9 +138,9 @@ export function BeritaFeed({ posts }: { posts: PostItem[] }) {
       }
       if (!q) return true;
       return (
-        (post.title || '').toLowerCase().includes(q) ||
-        (post.excerpt || '').toLowerCase().includes(q) ||
-        (post.content || '').toLowerCase().includes(q) ||
+        stripHtmlToPlainText(post.title).toLowerCase().includes(q) ||
+        stripHtmlToPlainText(post.excerpt).toLowerCase().includes(q) ||
+        stripHtmlToPlainText(post.content).toLowerCase().includes(q) ||
         (post.author_display_name || '').toLowerCase().includes(q)
       );
     });
@@ -281,7 +282,7 @@ export function BeritaFeed({ posts }: { posts: PostItem[] }) {
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={safeCoverUrl}
-                          alt={post.title || 'Sampul Publikasi'}
+                          alt={stripHtmlToPlainText(post.title) || 'Sampul Publikasi'}
                           loading="lazy"
                           decoding="async"
                           onError={() =>
@@ -300,9 +301,12 @@ export function BeritaFeed({ posts }: { posts: PostItem[] }) {
                       >
                         {formatCategoryLabel(post.category)}
                       </span>
-                      <h2 className="font-bold text-slate-900 text-base leading-snug [overflow-wrap:anywhere] group-hover:text-emerald-700 transition-colors">
-                        {post.title}
-                      </h2>
+                      <h2
+                        className="font-bold text-slate-900 text-base leading-snug [overflow-wrap:anywhere] group-hover:text-emerald-700 transition-colors rich-text-inline"
+                        dangerouslySetInnerHTML={{
+                          __html: prepareRichTextHtmlForRender(post.title, 'inline-single'),
+                        }}
+                      />
                       <p className="text-sm text-slate-600 leading-relaxed [overflow-wrap:anywhere] line-clamp-3">
                         {buildExcerpt(post)}
                       </p>
@@ -397,7 +401,7 @@ export function BeritaFeed({ posts }: { posts: PostItem[] }) {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={activeCoverUrl}
-                    alt={activePost.title || 'Sampul Publikasi'}
+                    alt={stripHtmlToPlainText(activePost.title) || 'Sampul Publikasi'}
                     decoding="async"
                     onError={() =>
                       setBrokenImages((prev) => ({ ...prev, [activePost.id]: true }))
@@ -410,10 +414,11 @@ export function BeritaFeed({ posts }: { posts: PostItem[] }) {
               <div className="p-5 sm:p-7 space-y-4">
                 <h2
                   id="berita-modal-title"
-                  className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-snug [overflow-wrap:anywhere]"
-                >
-                  {activePost.title}
-                </h2>
+                  className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-snug [overflow-wrap:anywhere] rich-text-inline"
+                  dangerouslySetInnerHTML={{
+                    __html: prepareRichTextHtmlForRender(activePost.title, 'inline-single'),
+                  }}
+                />
 
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 pb-3 border-b border-slate-100">
                   <span className="inline-flex items-center gap-1.5">
@@ -431,17 +436,30 @@ export function BeritaFeed({ posts }: { posts: PostItem[] }) {
                   )}
                 </div>
 
-                {activePost.excerpt?.trim() && activePost.content?.trim() && (
-                  <p className="text-sm font-medium text-slate-700 bg-slate-50 border-l-4 border-emerald-500 px-4 py-3 rounded-r-xl leading-relaxed [overflow-wrap:anywhere]">
-                    {activePost.excerpt}
-                  </p>
+                {stripHtmlToPlainText(activePost.excerpt) && stripHtmlToPlainText(activePost.content) && (
+                  <div
+                    className="text-sm font-medium text-slate-700 bg-slate-50 border-l-4 border-emerald-500 px-4 py-3 rounded-r-xl leading-relaxed [overflow-wrap:anywhere] rich-text-inline"
+                    dangerouslySetInnerHTML={{
+                      __html: prepareRichTextHtmlForRender(activePost.excerpt, 'inline'),
+                    }}
+                  />
                 )}
 
-                <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line [overflow-wrap:anywhere]">
-                  {activePost.content?.trim() ||
-                    activePost.excerpt?.trim() ||
-                    'Konten artikel tidak tersedia.'}
-                </div>
+                {stripHtmlToPlainText(activePost.content) || stripHtmlToPlainText(activePost.excerpt) ? (
+                  <div
+                    className="text-sm text-slate-700 leading-relaxed rich-text-content"
+                    dangerouslySetInnerHTML={{
+                      __html: prepareRichTextHtmlForRender(
+                        stripHtmlToPlainText(activePost.content)
+                          ? activePost.content
+                          : activePost.excerpt,
+                        'block'
+                      ),
+                    }}
+                  />
+                ) : (
+                  <p className="text-sm text-slate-500 italic">Konten artikel tidak tersedia.</p>
+                )}
               </div>
             </div>
 

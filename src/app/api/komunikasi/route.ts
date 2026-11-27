@@ -2,8 +2,33 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
+import { PERMISSIONS } from '@/lib/auth/rbac';
 import { sanitizeApiError } from '@/lib/security/api-error';
 import { notifyStudentFamilyEvent } from '@/lib/notifications/event-hooks';
+
+const WA_ADMIN_ROLES = ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'KEPALA_TU'] as const;
+
+function isSafeOptionalUrl(val: string | null | undefined): boolean {
+  if (!val || !val.trim()) return true;
+  const trimmed = val.trim();
+  return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('/');
+}
+
+async function getLinkedStudentIds(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  userId: string
+): Promise<string[]> {
+  const [{ data: guardians }, { data: ownSt }] = await Promise.all([
+    supabase.from('student_guardians').select('student_id').eq('profile_id', userId),
+    supabase.from('students').select('id').eq('profile_id', userId),
+  ]);
+  return Array.from(
+    new Set([
+      ...(guardians || []).map((g) => g.student_id as string),
+      ...(ownSt || []).map((s) => s.id as string),
+    ])
+  );
+}
 
 export async function GET() {
   const session = await getCurrentUserWithRoles();
@@ -12,6 +37,7 @@ export async function GET() {
     return NextResponse.json({
       isAdmin: false,
       isStaff: false,
+      hasWaEnvToken: false,
       messages: [],
       leaveRequests: [],
       students: [],
@@ -20,33 +46,10 @@ export async function GET() {
   }
 
   const supabase = createSupabaseAdminClient();
-  const isAdmin = hasAnyRole(session, ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'KEPALA_TU']);
-  const isStaff = hasAnyRole(session, [
-    'SUPERADMIN',
-    'OPERATOR',
-    'KEPALA_LEMBAGA',
-    'WAKA_KESISWAAN',
-    'WAKA_KURIKULUM',
-    'WALI_KELAS',
-    'GURU_WALI',
-    'GURU_BK',
-    'KEPALA_TU',
-    'STAF_TU',
-  ]);
+  const isAdmin = hasAnyRole(session, WA_ADMIN_ROLES);
+  const isStaff = hasAnyRole(session, PERMISSIONS.KOMUNIKASI_STAFF);
 
-  let linkedStudentIds: string[] = [];
-  if (!isStaff) {
-    const [{ data: guardians }, { data: ownSt }] = await Promise.all([
-      supabase.from('student_guardians').select('student_id').eq('profile_id', session.userId),
-      supabase.from('students').select('id').eq('profile_id', session.userId),
-    ]);
-    linkedStudentIds = Array.from(
-      new Set([
-        ...(guardians || []).map((g) => g.student_id as string),
-        ...(ownSt || []).map((s) => s.id as string),
-      ])
-    );
-  }
+  const linkedStudentIds = !isStaff ? await getLinkedStudentIds(supabase, session.userId) : [];
 
   const [msgRes, leaveRes, stRes, waRes] = await Promise.all([
     supabase
@@ -99,18 +102,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
   }
 
-  const isAdmin = hasAnyRole(session, ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'KEPALA_TU']);
-  const isStaff = hasAnyRole(session, [
-    'SUPERADMIN',
-    'OPERATOR',
-    'KEPALA_LEMBAGA',
-    'WAKA_KESISWAAN',
-    'WALI_KELAS',
-    'GURU_WALI',
-    'GURU_BK',
-    'KEPALA_TU',
-    'STAF_TU',
-  ]);
+  const isAdmin = hasAnyRole(session, WA_ADMIN_ROLES);
+  const isStaff = hasAnyRole(session, PERMISSIONS.KOMUNIKASI_STAFF);
   const supabase = createSupabaseAdminClient();
 
   try {
@@ -119,13 +112,28 @@ export async function POST(request: Request) {
     if (body.action === 'SEND_MESSAGE') {
       const p = z
         .object({
-          student_id: z.string().uuid(),
+          student_id: z.string().uuid('Siswa / anak wajib dipilih.'),
           recipient_role: z.enum(['WALI_KELAS', 'GURU_WALI', 'GURU_BK']).default('WALI_KELAS'),
-          subject: z.string().trim().min(3),
-          message: z.string().trim().min(5),
+          subject: z.string().trim().min(3, 'Perihal konsultasi minimal 3 karakter.'),
+          message: z.string().trim().min(5, 'Isi pesan minimal 5 karakter.'),
         })
         .safeParse(body);
-      if (!p.success) return NextResponse.json({ error: 'Pesan konsultasi tidak valid.' }, { status: 400 });
+      if (!p.success) {
+        return NextResponse.json(
+          { error: p.error.issues[0]?.message || 'Pesan konsultasi tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      if (!isStaff) {
+        const linkedIds = await getLinkedStudentIds(supabase, session.userId);
+        if (!linkedIds.includes(p.data.student_id)) {
+          return NextResponse.json(
+            { error: 'Anda hanya dapat mengirim pesan untuk akun siswa/anak Anda sendiri.' },
+            { status: 403 }
+          );
+        }
+      }
 
       const { data, error } = await supabase
         .from('parent_teacher_messages')
@@ -145,10 +153,15 @@ export async function POST(request: Request) {
       const p = z
         .object({
           id: z.string().uuid(),
-          reply_text: z.string().trim().min(3),
+          reply_text: z.string().trim().min(3, 'Isi balasan minimal 3 karakter.'),
         })
         .safeParse(body);
-      if (!p.success) return NextResponse.json({ error: 'Isi balasan minimal 3 karakter.' }, { status: 400 });
+      if (!p.success) {
+        return NextResponse.json(
+          { error: p.error.issues[0]?.message || 'Isi balasan minimal 3 karakter.' },
+          { status: 400 }
+        );
+      }
 
       const { data, error } = await supabase
         .from('parent_teacher_messages')
@@ -168,20 +181,41 @@ export async function POST(request: Request) {
     if (body.action === 'SUBMIT_QUICK_LEAVE') {
       const p = z
         .object({
-          student_id: z.string().uuid(),
-          leave_date: z.string().min(8),
+          student_id: z.string().uuid('Siswa / anak wajib dipilih.'),
+          leave_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal izin tidak valid.'),
           leave_type: z.enum(['SAKIT', 'IZIN']).default('SAKIT'),
-          reason: z.string().trim().min(3),
-          attachment_url: z.string().optional().nullable(),
+          reason: z.string().trim().min(3, 'Keterangan izin minimal 3 karakter.'),
+          attachment_url: z
+            .string()
+            .optional()
+            .nullable()
+            .refine((val) => isSafeOptionalUrl(val), {
+              message: 'URL lampiran harus diawali http://, https://, atau /.',
+            }),
         })
         .safeParse(body);
-      if (!p.success) return NextResponse.json({ error: 'Data izin tidak masuk tidak valid.' }, { status: 400 });
+      if (!p.success) {
+        return NextResponse.json(
+          { error: p.error.issues[0]?.message || 'Data izin tidak masuk tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      if (!isStaff) {
+        const linkedIds = await getLinkedStudentIds(supabase, session.userId);
+        if (!linkedIds.includes(p.data.student_id)) {
+          return NextResponse.json(
+            { error: 'Anda hanya dapat mengajukan izin untuk akun siswa/anak Anda sendiri.' },
+            { status: 403 }
+          );
+        }
+      }
 
       const { data, error } = await supabase
         .from('student_leave_requests')
         .insert({
           ...p.data,
-          attachment_url: p.data.attachment_url || null,
+          attachment_url: p.data.attachment_url?.trim() || null,
           submitted_by: session.userId,
           status: 'MENUNGGU',
         })
@@ -205,8 +239,14 @@ export async function POST(request: Request) {
         .from('student_leave_requests')
         .select('*')
         .eq('id', p.data.id)
-        .single();
+        .maybeSingle();
       if (!reqRow) return NextResponse.json({ error: 'Permohonan izin tidak ditemukan.' }, { status: 404 });
+      if (reqRow.status !== 'MENUNGGU') {
+        return NextResponse.json(
+          { error: `Permohonan izin ini sudah berstatus ${reqRow.status}.` },
+          { status: 409 }
+        );
+      }
 
       const { data, error } = await supabase
         .from('student_leave_requests')
@@ -216,9 +256,16 @@ export async function POST(request: Request) {
           reviewed_at: new Date().toISOString(),
         })
         .eq('id', p.data.id)
+        .eq('status', 'MENUNGGU')
         .select('*')
-        .single();
+        .maybeSingle();
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      if (!data) {
+        return NextResponse.json(
+          { error: 'Permohonan izin sudah diproses oleh petugas lain.' },
+          { status: 409 }
+        );
+      }
 
       if (p.data.status === 'DISETUJUI') {
         const { data: enr } = await supabase
@@ -257,7 +304,14 @@ export async function POST(request: Request) {
       const p = z
         .object({
           provider: z.enum(['DISABLED', 'FONNTE', 'WABLAS', 'WA_CLOUD']).default('DISABLED'),
-          api_url: z.string().optional().nullable(),
+          api_url: z
+            .string()
+            .optional()
+            .nullable()
+            .refine(
+              (val) => !val || !val.trim() || /^https?:\/\//i.test(val.trim()),
+              { message: 'Endpoint URL harus diawali http:// atau https://.' }
+            ),
           is_enabled: z.boolean().default(false),
           notify_alpha: z.boolean().default(true),
           notify_spp: z.boolean().default(true),
@@ -265,7 +319,12 @@ export async function POST(request: Request) {
           notify_qr_arrival: z.boolean().default(true),
         })
         .safeParse(body);
-      if (!p.success) return NextResponse.json({ error: 'Pengaturan WhatsApp Gateway tidak valid.' }, { status: 400 });
+      if (!p.success) {
+        return NextResponse.json(
+          { error: p.error.issues[0]?.message || 'Pengaturan WhatsApp Gateway tidak valid.' },
+          { status: 400 }
+        );
+      }
 
       const { data: existing } = await supabase
         .from('whatsapp_gateway_settings')
