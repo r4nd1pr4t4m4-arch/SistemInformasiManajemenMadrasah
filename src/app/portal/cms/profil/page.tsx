@@ -22,6 +22,7 @@ import { notifyInstitutionSettingsUpdated } from '@/lib/hooks/use-institution-se
 import { InstitutionLogo } from '@/components/ui/institution-logo';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
+import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
 
 interface ToastState {
   type: 'success' | 'error';
@@ -49,6 +50,8 @@ export default function CmsProfilPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [settings, setSettings] = useState<InstitutionSettings | null>(null);
+  const [geoLatInput, setGeoLatInput] = useState('');
+  const [geoLngInput, setGeoLngInput] = useState('');
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastBannerRef = useRef<HTMLDivElement | null>(null);
@@ -68,6 +71,16 @@ export default function CmsProfilPage() {
       .then((data) => {
         if (data?.settings) {
           setSettings(data.settings);
+          setGeoLatInput(
+            data.settings.geofence_lat !== null && data.settings.geofence_lat !== undefined
+              ? String(data.settings.geofence_lat)
+              : ''
+          );
+          setGeoLngInput(
+            data.settings.geofence_lng !== null && data.settings.geofence_lng !== undefined
+              ? String(data.settings.geofence_lng)
+              : ''
+          );
           setLoadError(null);
         } else {
           throw new Error('Data pengaturan lembaga tidak ditemukan.');
@@ -586,16 +599,21 @@ export default function CmsProfilPage() {
                   Latitude Sekolah
                 </label>
                 <input
-                  type="number"
-                  step="0.000001"
-                  value={settings.geofence_lat ?? ''}
-                  onChange={(e) =>
+                  type="text"
+                  inputMode="decimal"
+                  value={geoLatInput}
+                  onChange={(e) => {
+                    const normalized = normalizeDecimalInput(e.target.value, {
+                      allowNegative: true,
+                    });
+                    setGeoLatInput(normalized);
+                    const parsed = parseDecimalInput(normalized, { allowNegative: true });
                     setSettings({
                       ...settings,
-                      geofence_lat:
-                        e.target.value === '' ? null : Number(e.target.value),
-                    })
-                  }
+                      geofence_lat: normalized === '' ? null : parsed ?? settings.geofence_lat,
+                    });
+                  }}
+                  placeholder="-6.200000"
                   className={`${INPUT_CLASS} font-mono`}
                 />
               </div>
@@ -604,16 +622,21 @@ export default function CmsProfilPage() {
                   Longitude Sekolah
                 </label>
                 <input
-                  type="number"
-                  step="0.000001"
-                  value={settings.geofence_lng ?? ''}
-                  onChange={(e) =>
+                  type="text"
+                  inputMode="decimal"
+                  value={geoLngInput}
+                  onChange={(e) => {
+                    const normalized = normalizeDecimalInput(e.target.value, {
+                      allowNegative: true,
+                    });
+                    setGeoLngInput(normalized);
+                    const parsed = parseDecimalInput(normalized, { allowNegative: true });
                     setSettings({
                       ...settings,
-                      geofence_lng:
-                        e.target.value === '' ? null : Number(e.target.value),
-                    })
-                  }
+                      geofence_lng: normalized === '' ? null : parsed ?? settings.geofence_lng,
+                    });
+                  }}
+                  placeholder="106.816666"
                   className={`${INPUT_CLASS} font-mono`}
                 />
               </div>

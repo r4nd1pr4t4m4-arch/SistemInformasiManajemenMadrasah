@@ -7,6 +7,7 @@ import {
   type ColumnNamingMode,
   type TaughtClassroomSummary,
 } from '@/lib/domain/penilaian';
+import { parseDecimalInput } from '@/lib/validation/decimal';
 
 export interface StudentRow {
   id: string;
@@ -93,10 +94,7 @@ export const EMPTY_EXAM_ROW: ExamScoreState = {
 };
 
 export function parseNumericInput(val: string): number | null {
-  const trimmed = val.trim();
-  if (!trimmed) return null;
-  const num = Number(trimmed);
-  return Number.isNaN(num) ? null : num;
+  return parseDecimalInput(val);
 }
 
 export function computeValidationErrors(params: {

@@ -18,6 +18,7 @@ import {
   generateConsolidatedERaportPdf,
   type ERaportExtracurricularItem,
 } from '@/lib/domain/eraport-consolidated-pdf';
+import { formatScoreDecimal } from '@/lib/validation/decimal';
 
 interface LegerSubject {
   id: string;
@@ -393,12 +394,12 @@ export default function LegerERaportPage() {
                             belowKkm ? 'text-rose-600 font-bold bg-rose-50/40' : 'text-slate-700'
                           }`}
                         >
-                          {val !== null ? val.toFixed(1) : '-'}
+                          {formatScoreDecimal(val)}
                         </td>
                       );
                     })}
                     <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-900">
-                      {row.average !== null ? row.average.toFixed(1) : '-'}
+                      {formatScoreDecimal(row.average)}
                     </td>
                     <td className="px-3 py-2.5 text-center font-mono text-[11px] text-slate-600">
                       {row.attendance.sakit}/{row.attendance.izin}/{row.attendance.alpa}

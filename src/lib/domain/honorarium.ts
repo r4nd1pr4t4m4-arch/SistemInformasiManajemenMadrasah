@@ -163,7 +163,7 @@ export function calculateTeacherHonorarium(
     Math.max(0, jtm.paidHolidayJtm ?? 0);
 
   const safeRate = Math.max(0, ratePerJtm);
-  const jtmHonorariumAmount = totalJtm * safeRate;
+  const jtmHonorariumAmount = Math.round(totalJtm * safeRate);
 
   const eligibleDuties: DutyAllowanceInput[] = [];
   const excludedDuties: DutyAllowanceInput[] = [];

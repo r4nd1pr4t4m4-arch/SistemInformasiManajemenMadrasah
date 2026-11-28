@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { formatRupiah } from '@/lib/domain/honorarium';
+import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
 import type { HonorariumSlipData } from '@/lib/cards/honorarium-slip-png';
 import {
   MONTH_OPTIONS,
@@ -109,7 +110,7 @@ export function RekapSection({
   }, [deleteTargetIds, honorariums]);
 
   const editPreview = useMemo(() => {
-    const totalJtm = Number(editForm.total_jtm);
+    const totalJtm = parseDecimalInput(editForm.total_jtm) ?? NaN;
     const rate = Number(editForm.rate_per_jtm);
     const dutyAllowance = Number(editForm.additional_duty_allowance);
     const transportAllowance = Number(editForm.transport_allowance);
@@ -176,7 +177,7 @@ export function RekapSection({
     e.preventDefault();
     if (!canManage || !editingHonorarium || submittingAction) return;
 
-    const totalJtm = editForm.total_jtm.trim() === '' ? NaN : Number(editForm.total_jtm);
+    const totalJtm = parseDecimalInput(editForm.total_jtm) ?? NaN;
     const rate = editForm.rate_per_jtm.trim() === '' ? NaN : Number(editForm.rate_per_jtm);
     const dutyAllowance =
       editForm.additional_duty_allowance.trim() === ''
@@ -721,13 +722,17 @@ export function RekapSection({
                   </label>
                   <input
                     id="edit-honor-total-jtm"
-                    type="number"
-                    min={0}
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
                     required
                     disabled={submittingAction === 'UPDATE_HONORARIUM'}
                     value={editForm.total_jtm}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, total_jtm: e.target.value }))}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        total_jtm: normalizeDecimalInput(e.target.value),
+                      }))
+                    }
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
                   />
                 </div>

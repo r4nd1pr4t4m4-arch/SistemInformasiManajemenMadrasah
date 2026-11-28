@@ -15,6 +15,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { formatRupiah } from '@/lib/domain/honorarium';
+import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
 import {
   DAY_LABELS,
   formatDurationLabel,
@@ -599,8 +600,7 @@ export function JarakGuruSection({
   const [distanceSearch, setDistanceSearch] = useState('');
   const [distanceFilter, setDistanceFilter] = useState<'all' | 'configured' | 'zero'>('all');
 
-  const parsedDistanceKm =
-    distanceForm.home_distance_km.trim() === '' ? NaN : Number(distanceForm.home_distance_km);
+  const parsedDistanceKm = parseDecimalInput(distanceForm.home_distance_km) ?? NaN;
 
   const distanceValidationError = !distanceForm.teacher_id
     ? null
@@ -753,17 +753,15 @@ export function JarakGuruSection({
                 <div className="relative">
                   <input
                     id="honor-distance-km"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    max={500}
+                    type="text"
+                    inputMode="decimal"
                     required
                     disabled={submittingAction === 'UPDATE_TEACHER_DISTANCE'}
                     value={distanceForm.home_distance_km}
                     onChange={(e) =>
                       setDistanceForm((prev) => ({
                         ...prev,
-                        home_distance_km: e.target.value,
+                        home_distance_km: normalizeDecimalInput(e.target.value),
                       }))
                     }
                     placeholder="mis. 4.25"

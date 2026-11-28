@@ -20,6 +20,7 @@ import {
   type SavingsFeeTier,
 } from '@/lib/domain/tabungan-fee';
 import type { TierFormState } from './types';
+import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
 
 interface AturanFeeSectionProps {
   canManage: boolean;
@@ -55,6 +56,7 @@ export function AturanFeeSection({
     fee_percentage: 2.0,
     is_active: true,
   });
+  const [feePctInput, setFeePctInput] = useState<string>('2');
   const [simAmount, setSimAmount] = useState<number>(1000000);
 
   useEffect(() => {
@@ -149,6 +151,7 @@ export function AturanFeeSection({
       fee_percentage: 2.0,
       is_active: true,
     });
+    setFeePctInput('2');
     setTierModalOpen(true);
   }
 
@@ -157,22 +160,25 @@ export function AturanFeeSection({
     if (!target) return;
     setEditingTierIdx(idx);
     setTierModalError(null);
+    const pct = Number(target.fee_percentage) || 0;
     setTierForm({
       tier_order: target.tier_order,
       label: target.label || '',
       min_amount: Number(target.min_amount) || 0,
       max_amount: target.max_amount != null ? Number(target.max_amount) : null,
       is_unbounded: target.max_amount == null,
-      fee_percentage: Number(target.fee_percentage) || 0,
+      fee_percentage: pct,
       is_active: Boolean(target.is_active),
     });
+    setFeePctInput(String(pct));
     setTierModalOpen(true);
   }
 
   function handleSaveTierModal() {
     const minVal = Number(tierForm.min_amount);
     const maxVal = tierForm.is_unbounded ? null : Number(tierForm.max_amount);
-    const pctVal = Number(tierForm.fee_percentage);
+    const parsedPct = parseDecimalInput(feePctInput);
+    const pctVal = parsedPct === null ? NaN : Math.round(parsedPct * 100) / 100;
 
     if (!Number.isFinite(minVal) || minVal < 0) {
       setTierModalError('Batas bawah harus berupa angka minimal Rp 0.');
@@ -707,14 +713,17 @@ export function AturanFeeSection({
                 <div className="relative">
                   <input
                     id="tier-pct"
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.05}
-                    value={tierForm.fee_percentage}
-                    onChange={(e) =>
-                      setTierForm({ ...tierForm, fee_percentage: Number(e.target.value) })
-                    }
+                    type="text"
+                    inputMode="decimal"
+                    value={feePctInput}
+                    onChange={(e) => {
+                      const normalized = normalizeDecimalInput(e.target.value);
+                      setFeePctInput(normalized);
+                      const parsed = parseDecimalInput(normalized);
+                      if (parsed !== null) {
+                        setTierForm((prev) => ({ ...prev, fee_percentage: parsed }));
+                      }
+                    }}
                     className="w-full min-w-0 rounded-xl border border-slate-300 px-3 pr-7 py-2 text-xs font-bold text-slate-900 tabular-nums"
                   />
                   <span className="absolute right-3 top-2 font-bold text-slate-400 text-xs">%</span>

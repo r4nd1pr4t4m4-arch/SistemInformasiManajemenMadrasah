@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
 import {
   AlertCircle,
   BookOpen,
@@ -521,8 +522,8 @@ export default function PembelajaranLmsPage() {
       showToast('Nilai wajib diisi (angka 0 sampai 100).', 'err');
       return;
     }
-    const parsedScore = Number(rawScore);
-    if (!Number.isFinite(parsedScore) || parsedScore < 0 || parsedScore > 100) {
+    const parsedScore = parseDecimalInput(rawScore);
+    if (parsedScore === null || parsedScore < 0 || parsedScore > 100) {
       showToast('Nilai harus berupa angka antara 0 sampai 100.', 'err');
       return;
     }
@@ -1936,15 +1937,15 @@ export default function PembelajaranLmsPage() {
                 </label>
                 <input
                   id="lms-grade-score"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   required
-                  min={0}
-                  max={100}
-                  step="any"
                   disabled={busy}
                   value={gradeModal.score}
                   onChange={(e) =>
-                    setGradeModal((prev) => (prev ? { ...prev, score: e.target.value } : null))
+                    setGradeModal((prev) =>
+                      prev ? { ...prev, score: normalizeDecimalInput(e.target.value) } : null
+                    )
                   }
                   className={`${INPUT_CLASS} font-mono`}
                 />

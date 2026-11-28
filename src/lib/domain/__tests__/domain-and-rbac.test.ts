@@ -31,6 +31,11 @@ import {
   filterSavingsTransactions,
   resolveSavingsDateRange,
 } from '../savings-history-filter';
+import {
+  formatScoreDecimal,
+  normalizeDecimalInput,
+  parseDecimalInput,
+} from '../../validation/decimal';
 
 describe('Domain: Tabungan Fee & Pembulatan (tabungan-fee.ts)', () => {
   it('membulatkan fee ratusan < 330 ke ribuan bawah (000)', () => {
@@ -370,5 +375,46 @@ describe('Domain: Filter Riwayat Tabungan & Blokir Tanggal Masa Depan (savings-h
       todayIso: today,
     });
     assert.deepEqual(customSetor.map((t) => t.id), ['t1', 't3']);
+  });
+});
+
+describe('Domain: Pembulatan Honorarium JTM Desimal & Utilitas Desimal (decimal.ts)', () => {
+  it('membulatkan jtmHonorariumAmount ke Rupiah bulat saat totalJtm desimal', () => {
+    const res = calculateTeacherHonorarium(
+      {
+        teachingJtm: 1.33,
+        substituteJtm: 0,
+        examSupervisorJtm: 0,
+        examCommitteeJtm: 0,
+      },
+      25_001,
+      [],
+      0
+    );
+    // 1.33 * 25001 = 33251.33 -> dibulatkan 33251
+    assert.equal(res.jtmHonorariumAmount, 33_251);
+    assert.equal(res.totalAmount, 33_251);
+  });
+
+  it('menormalkan dan mengurai input desimal dengan koma maupun titik lintas locale', () => {
+    assert.equal(normalizeDecimalInput('85,75'), '85.75');
+    assert.equal(normalizeDecimalInput('85,7.5'), '85.75');
+    assert.equal(normalizeDecimalInput('-6,2088', { allowNegative: true }), '-6.2088');
+    assert.equal(normalizeDecimalInput('-6,2088'), '6.2088');
+
+    assert.equal(parseDecimalInput('85,75'), 85.75);
+    assert.equal(parseDecimalInput('85.75'), 85.75);
+    assert.equal(parseDecimalInput('0'), 0);
+    assert.equal(parseDecimalInput(''), null);
+    assert.equal(parseDecimalInput('-6,2088', { allowNegative: true }), -6.2088);
+    assert.equal(parseDecimalInput('-6,2088'), null);
+  });
+
+  it('memformat nilai akademik hingga 2 angka desimal tanpa memotong ke 1 desimal', () => {
+    assert.equal(formatScoreDecimal(85.75), '85.75');
+    assert.equal(formatScoreDecimal(85.5), '85.5');
+    assert.equal(formatScoreDecimal(85), '85');
+    assert.equal(formatScoreDecimal(85.756), '85.76');
+    assert.equal(formatScoreDecimal(null), '-');
   });
 });

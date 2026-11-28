@@ -106,7 +106,7 @@ const DelegationSchema = z.object({
   original_teacher_id: z.string().uuid(),
   substitute_teacher_id: z.string().uuid(),
   schedule_id: z.string().uuid().optional().nullable(),
-  jtm_transferred: z.number().min(1).max(12).default(2),
+  jtm_transferred: z.number().min(0.01).max(12).default(2),
   reason: z.string().optional().nullable(),
 });
 
@@ -939,8 +939,8 @@ export async function POST(request: Request) {
           .select('jtm_transferred')
           .eq('id', att.delegation_id)
           .maybeSingle();
-        if (delRow?.jtm_transferred) {
-          baseJtm = delRow.jtm_transferred;
+        if (delRow?.jtm_transferred != null) {
+          baseJtm = Number(delRow.jtm_transferred);
         }
       } else if (att.schedule_id) {
         const { data: schedRow } = await supabase
@@ -1216,7 +1216,7 @@ export async function POST(request: Request) {
               original_teacher_id: att.teacher_id,
               substitute_teacher_id: parsed.data.diff_recipient_teacher_id,
               schedule_id: att.schedule_id || null,
-              jtm_transferred: Math.round(diffJtm),
+              jtm_transferred: diffJtm,
               reason:
                 parsed.data.diff_reason?.trim() ||
                 `Alokasi selisih JTM (${diffJtm} JTM dari ${expectedJtm} JTM)`,
@@ -1251,7 +1251,7 @@ export async function POST(request: Request) {
               original_teacher_id: att.teacher_id,
               substitute_teacher_id: parsed.data.diff_recipient_teacher_id,
               picket_schedule_id: att.picket_schedule_id || null,
-              jtm_transferred: Math.round(diffJtm),
+              jtm_transferred: diffJtm,
               reason:
                 parsed.data.diff_reason?.trim() ||
                 `Alokasi selisih JTM Piket (${diffJtm} JTM dari ${expectedJtm} JTM)`,
@@ -1279,7 +1279,7 @@ export async function POST(request: Request) {
                 teacher_id: parsed.data.diff_recipient_teacher_id,
                 original_teacher_id: att.teacher_id,
                 committee_role: `${comRow.committee_role} (Selisih JTM)`,
-                jtm_allocated: Math.round(diffJtm),
+                jtm_allocated: diffJtm,
                 substituted_by_profile_id: guard.session.userId,
                 substitution_reason:
                   parsed.data.diff_reason?.trim() ||
@@ -1311,7 +1311,7 @@ export async function POST(request: Request) {
                 exam_date: supRow.exam_date,
                 session_name: `${supRow.session_name} (Selisih JTM)`,
                 subject_name: supRow.subject_name,
-                jtm_allocated: Math.round(diffJtm),
+                jtm_allocated: diffJtm,
                 substitution_reason:
                   parsed.data.diff_reason?.trim() ||
                   `Alokasi selisih JTM (${diffJtm} JTM dari ${expectedJtm} JTM)`,
@@ -1840,7 +1840,7 @@ export async function POST(request: Request) {
             original_teacher_id: d.teacher_id,
             substitute_teacher_id: d.diff_recipient_teacher_id,
             schedule_id: d.schedule_id || null,
-            jtm_transferred: Math.round(diffJtm),
+            jtm_transferred: diffJtm,
             reason:
               d.diff_reason?.trim() ||
               `Alokasi selisih JTM (${diffJtm} JTM dari ${expectedJtm} JTM)`,
@@ -1863,7 +1863,7 @@ export async function POST(request: Request) {
               exam_date: supRow.exam_date,
               session_name: `${supRow.session_name} (Selisih JTM)`,
               subject_name: supRow.subject_name,
-              jtm_allocated: Math.round(diffJtm),
+              jtm_allocated: diffJtm,
               substitution_reason:
                 d.diff_reason?.trim() ||
                 `Alokasi selisih JTM (${diffJtm} JTM dari ${expectedJtm} JTM)`,

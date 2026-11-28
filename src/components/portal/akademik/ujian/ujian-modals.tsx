@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { AkademikModal } from '../akademik-ui';
+import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
 import type {
   RemoveRoomMemberModalState,
   SupAdjustModalState,
@@ -40,6 +42,16 @@ export function UjianModals({
   removeRoomMemberModal,
   setRemoveRoomMemberModal,
 }: UjianModalsProps) {
+  const [supJtmDraft, setSupJtmDraft] = useState<{ key: string; value: string } | null>(null);
+  const currentSupKey = supAdjustModal
+    ? `${supAdjustModal.sup.id}:${supAdjustModal.expectedJtm}`
+    : '';
+  const supApprovedJtmInput =
+    supAdjustModal && supJtmDraft?.key === currentSupKey
+      ? supJtmDraft.value
+      : supAdjustModal
+        ? String(supAdjustModal.approvedJtm)
+        : '';
   return (
     <>
       {/* Modal 1: Penyesuaian JTM Pengawas Ujian */}
@@ -71,16 +83,17 @@ export function UjianModals({
               </label>
               <input
                 id="sup-adjust-jtm-input"
-                type="number"
-                min={0}
-                max={supAdjustModal.expectedJtm}
-                step="0.5"
-                value={supAdjustModal.approvedJtm}
+                type="text"
+                inputMode="decimal"
+                value={supApprovedJtmInput}
                 onChange={(e) => {
-                  const parsed = Number.parseFloat(e.target.value);
-                  const val = Number.isFinite(parsed)
-                    ? Math.min(supAdjustModal.expectedJtm, Math.max(0, parsed))
-                    : 0;
+                  const normalized = normalizeDecimalInput(e.target.value);
+                  setSupJtmDraft({ key: currentSupKey, value: normalized });
+                  const parsed = parseDecimalInput(normalized);
+                  const val =
+                    parsed !== null
+                      ? Math.min(supAdjustModal.expectedJtm, Math.max(0, parsed))
+                      : 0;
                   setSupAdjustModal({
                     ...supAdjustModal,
                     approvedJtm: val,

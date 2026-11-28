@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { buildVerificationUrl } from '@/lib/verification/document-verify';
+import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
 
 interface TeacherOpt {
   id: string;
@@ -105,7 +106,7 @@ export default function SdmGtkModernPage() {
     record_type: 'PKG' as 'PKG' | 'SUPERVISI' | 'DIKLAT' | 'SERTIFIKASI',
     title: '',
     period_year: new Date().getFullYear(),
-    score: 90,
+    score: '90',
     organizer: '',
   });
 
@@ -532,8 +533,23 @@ export default function SdmGtkModernPage() {
               <form
                 onSubmit={async (e: FormEvent) => {
                   e.preventDefault();
+                  const trimmedScore = evalForm.score.trim();
+                  const parsedScore =
+                    trimmedScore === '' ? null : parseDecimalInput(trimmedScore);
+                  if (
+                    trimmedScore !== '' &&
+                    (parsedScore === null || parsedScore < 0 || parsedScore > 100)
+                  ) {
+                    showToast('Nilai harus berupa angka antara 0 sampai 100.', 'err');
+                    return;
+                  }
                   const ok = await postAction(
-                    { action: 'CREATE_EVALUATION', ...evalForm, score: Number(evalForm.score) || null },
+                    {
+                      action: 'CREATE_EVALUATION',
+                      ...evalForm,
+                      score:
+                        parsedScore !== null ? Math.round(parsedScore * 100) / 100 : null,
+                    },
                     'Data PKG / Supervisi / Diklat berhasil disimpan.'
                   );
                   if (ok) setEvalForm((p) => ({ ...p, title: '', organizer: '' }));
@@ -573,12 +589,13 @@ export default function SdmGtkModernPage() {
                   className="lg:col-span-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
                 />
                 <input
-                  type="number"
-                  min={0}
-                  max={100}
+                  type="text"
+                  inputMode="decimal"
                   value={evalForm.score}
-                  onChange={(e) => setEvalForm({ ...evalForm, score: Number(e.target.value) || 0 })}
-                  placeholder="Nilai (0-100)"
+                  onChange={(e) =>
+                    setEvalForm({ ...evalForm, score: normalizeDecimalInput(e.target.value) })
+                  }
+                  placeholder="Nilai (0-100, mis. 88.5)"
                   className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-mono"
                 />
                 <button

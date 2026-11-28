@@ -1,6 +1,7 @@
 'use client';
 
 import { computeExamEffectiveScore, type AssessmentMenuType } from '@/lib/domain/penilaian';
+import { normalizeDecimalInput } from '@/lib/validation/decimal';
 import {
   EMPTY_EXAM_ROW,
   parseNumericInput,
@@ -198,14 +199,15 @@ export function ExamScoreSection({
                         Nilai {type}
                       </label>
                       <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step="0.01"
+                        type="text"
+                        inputMode="decimal"
                         disabled={disableScoreInput}
                         value={examRow.score}
                         onChange={(e) =>
-                          onExamRowChange(st.id, { ...examRow, score: e.target.value })
+                          onExamRowChange(st.id, {
+                            ...examRow,
+                            score: normalizeDecimalInput(e.target.value),
+                          })
                         }
                         placeholder="0-100"
                         className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
@@ -224,14 +226,15 @@ export function ExamScoreSection({
                           Remedial {needsRemedial && <span className="text-rose-600">(Wajib)</span>}
                         </label>
                         <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           disabled={disableRemedialInput}
                           value={examRow.remedial_score}
                           onChange={(e) =>
-                            onExamRowChange(st.id, { ...examRow, remedial_score: e.target.value })
+                            onExamRowChange(st.id, {
+                              ...examRow,
+                              remedial_score: normalizeDecimalInput(e.target.value),
+                            })
                           }
                           placeholder={
                             scoreNum !== null && scoreNum >= kkmMinScore
@@ -257,16 +260,14 @@ export function ExamScoreSection({
                           Pengayaan
                         </label>
                         <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           disabled={disableEnrichmentInput}
                           value={examRow.enrichment_score}
                           onChange={(e) =>
                             onExamRowChange(st.id, {
                               ...examRow,
-                              enrichment_score: e.target.value,
+                              enrichment_score: normalizeDecimalInput(e.target.value),
                             })
                           }
                           placeholder={
@@ -363,14 +364,15 @@ export function ExamScoreSection({
                       </td>
                       <td className="px-3 py-2">
                         <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           disabled={disableScoreInput}
                           value={examRow.score}
                           onChange={(e) =>
-                            onExamRowChange(st.id, { ...examRow, score: e.target.value })
+                            onExamRowChange(st.id, {
+                              ...examRow,
+                              score: normalizeDecimalInput(e.target.value),
+                            })
                           }
                           placeholder="0-100"
                           className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
@@ -386,16 +388,14 @@ export function ExamScoreSection({
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-1.5">
                             <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
                               disabled={disableRemedialInput}
                               value={examRow.remedial_score}
                               onChange={(e) =>
                                 onExamRowChange(st.id, {
                                   ...examRow,
-                                  remedial_score: e.target.value,
+                                  remedial_score: normalizeDecimalInput(e.target.value),
                                 })
                               }
                               placeholder={
@@ -422,16 +422,14 @@ export function ExamScoreSection({
                       {examConfig.enable_enrichment && (
                         <td className="px-3 py-2">
                           <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
                             disabled={disableEnrichmentInput}
                             value={examRow.enrichment_score}
                             onChange={(e) =>
                               onExamRowChange(st.id, {
                                 ...examRow,
-                                enrichment_score: e.target.value,
+                                enrichment_score: normalizeDecimalInput(e.target.value),
                               })
                             }
                             placeholder={

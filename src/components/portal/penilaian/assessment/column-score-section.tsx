@@ -3,6 +3,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import { computeAverageScore, type AssessmentMenuType } from '@/lib/domain/penilaian';
 import { parseNumericInput, type ColumnRow, type StudentRow } from './types';
+import { normalizeDecimalInput } from '@/lib/validation/decimal';
 
 interface ColumnScoreSectionProps {
   type: Exclude<AssessmentMenuType, 'RAPORT'>;
@@ -109,13 +110,13 @@ export function ColumnScoreSection({
                               )}
                             </div>
                             <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
                               disabled={!canEdit}
                               value={raw}
-                              onChange={(e) => onScoreChange(key, e.target.value)}
+                              onChange={(e) =>
+                                onScoreChange(key, normalizeDecimalInput(e.target.value))
+                              }
                               placeholder="0-100"
                               className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
                                 isBelowKkm || isInvalidRange
@@ -208,13 +209,13 @@ export function ColumnScoreSection({
                         return (
                           <td key={col.id} className="px-3 py-2">
                             <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
                               disabled={!canEdit}
                               value={raw}
-                              onChange={(e) => onScoreChange(key, e.target.value)}
+                              onChange={(e) =>
+                                onScoreChange(key, normalizeDecimalInput(e.target.value))
+                              }
                               placeholder="0-100"
                               className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
                                 isBelowKkm || isInvalidRange

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
 import {
   AlertTriangle,
   Award,
@@ -174,12 +175,12 @@ export function RaportWorkspace({ subjectId, classrooms }: RaportWorkspaceProps)
 
   const parsedWeights: RaportWeights = useMemo(
     () => ({
-      weight_formatif: Number(weightsInput.weight_formatif.trim() === '' ? '0' : weightsInput.weight_formatif),
-      weight_sumatif: Number(weightsInput.weight_sumatif.trim() === '' ? '0' : weightsInput.weight_sumatif),
-      weight_sts: Number(weightsInput.weight_sts.trim() === '' ? '0' : weightsInput.weight_sts),
-      weight_sas: Number(weightsInput.weight_sas.trim() === '' ? '0' : weightsInput.weight_sas),
+      weight_formatif: parseDecimalInput(weightsInput.weight_formatif) ?? (weightsInput.weight_formatif.trim() === '' ? 0 : NaN),
+      weight_sumatif: parseDecimalInput(weightsInput.weight_sumatif) ?? (weightsInput.weight_sumatif.trim() === '' ? 0 : NaN),
+      weight_sts: parseDecimalInput(weightsInput.weight_sts) ?? (weightsInput.weight_sts.trim() === '' ? 0 : NaN),
+      weight_sas: parseDecimalInput(weightsInput.weight_sas) ?? (weightsInput.weight_sas.trim() === '' ? 0 : NaN),
       weight_praktik: hasPraktik
-        ? Number(weightsInput.weight_praktik.trim() === '' ? '0' : weightsInput.weight_praktik)
+        ? parseDecimalInput(weightsInput.weight_praktik) ?? (weightsInput.weight_praktik.trim() === '' ? 0 : NaN)
         : 0,
     }),
     [weightsInput, hasPraktik]
@@ -473,9 +474,9 @@ export function RaportWorkspace({ subjectId, classrooms }: RaportWorkspaceProps)
             ...(hasPraktik ? [{ key: 'weight_praktik', label: 'Praktik (m%)' }] : []),
           ].map((item) => {
             const rawStr = weightsInput[item.key as keyof typeof weightsInput];
-            const num = Number(rawStr);
+            const num = parseDecimalInput(rawStr);
             const isInvalidCell =
-              rawStr.trim() === '' || Number.isNaN(num) || num < 0 || num > 100;
+              rawStr.trim() === '' || num === null || num < 0 || num > 100;
             return (
               <div key={item.key} className="space-y-1">
                 <label className="block text-[11px] font-semibold text-slate-600">
@@ -483,14 +484,15 @@ export function RaportWorkspace({ subjectId, classrooms }: RaportWorkspaceProps)
                 </label>
                 <div className="relative">
                   <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
                     disabled={!canEdit}
                     value={rawStr}
                     onChange={(e) =>
-                      setWeightsInput((prev) => ({ ...prev, [item.key]: e.target.value }))
+                      setWeightsInput((prev) => ({
+                        ...prev,
+                        [item.key]: normalizeDecimalInput(e.target.value),
+                      }))
                     }
                     className={`w-full pr-7 pl-3 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
                       isInvalidCell

@@ -18,6 +18,7 @@ import {
   useAkademikToast,
 } from '@/components/portal/akademik/akademik-ui';
 import { DEFAULT_KKM_SCORE, type KkmMode } from '@/lib/domain/penilaian';
+import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
 
 interface SubjectItem {
   id: string;
@@ -33,11 +34,11 @@ interface KkmRule {
 }
 
 function parseKkmInput(raw: string | undefined): { valid: boolean; value: number | null } {
-  if (raw === undefined || raw.trim() === '') {
+  const num = parseDecimalInput(raw);
+  if (num === null) {
     return { valid: false, value: null };
   }
-  const num = Number(raw);
-  if (Number.isNaN(num) || num < 0 || num > 100) {
+  if (num < 0 || num > 100) {
     return { valid: false, value: num };
   }
   return { valid: true, value: Math.round(num * 100) / 100 };
@@ -459,12 +460,10 @@ export function KkmSettingsWorkspace() {
 
           <div className="flex items-center gap-2 shrink-0">
             <input
-              type="number"
-              min={0}
-              max={100}
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               value={bulkScore}
-              onChange={(e) => setBulkScore(e.target.value)}
+              onChange={(e) => setBulkScore(normalizeDecimalInput(e.target.value))}
               placeholder="Nilai massal (0–100)"
               aria-label="Nilai KKM massal"
               className="w-36 sm:w-40 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -505,14 +504,15 @@ export function KkmSettingsWorkspace() {
                   <span className="text-xs font-bold text-slate-800">Tingkat {grade}</span>
                   <div className="flex items-center gap-2">
                     <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step="0.01"
+                      type="text"
+                      inputMode="decimal"
                       value={val}
                       aria-label={`Nilai KKM Tingkat ${grade}`}
                       onChange={(e) =>
-                        setRuleScores((prev) => ({ ...prev, [key]: e.target.value }))
+                        setRuleScores((prev) => ({
+                          ...prev,
+                          [key]: normalizeDecimalInput(e.target.value),
+                        }))
                       }
                       className={`w-full sm:w-36 px-3 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
                         valid
@@ -558,14 +558,15 @@ export function KkmSettingsWorkspace() {
                             Tingkat {g}
                           </label>
                           <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
                             value={val}
                             aria-label={`KKM ${sub.name} Tingkat ${g}`}
                             onChange={(e) =>
-                              setRuleScores((prev) => ({ ...prev, [key]: e.target.value }))
+                              setRuleScores((prev) => ({
+                                ...prev,
+                                [key]: normalizeDecimalInput(e.target.value),
+                              }))
                             }
                             className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
                               valid
@@ -612,14 +613,15 @@ export function KkmSettingsWorkspace() {
                         return (
                           <td key={g} className="px-4 py-2">
                             <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
                               value={val}
                               aria-label={`KKM ${sub.name} Tingkat ${g}`}
                               onChange={(e) =>
-                                setRuleScores((prev) => ({ ...prev, [key]: e.target.value }))
+                                setRuleScores((prev) => ({
+                                  ...prev,
+                                  [key]: normalizeDecimalInput(e.target.value),
+                                }))
                               }
                               className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
                                 valid

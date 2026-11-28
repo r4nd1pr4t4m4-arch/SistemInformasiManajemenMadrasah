@@ -1,8 +1,9 @@
 'use client';
 
-import type { Dispatch, SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { AkademikModal } from '../akademik-ui';
+import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
 import type {
   GeofenceModalState,
   JtmAdjustModalState,
@@ -41,6 +42,16 @@ export function PresensiModals({
   postPresensi,
   showToast,
 }: PresensiModalsProps) {
+  const [jtmDraft, setJtmDraft] = useState<{ key: string; value: string } | null>(null);
+  const currentAdjustKey = jtmAdjustModal
+    ? `${jtmAdjustModal.att?.id || jtmAdjustModal.sessionItem?.teacher_id || ''}:${jtmAdjustModal.expectedJtm}`
+    : '';
+  const approvedJtmInput =
+    jtmAdjustModal && jtmDraft?.key === currentAdjustKey
+      ? jtmDraft.value
+      : jtmAdjustModal
+        ? String(jtmAdjustModal.approvedJtm)
+        : '';
   return (
     <>
       {/* Modal Popup Di Luar Radius Geofencing (Req #2) */}
@@ -130,16 +141,17 @@ export function PresensiModals({
               </label>
               <input
                 id="jtm-adjust-approved-input"
-                type="number"
-                min={0}
-                max={jtmAdjustModal.expectedJtm}
-                step="0.5"
-                value={jtmAdjustModal.approvedJtm}
+                type="text"
+                inputMode="decimal"
+                value={approvedJtmInput}
                 onChange={(e) => {
-                  const parsed = Number.parseFloat(e.target.value);
-                  const val = Number.isFinite(parsed)
-                    ? Math.min(jtmAdjustModal.expectedJtm, Math.max(0, parsed))
-                    : 0;
+                  const normalized = normalizeDecimalInput(e.target.value);
+                  setJtmDraft({ key: currentAdjustKey, value: normalized });
+                  const parsed = parseDecimalInput(normalized);
+                  const val =
+                    parsed !== null
+                      ? Math.min(jtmAdjustModal.expectedJtm, Math.max(0, parsed))
+                      : 0;
                   setJtmAdjustModal({
                     ...jtmAdjustModal,
                     approvedJtm: val,

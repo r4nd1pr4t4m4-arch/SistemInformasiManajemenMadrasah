@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
+import { formatScoreDecimal } from '@/lib/validation/decimal';
 import { buildVerificationUrl, registerDocumentLedger } from '@/lib/verification/document-verify';
 import { fetchInstitutionSettings } from '@/lib/hooks/use-institution-settings';
 
@@ -169,7 +170,7 @@ export async function generateConsolidatedERaportPdf(payload: ERaportStudentPayl
     String(idx + 1),
     sub.subjectName,
     String(sub.kkm),
-    sub.score !== null ? sub.score.toFixed(1) : '-',
+    formatScoreDecimal(sub.score),
     getPredicate(sub.score, sub.kkm),
     getCompetencyDescription(sub.subjectName, sub.score, sub.kkm),
   ]);
