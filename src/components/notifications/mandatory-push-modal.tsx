@@ -25,7 +25,10 @@ import {
   isPushSupported,
   resyncPushSubscriptionOnPortalLoad,
   subscribeCurrentDevice,
+  type PushSubscribeErrorCode,
 } from '@/lib/pwa/push-client';
+
+const PUSH_BYPASS_SESSION_KEY = 'simms_mandatory_push_bypassed_v1';
 
 interface MandatoryPushModalProps {
   audienceType: 'USER' | 'PUBLIC';
@@ -45,7 +48,18 @@ export function MandatoryPushModal({
   const [isPushActive, setIsPushActive] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
   const [subscribing, setSubscribing] = useState(false);
+  const [resettingSw, setResettingSw] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<PushSubscribeErrorCode | null>(null);
+  const [technicalDetail, setTechnicalDetail] = useState<string | null>(null);
+  const [sessionBypassed, setSessionBypassed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.sessionStorage.getItem(PUSH_BYPASS_SESSION_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   const [unblockTab, setUnblockTab] = useState<UnblockTab>('chrome');
 
   const appLabel = institutionName?.trim() || 'SIMMS';
@@ -102,8 +116,10 @@ export function MandatoryPushModal({
       platform: pwa.platform,
     });
     setIsPushActive(autoSub.ok);
-    if (!autoSub.ok && autoSub.error) {
-      setErrorText(autoSub.error);
+    if (!autoSub.ok) {
+      if (autoSub.error) setErrorText(autoSub.error);
+      if (autoSub.code) setErrorCode(autoSub.code);
+      if (autoSub.technicalDetail) setTechnicalDetail(autoSub.technicalDetail);
     }
     setChecking(false);
   }, [pwa.ready, pwa.platform, pwa.isStandalone, audienceType]);
@@ -161,7 +177,7 @@ export function MandatoryPushModal({
   }, [verifyPushStatus]);
 
   // Blokir tombol Escape dan kunci scroll halaman selama modal wajib terbuka
-  const modalOpen = pwa.ready && !checking && vapidConfigured && !isPushActive;
+  const modalOpen = pwa.ready && !checking && vapidConfigured && !isPushActive && !sessionBypassed;
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -181,18 +197,24 @@ export function MandatoryPushModal({
     };
   }, [modalOpen]);
 
-  async function handleActivateClick() {
+  async function handleActivateClick(forceHardReset = false) {
+    if (forceHardReset) setResettingSw(true);
     setSubscribing(true);
     setErrorText(null);
+    setErrorCode(null);
+    setTechnicalDetail(null);
     try {
       const res = await subscribeCurrentDevice({
         audienceType,
         platform: pwa.platform,
+        forceHardReset,
       });
       if (res.ok) {
         setIsPushActive(true);
       } else {
         if (res.permission) setPermission(res.permission);
+        if (res.code) setErrorCode(res.code);
+        if (res.technicalDetail) setTechnicalDetail(res.technicalDetail);
         setErrorText(
           res.error ||
             'Gagal mengaktifkan Web Push Notification. Pastikan Anda menekan tombol "Allow / Izinkan".'
@@ -200,7 +222,17 @@ export function MandatoryPushModal({
       }
     } finally {
       setSubscribing(false);
+      setResettingSw(false);
     }
+  }
+
+  function handleBypassForSession() {
+    try {
+      window.sessionStorage.setItem(PUSH_BYPASS_SESSION_KEY, '1');
+    } catch {
+      // abaikan
+    }
+    setSessionBypassed(true);
   }
 
   if (!modalOpen) return null;
@@ -433,7 +465,7 @@ export function MandatoryPushModal({
             <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="button"
-                onClick={handleActivateClick}
+                onClick={() => void handleActivateClick(false)}
                 disabled={subscribing}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition disabled:opacity-60"
               >
@@ -484,30 +516,63 @@ export function MandatoryPushModal({
             </div>
 
             {errorText && (
-              <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-800 flex items-start gap-2">
-                <Info className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <span>{errorText}</span>
+              <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3.5 text-xs text-rose-800 space-y-2">
+                <div className="flex items-start gap-2">
+                  <Info className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">{errorText}</span>
+                </div>
+                {technicalDetail && (
+                  <p className="text-[10px] font-mono text-rose-700/80 bg-white/70 border border-rose-200/70 rounded-xl px-2.5 py-1.5 break-all">
+                    {technicalDetail}
+                  </p>
+                )}
               </div>
             )}
 
             <button
               type="button"
-              onClick={handleActivateClick}
+              onClick={() => void handleActivateClick(false)}
               disabled={subscribing}
               aria-busy={subscribing || undefined}
               className="w-full inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold shadow-md transition disabled:opacity-60"
             >
-              {subscribing ? (
+              {subscribing && !resettingSw ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <BellRing className="w-4 h-4" />
               )}
               <span>
-                {subscribing
+                {subscribing && !resettingSw
                   ? 'Mengaktifkan Notifikasi Perangkat...'
                   : 'Aktifkan Notifikasi & Lanjutkan Aktivitas'}
               </span>
             </button>
+
+            {(errorCode === 'PUSH_SERVICE_ERROR' || errorCode === 'BRAVE_BLOCKED') && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void handleActivateClick(true)}
+                  disabled={subscribing}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold transition disabled:opacity-50"
+                >
+                  {resettingSw ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  )}
+                  <span>Reset Service Worker &amp; Coba Lagi</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBypassForSession}
+                  disabled={subscribing}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition disabled:opacity-50"
+                >
+                  <span>Lanjutkan Sementara (Sesi Ini)</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 

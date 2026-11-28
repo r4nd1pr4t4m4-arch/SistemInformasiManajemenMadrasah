@@ -103,30 +103,43 @@ function decodeAndValidateVapidKey(rawKey: string): Uint8Array<ArrayBuffer> | nu
   }
 }
 
-async function resolveVapidKeyBytes(): Promise<Uint8Array<ArrayBuffer> | null> {
-  const envKey = getClientVapidPublicKey();
-  const fromEnv = decodeAndValidateVapidKey(envKey);
-  if (fromEnv) return fromEnv;
-
-  if (cachedServerVapidKey) {
-    const fromCache = decodeAndValidateVapidKey(cachedServerVapidKey);
-    if (fromCache) return fromCache;
-  }
-
+async function fetchLiveServerVapidKey(): Promise<string> {
   try {
     const res = await fetch('/api/push/public-key', { cache: 'no-store' });
     const data = await res.json().catch(() => null);
     const serverKey = typeof data?.publicKey === 'string' ? sanitizeVapidKey(data.publicKey) : '';
-    if (serverKey) {
-      const fromServer = decodeAndValidateVapidKey(serverKey);
-      if (fromServer) {
-        cachedServerVapidKey = serverKey;
-        return fromServer;
-      }
+    if (serverKey && decodeAndValidateVapidKey(serverKey)) {
+      cachedServerVapidKey = serverKey;
+      return serverKey;
     }
   } catch {
-    // abaikan
+    // abaikan jika offline
   }
+  return '';
+}
+
+async function resolveVapidKeyBytes(
+  preferServer = false
+): Promise<{ bytes: Uint8Array<ArrayBuffer>; raw: string } | null> {
+  if (preferServer) {
+    const liveKey = await fetchLiveServerVapidKey();
+    const fromLive = decodeAndValidateVapidKey(liveKey);
+    if (fromLive) return { bytes: fromLive, raw: liveKey };
+  }
+
+  const envKey = getClientVapidPublicKey();
+  const fromEnv = decodeAndValidateVapidKey(envKey);
+  if (fromEnv) return { bytes: fromEnv, raw: envKey };
+
+  if (cachedServerVapidKey) {
+    const fromCache = decodeAndValidateVapidKey(cachedServerVapidKey);
+    if (fromCache) return { bytes: fromCache, raw: cachedServerVapidKey };
+  }
+
+  const liveKey = await fetchLiveServerVapidKey();
+  const fromLive = decodeAndValidateVapidKey(liveKey);
+  if (fromLive) return { bytes: fromLive, raw: liveKey };
+
   return null;
 }
 
@@ -158,21 +171,81 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function ensureActiveServiceWorker(timeoutMs = 10_000): Promise<ServiceWorkerRegistration> {
-  let reg = await navigator.serviceWorker.getRegistration('/');
-  if (!reg) {
-    reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+async function waitForRegistrationActive(
+  reg: ServiceWorkerRegistration,
+  timeoutMs = 10_000
+): Promise<ServiceWorkerRegistration> {
+  if (reg.active && reg.active.state === 'activated') {
+    return reg;
+  }
+
+  const worker = reg.installing || reg.waiting || reg.active;
+  if (worker) {
+    if (reg.waiting) {
+      try {
+        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      } catch {
+        // abaikan
+      }
+    }
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      worker.addEventListener('statechange', () => {
+        if (worker.state === 'activated' || worker.state === 'redundant') {
+          clearTimeout(timer);
+          finish();
+        }
+      });
+    });
   }
 
   const readyPromise = navigator.serviceWorker.ready;
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(
-      () => reject(new Error('Service Worker belum siap. Muat ulang halaman lalu coba lagi.')),
-      timeoutMs
-    )
+  const timeoutPromise = new Promise<ServiceWorkerRegistration>((resolve) =>
+    setTimeout(() => resolve(reg), 3000)
   );
-  const readyReg = await Promise.race([readyPromise, timeoutPromise]);
-  return readyReg || reg;
+  return Promise.race([readyPromise, timeoutPromise]);
+}
+
+async function ensureActiveServiceWorker(timeoutMs = 10_000): Promise<ServiceWorkerRegistration> {
+  let reg = await navigator.serviceWorker.getRegistration('/');
+  if (!reg) {
+    reg = await navigator.serviceWorker.register('/sw.js', {
+      scope: '/',
+      updateViaCache: 'none',
+    });
+  }
+  return waitForRegistrationActive(reg, timeoutMs);
+}
+
+/**
+ * Reset total Service Worker pada origin ini (unregister seluruh SW lama/rusak lalu daftar ulang /sw.js).
+ * Efektif memulihkan token push Chrome Android yang macet pada registrasi SW lama.
+ */
+export async function hardResetServiceWorkerForPush(): Promise<ServiceWorkerRegistration> {
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  for (const r of registrations) {
+    try {
+      const sub = await r.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe().catch(() => {});
+    } catch {
+      // abaikan
+    }
+    await r.unregister().catch(() => {});
+  }
+
+  await sleep(400);
+
+  const freshReg = await navigator.serviceWorker.register('/sw.js', {
+    scope: '/',
+    updateViaCache: 'none',
+  });
+  return waitForRegistrationActive(freshReg, 12_000);
 }
 
 function isPushServiceAbortError(err: unknown): boolean {
@@ -186,14 +259,23 @@ function isPushServiceAbortError(err: unknown): boolean {
   );
 }
 
-async function formatPushSubscribeError(err: unknown): Promise<{
+async function formatPushSubscribeError(
+  err: unknown,
+  context: { swState: string; keyBytesLen: number; keyPrefix: string }
+): Promise<{
   code: PushSubscribeErrorCode;
   message: string;
+  technicalDetail: string;
 }> {
+  const errName = err instanceof Error ? err.name : 'Error';
+  const errMsg = err instanceof Error ? err.message : String(err || 'Unknown');
+  const technicalDetail = `${errName}: ${errMsg} | SW: ${context.swState} | Key: ${context.keyBytesLen}B (${context.keyPrefix}…) | HTTPS: ${typeof window !== 'undefined' && window.isSecureContext ? 'yes' : 'no'}`;
+
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return {
       code: 'OFFLINE',
       message: 'Perangkat sedang offline. Sambungkan ke internet lalu coba aktifkan kembali.',
+      technicalDetail,
     };
   }
 
@@ -204,12 +286,14 @@ async function formatPushSubscribeError(err: unknown): Promise<{
         code: 'BRAVE_BLOCKED',
         message:
           'Browser Brave memblokir layanan Push secara bawaan. Buka brave://settings/privacy lalu aktifkan "Use Google services for push messaging", atau gunakan Chrome/Edge.',
+        technicalDetail,
       };
     }
     return {
       code: 'PUSH_SERVICE_ERROR',
       message:
-        'Gagal mendaftar ke layanan push browser (FCM). Pastikan tidak dalam mode Incognito, koneksi internet stabil, serta nonaktifkan sementara VPN, Private DNS, atau AdBlocker yang memblokir layanan Google, lalu klik Coba Lagi.',
+        'Gagal mendaftar ke layanan push browser (FCM). Pastikan tidak dalam mode Incognito, matikan sementara Private DNS / VPN / AdBlocker, atau coba gunakan "Reset Service Worker & Coba Lagi" di bawah.',
+      technicalDetail,
     };
   }
 
@@ -219,6 +303,7 @@ async function formatPushSubscribeError(err: unknown): Promise<{
       err instanceof Error && err.message
         ? err.message
         : 'Terjadi kesalahan saat mengaktifkan notifikasi.',
+    technicalDetail,
   };
 }
 
@@ -262,48 +347,68 @@ export interface SubscribePushResult {
   permission?: NotificationPermission | 'unsupported';
   code?: PushSubscribeErrorCode;
   error?: string;
+  technicalDetail?: string;
 }
 
 async function subscribeWithRecovery(
-  reg: ServiceWorkerRegistration,
-  appServerKey: Uint8Array<ArrayBuffer>
+  initialReg: ServiceWorkerRegistration,
+  initialKey: { bytes: Uint8Array<ArrayBuffer>; raw: string },
+  forceHardReset = false
 ): Promise<PushSubscription> {
-  const existing = await reg.pushManager.getSubscription();
-  if (existing) {
-    const existingKey = existing.options?.applicationServerKey;
-    if (!existingKey || areKeyBytesEqual(existingKey, appServerKey)) {
-      return existing;
+  let reg = forceHardReset ? await hardResetServiceWorkerForPush() : initialReg;
+  let activeKey = initialKey;
+
+  if (!forceHardReset) {
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      const existingKey = existing.options?.applicationServerKey;
+      if (!existingKey || areKeyBytesEqual(existingKey, activeKey.bytes)) {
+        return existing;
+      }
+      await existing.unsubscribe().catch(() => {});
     }
-    // Kunci VAPID berubah -> hapus subscription lama agar tidak memicu push service error
-    await existing.unsubscribe().catch(() => {});
   }
 
-  const delays = [0, 700, 1500];
   let lastError: unknown = null;
 
-  for (let attempt = 0; attempt < delays.length; attempt += 1) {
-    if (delays[attempt] > 0) {
-      await sleep(delays[attempt]);
-    }
+  // Percobaan 1: langsung dengan SW & VAPID key saat ini
+  try {
+    return await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: activeKey.bytes,
+    });
+  } catch (err) {
+    lastError = err;
+    if (!isPushServiceAbortError(err)) throw err;
+  }
 
+  // Percobaan 2: sinkronkan kunci VAPID live dari server + bersihkan subscription lama + jeda singkat
+  try {
+    const staleSub = await reg.pushManager.getSubscription();
+    if (staleSub) await staleSub.unsubscribe().catch(() => {});
+    const liveKey = await resolveVapidKeyBytes(true);
+    if (liveKey) activeKey = liveKey;
+    await sleep(700);
+    return await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: activeKey.bytes,
+    });
+  } catch (err) {
+    lastError = err;
+    if (!isPushServiceAbortError(err)) throw err;
+  }
+
+  // Percobaan 3: Hard Reset Service Worker (unregister semua SW + daftar ulang /sw.js)
+  if (!forceHardReset) {
     try {
+      reg = await hardResetServiceWorkerForPush();
+      await sleep(500);
       return await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: appServerKey,
+        applicationServerKey: activeKey.bytes,
       });
     } catch (err) {
       lastError = err;
-      if (!isPushServiceAbortError(err) || attempt === delays.length - 1) {
-        break;
-      }
-      // Bersihkan sisa subscription rusak/gantung dan segarkan registrasi SW sebelum retry
-      try {
-        const staleSub = await reg.pushManager.getSubscription();
-        if (staleSub) await staleSub.unsubscribe();
-      } catch {
-        // abaikan
-      }
-      await reg.update().catch(() => {});
     }
   }
 
@@ -313,6 +418,7 @@ async function subscribeWithRecovery(
 export async function subscribeCurrentDevice(options: {
   audienceType: 'USER' | 'PUBLIC';
   platform: string;
+  forceHardReset?: boolean;
 }): Promise<SubscribePushResult> {
   if (!isPushSupported()) {
     return {
@@ -339,8 +445,8 @@ export async function subscribeCurrentDevice(options: {
     };
   }
 
-  const appServerKey = await resolveVapidKeyBytes();
-  if (!appServerKey) {
+  const resolvedKey = await resolveVapidKeyBytes(Boolean(options.forceHardReset));
+  if (!resolvedKey) {
     return {
       ok: false,
       code: 'VAPID_MISSING',
@@ -365,9 +471,15 @@ export async function subscribeCurrentDevice(options: {
     };
   }
 
+  let swState = 'unknown';
   try {
     const reg = await ensureActiveServiceWorker();
-    const subscription = await subscribeWithRecovery(reg, appServerKey);
+    swState = reg.active?.state || reg.installing?.state || reg.waiting?.state || 'none';
+    const subscription = await subscribeWithRecovery(
+      reg,
+      resolvedKey,
+      Boolean(options.forceHardReset)
+    );
 
     const json = subscription.toJSON();
     const endpoint = json.endpoint || subscription.endpoint;
@@ -413,11 +525,16 @@ export async function subscribeCurrentDevice(options: {
     notifyPushStateChanged(true);
     return { ok: true, endpoint, permission: 'granted' };
   } catch (err) {
-    const formatted = await formatPushSubscribeError(err);
+    const formatted = await formatPushSubscribeError(err, {
+      swState,
+      keyBytesLen: resolvedKey.bytes.length,
+      keyPrefix: resolvedKey.raw.slice(0, 8),
+    });
     return {
       ok: false,
       code: formatted.code,
       error: formatted.message,
+      technicalDetail: formatted.technicalDetail,
     };
   }
 }
@@ -454,15 +571,14 @@ export async function deactivateCurrentDevicePush(
  */
 export async function resyncPushSubscriptionOnPortalLoad(platform: string): Promise<boolean> {
   if (!isPushSupported() || Notification.permission !== 'granted') return false;
-  const appServerKey = await resolveVapidKeyBytes();
-  if (!appServerKey) return false;
+  const resolvedKey = await resolveVapidKeyBytes(false);
+  if (!resolvedKey) return false;
   try {
     const sub = await getExistingPushSubscription();
     if (!sub) return false;
-    // Jika subscription lama memakai VAPID key berbeda, lewati resync agar didaftarkan ulang saat subscribe
     if (
       sub.options?.applicationServerKey &&
-      !areKeyBytesEqual(sub.options.applicationServerKey, appServerKey)
+      !areKeyBytesEqual(sub.options.applicationServerKey, resolvedKey.bytes)
     ) {
       await sub.unsubscribe().catch(() => {});
       return false;
