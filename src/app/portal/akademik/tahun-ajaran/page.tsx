@@ -279,7 +279,7 @@ export default function TahunAjaranPage() {
         </div>
       )}
 
-      <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
+      <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4 min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 flex items-center gap-2">
@@ -299,7 +299,11 @@ export default function TahunAjaranPage() {
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-2 border-b border-slate-200/80 pb-3">
+        <div
+          role="tablist"
+          aria-label="Menu Tahun Ajaran, Kenaikan Kelas, dan Mutasi"
+          className="flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-slate-200/80 pb-3 -mx-1 px-1 no-scrollbar"
+        >
           {(
             [
               { id: 'TAHUN', label: 'Manajemen Tahun Ajaran', icon: CalendarRange },
@@ -308,18 +312,21 @@ export default function TahunAjaranPage() {
             ] as const
           ).map((item) => {
             const Icon = item.icon;
+            const active = tab === item.id;
             return (
               <button
                 key={item.id}
                 type="button"
+                role="tab"
+                aria-selected={active}
                 onClick={() => setTab(item.id)}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
-                  tab === item.id
-                    ? 'bg-emerald-700 text-white'
-                    : 'bg-white border border-slate-200 text-slate-600 hover:border-emerald-300'
+                className={`min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 transition ${
+                  active
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:border-emerald-300 hover:text-emerald-700'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <Icon className="w-3.5 h-3.5 shrink-0" />
                 <span>{item.label}</span>
               </button>
             );

@@ -19,10 +19,12 @@ import {
   Link2,
   Loader2,
   MessageSquare,
+  Pencil,
   PlayCircle,
   Plus,
   RefreshCw,
   RotateCcw,
+  Save,
   Search,
   Trash2,
   Video,
@@ -109,6 +111,64 @@ const ITEMS_PER_PAGE = 8;
 const INPUT_CLASS =
   'w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-50 disabled:opacity-60';
 
+const LABEL_CLASS = 'block text-[11px] font-semibold text-slate-700 mb-1';
+
+const EMPTY_MATERIAL_FORM = {
+  subject_id: '',
+  classroom_id: '',
+  title: '',
+  chapter_label: '',
+  material_type: 'MODUL_PDF',
+  file_url: '',
+  content: '',
+};
+
+const EMPTY_ASSIGNMENT_FORM = {
+  subject_id: '',
+  classroom_id: '',
+  title: '',
+  description: '',
+  due_at: '',
+};
+
+const EMPTY_QUIZ_FORM = {
+  subject_id: '',
+  classroom_id: '',
+  title: '',
+  duration_minutes: 30,
+};
+
+function toLocalDateTimeInputValue(dateStr: string | null | undefined): string {
+  if (!dateStr) return '';
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(
+    parsed.getHours()
+  )}:${pad(parsed.getMinutes())}`;
+}
+
+function quizQuestionsToDrafts(questions: QuizQuestion[]): DraftQuizQuestion[] {
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return [{ ...EMPTY_DRAFT_QUESTION }];
+  }
+  return questions.map((q) => {
+    const opts = Array.isArray(q.options) ? q.options : [];
+    const safeCorrect =
+      typeof q.correctIndex === 'number' && q.correctIndex >= 0 && q.correctIndex < opts.length
+        ? q.correctIndex
+        : 0;
+    return {
+      question: q.question || '',
+      optA: opts[0] || '',
+      optB: opts[1] || '',
+      optC: opts[2] || '',
+      optD: opts[3] || '',
+      correctIndex: Math.min(3, safeCorrect),
+    };
+  });
+}
+
 const EMPTY_DRAFT_QUESTION: DraftQuizQuestion = {
   question: '',
   optA: '',
@@ -189,6 +249,7 @@ export default function PembelajaranLmsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isTeacher, setIsTeacher] = useState(false);
+  const [hasTeachingSchedule, setHasTeachingSchedule] = useState(false);
   const [studentId, setStudentId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -200,6 +261,19 @@ export default function PembelajaranLmsPage() {
   const [attempts, setAttempts] = useState<AttemptRow[]>([]);
   const [subjects, setSubjects] = useState<Array<{ id: string; name: string }>>([]);
   const [classrooms, setClassrooms] = useState<Array<{ id: string; name: string }>>([]);
+  const [classroomsBySubject, setClassroomsBySubject] = useState<
+    Record<string, Array<{ id: string; name: string }>>
+  >({});
+
+  // Mode edit & modal hapus guru
+  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
+  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+  const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{
+    kind: 'MATERIAL' | 'ASSIGNMENT' | 'QUIZ';
+    id: string;
+    title: string;
+  } | null>(null);
 
   // Pencarian, Filter & Pagination
   const [searchQuery, setSearchQuery] = useState('');
@@ -287,6 +361,7 @@ export default function PembelajaranLmsPage() {
         setLoadError(data.error || 'Gagal memuat data Ruang Belajar Digital.');
       } else {
         setIsTeacher(Boolean(data.isTeacher));
+        setHasTeachingSchedule(Boolean(data.hasTeachingSchedule));
         setStudentId(typeof data.studentId === 'string' ? data.studentId : null);
         setMaterials(Array.isArray(data.materials) ? data.materials : []);
         setAssignments(Array.isArray(data.assignments) ? data.assignments : []);
@@ -295,6 +370,11 @@ export default function PembelajaranLmsPage() {
         setAttempts(Array.isArray(data.attempts) ? data.attempts : []);
         setSubjects(Array.isArray(data.subjects) ? data.subjects : []);
         setClassrooms(Array.isArray(data.classrooms) ? data.classrooms : []);
+        setClassroomsBySubject(
+          data.classroomsBySubject && typeof data.classroomsBySubject === 'object'
+            ? data.classroomsBySubject
+            : {}
+        );
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -316,15 +396,16 @@ export default function PembelajaranLmsPage() {
 
   // Escape key untuk menutup modal (kecuali sedang busy)
   useEffect(() => {
-    if (!submitModal && !gradeModal) return;
+    if (!submitModal && !gradeModal && !deleteModal) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || busy) return;
       if (submitModal) setSubmitModal(null);
       if (gradeModal) setGradeModal(null);
+      if (deleteModal) setDeleteModal(null);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [submitModal, gradeModal, busy]);
+  }, [submitModal, gradeModal, deleteModal, busy]);
 
   // Countdown timer CBT saat kuis aktif
   useEffect(() => {
@@ -362,11 +443,109 @@ export default function PembelajaranLmsPage() {
     [loadData, showToast]
   );
 
+  const getClassroomsForSubject = useCallback(
+    (subjectId: string) => {
+      if (!isTeacher) return classrooms;
+      if (!subjectId) return [];
+      return classroomsBySubject[subjectId] || [];
+    },
+    [isTeacher, classrooms, classroomsBySubject]
+  );
+
+  const pickNextClassroom = useCallback(
+    (nextSubjectId: string, currentClassroomId: string) => {
+      const allowed = getClassroomsForSubject(nextSubjectId);
+      if (allowed.some((c) => c.id === currentClassroomId)) return currentClassroomId;
+      if (allowed.length === 1) return allowed[0].id;
+      return '';
+    },
+    [getClassroomsForSubject]
+  );
+
+  const closeTeacherForm = useCallback(() => {
+    setShowCreateForm(false);
+    setEditingMaterialId(null);
+    setEditingAssignmentId(null);
+    setEditingQuizId(null);
+    setMatForm({ ...EMPTY_MATERIAL_FORM });
+    setAsgForm({ ...EMPTY_ASSIGNMENT_FORM });
+    setQuizForm({ ...EMPTY_QUIZ_FORM });
+    setQuizDraftQuestions([{ ...EMPTY_DRAFT_QUESTION }]);
+  }, []);
+
+  function startEditMaterial(m: MaterialRow) {
+    const subjId = m.subject?.id || m.subject_id || '';
+    const clsId = m.classroom?.id || m.classroom_id || '';
+    setEditingMaterialId(m.id);
+    setMatForm({
+      subject_id: subjId,
+      classroom_id: clsId,
+      title: m.title || '',
+      chapter_label: m.chapter_label || '',
+      material_type: m.material_type || 'MODUL_PDF',
+      file_url: m.file_url || '',
+      content: m.content || '',
+    });
+    setShowCreateForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function startEditAssignment(a: AssignmentRow) {
+    const subjId = a.subject?.id || a.subject_id || '';
+    const clsId = a.classroom?.id || a.classroom_id || '';
+    setEditingAssignmentId(a.id);
+    setAsgForm({
+      subject_id: subjId,
+      classroom_id: clsId,
+      title: a.title || '',
+      description: a.description || '',
+      due_at: toLocalDateTimeInputValue(a.due_at),
+    });
+    setShowCreateForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function startEditQuiz(qz: QuizRow) {
+    const subjId = qz.subject?.id || qz.subject_id || '';
+    const clsId = qz.classroom?.id || qz.classroom_id || '';
+    setEditingQuizId(qz.id);
+    setQuizForm({
+      subject_id: subjId,
+      classroom_id: clsId,
+      title: qz.title || '',
+      duration_minutes: qz.duration_minutes || 30,
+    });
+    setQuizDraftQuestions(quizQuestionsToDrafts(getSafeQuestions(qz)));
+    setShowCreateForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteModal || busy) return;
+    const actionMap = {
+      MATERIAL: { action: 'DELETE_MATERIAL', msg: 'Materi ajar berhasil dihapus.' },
+      ASSIGNMENT: { action: 'DELETE_ASSIGNMENT', msg: 'Tugas online berhasil dihapus.' },
+      QUIZ: { action: 'DELETE_QUIZ', msg: 'Kuis CBT berhasil dihapus.' },
+    } as const;
+    const target = actionMap[deleteModal.kind];
+    const ok = await postLms({ action: target.action, id: deleteModal.id }, target.msg);
+    if (ok) {
+      if (deleteModal.kind === 'MATERIAL' && editingMaterialId === deleteModal.id) closeTeacherForm();
+      if (deleteModal.kind === 'ASSIGNMENT' && editingAssignmentId === deleteModal.id) closeTeacherForm();
+      if (deleteModal.kind === 'QUIZ' && editingQuizId === deleteModal.id) closeTeacherForm();
+      setDeleteModal(null);
+    }
+  }
+
   async function handleCreateMaterial(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
     const trimmedTitle = matForm.title.trim();
     const trimmedUrl = matForm.file_url.trim();
+    if (!matForm.subject_id || !matForm.classroom_id) {
+      showToast('Mata pelajaran dan rombel yang Anda ajar wajib dipilih.', 'err');
+      return;
+    }
     if (trimmedTitle.length < 3) {
       showToast('Judul materi minimal 3 karakter.', 'err');
       return;
@@ -375,22 +554,23 @@ export default function PembelajaranLmsPage() {
       showToast('URL file/video harus diawali http://, https://, atau /.', 'err');
       return;
     }
+    const isEditing = Boolean(editingMaterialId);
     const ok = await postLms(
       {
-        action: 'CREATE_MATERIAL',
+        action: isEditing ? 'UPDATE_MATERIAL' : 'CREATE_MATERIAL',
+        ...(isEditing ? { id: editingMaterialId } : {}),
         subject_id: matForm.subject_id,
-        classroom_id: matForm.classroom_id || null,
+        classroom_id: matForm.classroom_id,
         title: trimmedTitle,
         chapter_label: matForm.chapter_label.trim() || null,
         material_type: matForm.material_type,
         file_url: trimmedUrl || null,
         content: matForm.content.trim() || null,
       },
-      'Materi ajar berhasil dipublikasikan.'
+      isEditing ? 'Materi ajar berhasil diperbarui.' : 'Materi ajar berhasil dipublikasikan.'
     );
     if (ok) {
-      setMatForm((p) => ({ ...p, title: '', chapter_label: '', file_url: '', content: '' }));
-      setShowCreateForm(false);
+      closeTeacherForm();
       setCurrentPage(1);
     }
   }
@@ -399,6 +579,10 @@ export default function PembelajaranLmsPage() {
     e.preventDefault();
     if (busy) return;
     const trimmedTitle = asgForm.title.trim();
+    if (!asgForm.subject_id || !asgForm.classroom_id) {
+      showToast('Mata pelajaran dan rombel yang Anda ajar wajib dipilih.', 'err');
+      return;
+    }
     if (trimmedTitle.length < 3) {
       showToast('Judul tugas minimal 3 karakter.', 'err');
       return;
@@ -412,20 +596,21 @@ export default function PembelajaranLmsPage() {
       }
       isoDueAt = parsed.toISOString();
     }
+    const isEditing = Boolean(editingAssignmentId);
     const ok = await postLms(
       {
-        action: 'CREATE_ASSIGNMENT',
+        action: isEditing ? 'UPDATE_ASSIGNMENT' : 'CREATE_ASSIGNMENT',
+        ...(isEditing ? { id: editingAssignmentId } : {}),
         subject_id: asgForm.subject_id,
         classroom_id: asgForm.classroom_id,
         title: trimmedTitle,
         description: asgForm.description.trim() || null,
         due_at: isoDueAt,
       },
-      'Tugas online berhasil diterbitkan.'
+      isEditing ? 'Tugas online berhasil diperbarui.' : 'Tugas online berhasil diterbitkan.'
     );
     if (ok) {
-      setAsgForm({ subject_id: '', classroom_id: '', title: '', description: '', due_at: '' });
-      setShowCreateForm(false);
+      closeTeacherForm();
       setCurrentPage(1);
     }
   }
@@ -434,6 +619,10 @@ export default function PembelajaranLmsPage() {
     e.preventDefault();
     if (busy) return;
     const trimmedTitle = quizForm.title.trim();
+    if (!quizForm.subject_id || !quizForm.classroom_id) {
+      showToast('Mata pelajaran dan rombel yang Anda ajar wajib dipilih.', 'err');
+      return;
+    }
     if (trimmedTitle.length < 3) {
       showToast('Judul kuis CBT minimal 3 karakter.', 'err');
       return;
@@ -475,21 +664,23 @@ export default function PembelajaranLmsPage() {
       });
     }
 
+    const isEditing = Boolean(editingQuizId);
     const ok = await postLms(
       {
-        action: 'CREATE_QUIZ',
+        action: isEditing ? 'UPDATE_QUIZ' : 'CREATE_QUIZ',
+        ...(isEditing ? { id: editingQuizId } : {}),
         subject_id: quizForm.subject_id,
         classroom_id: quizForm.classroom_id,
         title: trimmedTitle,
         duration_minutes: Math.min(180, Math.max(5, Number(quizForm.duration_minutes) || 30)),
         questions: formattedQuestions,
       },
-      `Kuis CBT (${formattedQuestions.length} soal) berhasil dipublikasikan.`
+      isEditing
+        ? `Kuis CBT (${formattedQuestions.length} soal) berhasil diperbarui.`
+        : `Kuis CBT (${formattedQuestions.length} soal) berhasil dipublikasikan.`
     );
     if (ok) {
-      setQuizForm((p) => ({ ...p, title: '', duration_minutes: 30 }));
-      setQuizDraftQuestions([{ ...EMPTY_DRAFT_QUESTION }]);
-      setShowCreateForm(false);
+      closeTeacherForm();
       setCurrentPage(1);
     }
   }
@@ -636,10 +827,30 @@ export default function PembelajaranLmsPage() {
   const activeQuizQuestions = useMemo(() => getSafeQuestions(activeQuiz), [activeQuiz]);
   const answeredQuizCount = Object.keys(quizAnswers).length;
 
+  const filterClassroomOptions = useMemo(() => {
+    if (isTeacher && subjectFilter !== 'ALL') {
+      return classroomsBySubject[subjectFilter] || [];
+    }
+    return classrooms;
+  }, [isTeacher, subjectFilter, classroomsBySubject, classrooms]);
+
+  const matClassroomOptions = useMemo(
+    () => getClassroomsForSubject(matForm.subject_id),
+    [getClassroomsForSubject, matForm.subject_id]
+  );
+  const asgClassroomOptions = useMemo(
+    () => getClassroomsForSubject(asgForm.subject_id),
+    [getClassroomsForSubject, asgForm.subject_id]
+  );
+  const quizClassroomOptions = useMemo(
+    () => getClassroomsForSubject(quizForm.subject_id),
+    [getClassroomsForSubject, quizForm.subject_id]
+  );
+
   function switchTab(nextTab: 'MATERI' | 'TUGAS' | 'CBT') {
     setTab(nextTab);
     setCurrentPage(1);
-    setShowCreateForm(false);
+    closeTeacherForm();
   }
 
   return (
@@ -716,8 +927,18 @@ export default function PembelajaranLmsPage() {
             {isTeacher && (
               <button
                 type="button"
-                onClick={() => setShowCreateForm((prev) => !prev)}
-                className={`min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
+                disabled={!hasTeachingSchedule && !showCreateForm}
+                onClick={() => {
+                  if (showCreateForm) {
+                    closeTeacherForm();
+                  } else {
+                    setEditingMaterialId(null);
+                    setEditingAssignmentId(null);
+                    setEditingQuizId(null);
+                    setShowCreateForm(true);
+                  }
+                }}
+                className={`min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${
                   showCreateForm
                     ? 'bg-slate-900 text-white hover:bg-slate-800'
                     : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
@@ -816,6 +1037,17 @@ export default function PembelajaranLmsPage() {
           </div>
         )}
 
+        {/* Info cakupan jadwal mengajar guru */}
+        {isTeacher && !loading && !hasTeachingSchedule && (
+          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <p className="leading-relaxed">
+              Anda belum memiliki jadwal mengajar pada tahun ajaran aktif. Materi, tugas, dan kuis
+              CBT hanya dapat dilihat serta dikelola sesuai mata pelajaran dan rombel yang Anda ajar.
+            </p>
+          </div>
+        )}
+
         {/* Toolbar Pencarian & Filter (disembunyikan saat siswa sedang mengerjakan CBT) */}
         {!(tab === 'CBT' && activeQuiz) && (
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
@@ -857,7 +1089,14 @@ export default function PembelajaranLmsPage() {
               <select
                 value={subjectFilter}
                 onChange={(e) => {
-                  setSubjectFilter(e.target.value);
+                  const nextSubj = e.target.value;
+                  setSubjectFilter(nextSubj);
+                  if (isTeacher && nextSubj !== 'ALL') {
+                    const allowed = classroomsBySubject[nextSubj] || [];
+                    if (classroomFilter !== 'ALL' && !allowed.some((c) => c.id === classroomFilter)) {
+                      setClassroomFilter('ALL');
+                    }
+                  }
                   setCurrentPage(1);
                 }}
                 aria-label="Filter mata pelajaran"
@@ -883,7 +1122,7 @@ export default function PembelajaranLmsPage() {
                 className="w-full min-h-[40px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
               >
                 <option value="ALL">Semua Rombel</option>
-                {classrooms.map((c) => (
+                {filterClassroomOptions.map((c) => (
                   <option key={c.id} value={c.id}>
                     Kelas {c.name}
                   </option>
@@ -918,10 +1157,12 @@ export default function PembelajaranLmsPage() {
                 className="p-4 sm:p-5 rounded-2xl bg-slate-50/90 border border-slate-200/90 space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-slate-900">Publikasikan Materi Ajar Baru</h2>
+                  <h2 className="text-sm font-bold text-slate-900">
+                    {editingMaterialId ? 'Edit Materi Ajar' : 'Publikasikan Materi Ajar Baru'}
+                  </h2>
                   <button
                     type="button"
-                    onClick={() => setShowCreateForm(false)}
+                    onClick={closeTeacherForm}
                     className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60"
                     aria-label="Tutup form materi"
                   >
@@ -929,80 +1170,150 @@ export default function PembelajaranLmsPage() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                  <select
-                    required
-                    disabled={busy}
-                    value={matForm.subject_id}
-                    onChange={(e) => setMatForm({ ...matForm, subject_id: e.target.value })}
-                    className={INPUT_CLASS}
-                  >
-                    <option value="">-- Mata Pelajaran * --</option>
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label htmlFor="mat-subject-id" className={LABEL_CLASS}>
+                      Mata Pelajaran <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      id="mat-subject-id"
+                      required
+                      disabled={busy}
+                      value={matForm.subject_id}
+                      onChange={(e) => {
+                        const nextSubj = e.target.value;
+                        setMatForm((prev) => ({
+                          ...prev,
+                          subject_id: nextSubj,
+                          classroom_id: pickNextClassroom(nextSubj, prev.classroom_id),
+                        }));
+                      }}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="">-- Pilih Mata Pelajaran --</option>
+                      {subjects.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="mat-classroom-id" className={LABEL_CLASS}>
+                      Rombel / Kelas <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      id="mat-classroom-id"
+                      required
+                      disabled={busy || !matForm.subject_id}
+                      value={matForm.classroom_id}
+                      onChange={(e) => setMatForm({ ...matForm, classroom_id: e.target.value })}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="">
+                        {matForm.subject_id
+                          ? '-- Pilih Rombel yang Diajar --'
+                          : '-- Pilih Mata Pelajaran dahulu --'}
                       </option>
-                    ))}
-                  </select>
-                  <select
-                    disabled={busy}
-                    value={matForm.classroom_id}
-                    onChange={(e) => setMatForm({ ...matForm, classroom_id: e.target.value })}
-                    className={INPUT_CLASS}
-                  >
-                    <option value="">Semua Rombel</option>
-                    {classrooms.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        Kelas {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    required
-                    disabled={busy}
-                    value={matForm.title}
-                    onChange={(e) => setMatForm({ ...matForm, title: e.target.value })}
-                    placeholder="Judul Materi (min. 3 karakter) *"
-                    className={INPUT_CLASS}
-                  />
-                  <select
-                    disabled={busy}
-                    value={matForm.material_type}
-                    onChange={(e) => setMatForm({ ...matForm, material_type: e.target.value })}
-                    className={INPUT_CLASS}
-                  >
-                    <option value="MODUL_PDF">Modul PDF / Slide</option>
-                    <option value="VIDEO">Video YouTube</option>
-                    <option value="LINK">Tautan Referensi</option>
-                    <option value="CATATAN">Catatan Teks</option>
-                  </select>
-                  <input
-                    disabled={busy}
-                    value={matForm.chapter_label}
-                    onChange={(e) => setMatForm({ ...matForm, chapter_label: e.target.value })}
-                    placeholder="BAB / Topik (mis. BAB 1)"
-                    className={INPUT_CLASS}
-                  />
-                  <input
-                    type="text"
-                    inputMode="url"
-                    disabled={busy}
-                    value={matForm.file_url}
-                    onChange={(e) => setMatForm({ ...matForm, file_url: e.target.value })}
-                    placeholder="URL File / Video (https://... atau /...)"
-                    className={`sm:col-span-2 lg:col-span-3 ${INPUT_CLASS}`}
-                  />
-                  <textarea
-                    rows={2}
-                    disabled={busy}
-                    value={matForm.content}
-                    onChange={(e) => setMatForm({ ...matForm, content: e.target.value })}
-                    placeholder="Ringkasan atau catatan teks materi (opsional)..."
-                    className="sm:col-span-2 lg:col-span-4 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
-                  />
+                      {matClassroomOptions.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Kelas {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="mat-title" className={LABEL_CLASS}>
+                      Judul Materi <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      id="mat-title"
+                      required
+                      disabled={busy}
+                      value={matForm.title}
+                      onChange={(e) => setMatForm({ ...matForm, title: e.target.value })}
+                      placeholder="Minimal 3 karakter"
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="mat-type" className={LABEL_CLASS}>
+                      Jenis Materi <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      id="mat-type"
+                      disabled={busy}
+                      value={matForm.material_type}
+                      onChange={(e) => setMatForm({ ...matForm, material_type: e.target.value })}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="MODUL_PDF">Modul PDF / Slide</option>
+                      <option value="VIDEO">Video YouTube</option>
+                      <option value="LINK">Tautan Referensi</option>
+                      <option value="CATATAN">Catatan Teks</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="mat-chapter" className={LABEL_CLASS}>
+                      BAB / Topik (Opsional)
+                    </label>
+                    <input
+                      id="mat-chapter"
+                      disabled={busy}
+                      value={matForm.chapter_label}
+                      onChange={(e) => setMatForm({ ...matForm, chapter_label: e.target.value })}
+                      placeholder="Mis. BAB 1"
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <label htmlFor="mat-file-url" className={LABEL_CLASS}>
+                      URL File / Video / Tautan (Opsional)
+                    </label>
+                    <input
+                      id="mat-file-url"
+                      type="text"
+                      inputMode="url"
+                      disabled={busy}
+                      value={matForm.file_url}
+                      onChange={(e) => setMatForm({ ...matForm, file_url: e.target.value })}
+                      placeholder="https://... atau /..."
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 lg:col-span-4">
+                    <label htmlFor="mat-content" className={LABEL_CLASS}>
+                      Ringkasan / Catatan Materi (Opsional)
+                    </label>
+                    <textarea
+                      id="mat-content"
+                      rows={2}
+                      disabled={busy}
+                      value={matForm.content}
+                      onChange={(e) => setMatForm({ ...matForm, content: e.target.value })}
+                      placeholder="Ringkasan atau catatan teks materi..."
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                    />
+                  </div>
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                  {editingMaterialId && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={closeTeacherForm}
+                      className="w-full sm:w-auto min-h-[42px] px-4 py-2 rounded-xl bg-slate-200/80 hover:bg-slate-200 text-slate-700 font-semibold transition"
+                    >
+                      Batal Edit
+                    </button>
+                  )}
                   <button
                     type="submit"
                     disabled={busy}
@@ -1010,10 +1321,12 @@ export default function PembelajaranLmsPage() {
                   >
                     {busy ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : editingMaterialId ? (
+                      <Save className="w-3.5 h-3.5" />
                     ) : (
                       <Plus className="w-3.5 h-3.5" />
                     )}
-                    Terbitkan Materi
+                    {editingMaterialId ? 'Simpan Perubahan Materi' : 'Terbitkan Materi'}
                   </button>
                 </div>
               </form>
@@ -1086,17 +1399,43 @@ export default function PembelajaranLmsPage() {
                         <span className="text-[11px] text-slate-400 truncate">
                           {m.teacher?.full_name || 'Tim Pengajar'}
                         </span>
-                        {isSafeExternalUrl(m.file_url) && (
-                          <a
-                            href={m.file_url!.trim()}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/60 font-semibold transition"
-                          >
-                            <span>Buka Materi</span>
-                            <ExternalLink className="w-3 h-3 shrink-0" />
-                          </a>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {isSafeExternalUrl(m.file_url) && (
+                            <a
+                              href={m.file_url!.trim()}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/60 font-semibold transition"
+                            >
+                              <span>Buka Materi</span>
+                              <ExternalLink className="w-3 h-3 shrink-0" />
+                            </a>
+                          )}
+                          {isTeacher && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => startEditMaterial(m)}
+                                className="min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-slate-200 bg-white hover:border-emerald-300 hover:text-emerald-700 text-slate-700 font-semibold disabled:opacity-40 transition"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() =>
+                                  setDeleteModal({ kind: 'MATERIAL', id: m.id, title: m.title })
+                                }
+                                className="min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-rose-200 bg-rose-50/70 hover:bg-rose-100 text-rose-700 font-semibold disabled:opacity-40 transition"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Hapus</span>
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </article>
                   );
@@ -1115,10 +1454,12 @@ export default function PembelajaranLmsPage() {
                 className="p-4 sm:p-5 rounded-2xl bg-slate-50/90 border border-slate-200/90 space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-slate-900">Buat Tugas / PR Online Baru</h2>
+                  <h2 className="text-sm font-bold text-slate-900">
+                    {editingAssignmentId ? 'Edit Tugas / PR Online' : 'Buat Tugas / PR Online Baru'}
+                  </h2>
                   <button
                     type="button"
-                    onClick={() => setShowCreateForm(false)}
+                    onClick={closeTeacherForm}
                     className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60"
                     aria-label="Tutup form tugas"
                   >
@@ -1126,62 +1467,116 @@ export default function PembelajaranLmsPage() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                  <select
-                    required
-                    disabled={busy}
-                    value={asgForm.subject_id}
-                    onChange={(e) => setAsgForm({ ...asgForm, subject_id: e.target.value })}
-                    className={INPUT_CLASS}
-                  >
-                    <option value="">-- Mata Pelajaran * --</option>
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label htmlFor="asg-subject-id" className={LABEL_CLASS}>
+                      Mata Pelajaran <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      id="asg-subject-id"
+                      required
+                      disabled={busy}
+                      value={asgForm.subject_id}
+                      onChange={(e) => {
+                        const nextSubj = e.target.value;
+                        setAsgForm((prev) => ({
+                          ...prev,
+                          subject_id: nextSubj,
+                          classroom_id: pickNextClassroom(nextSubj, prev.classroom_id),
+                        }));
+                      }}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="">-- Pilih Mata Pelajaran --</option>
+                      {subjects.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="asg-classroom-id" className={LABEL_CLASS}>
+                      Rombel / Kelas <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      id="asg-classroom-id"
+                      required
+                      disabled={busy || !asgForm.subject_id}
+                      value={asgForm.classroom_id}
+                      onChange={(e) => setAsgForm({ ...asgForm, classroom_id: e.target.value })}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="">
+                        {asgForm.subject_id
+                          ? '-- Pilih Rombel yang Diajar --'
+                          : '-- Pilih Mata Pelajaran dahulu --'}
                       </option>
-                    ))}
-                  </select>
-                  <select
-                    required
-                    disabled={busy}
-                    value={asgForm.classroom_id}
-                    onChange={(e) => setAsgForm({ ...asgForm, classroom_id: e.target.value })}
-                    className={INPUT_CLASS}
-                  >
-                    <option value="">-- Rombel * --</option>
-                    {classrooms.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        Kelas {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    required
-                    disabled={busy}
-                    value={asgForm.title}
-                    onChange={(e) => setAsgForm({ ...asgForm, title: e.target.value })}
-                    placeholder="Judul Tugas / PR (min. 3 karakter) *"
-                    className={INPUT_CLASS}
-                  />
-                  <input
-                    type="datetime-local"
-                    disabled={busy}
-                    value={asgForm.due_at}
-                    onChange={(e) => setAsgForm({ ...asgForm, due_at: e.target.value })}
-                    aria-label="Tenggat waktu pengumpulan"
-                    className={INPUT_CLASS}
-                  />
-                  <textarea
-                    rows={2}
-                    disabled={busy}
-                    value={asgForm.description}
-                    onChange={(e) => setAsgForm({ ...asgForm, description: e.target.value })}
-                    placeholder="Instruksi atau deskripsi tugas (opsional)..."
-                    className="sm:col-span-2 lg:col-span-4 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
-                  />
+                      {asgClassroomOptions.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Kelas {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="asg-title" className={LABEL_CLASS}>
+                      Judul Tugas / PR <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      id="asg-title"
+                      required
+                      disabled={busy}
+                      value={asgForm.title}
+                      onChange={(e) => setAsgForm({ ...asgForm, title: e.target.value })}
+                      placeholder="Minimal 3 karakter"
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="asg-due-at" className={LABEL_CLASS}>
+                      Tenggat Waktu Pengumpulan (Opsional)
+                    </label>
+                    <input
+                      id="asg-due-at"
+                      type="datetime-local"
+                      disabled={busy}
+                      value={asgForm.due_at}
+                      onChange={(e) => setAsgForm({ ...asgForm, due_at: e.target.value })}
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 lg:col-span-4">
+                    <label htmlFor="asg-description" className={LABEL_CLASS}>
+                      Instruksi / Deskripsi Tugas (Opsional)
+                    </label>
+                    <textarea
+                      id="asg-description"
+                      rows={2}
+                      disabled={busy}
+                      value={asgForm.description}
+                      onChange={(e) => setAsgForm({ ...asgForm, description: e.target.value })}
+                      placeholder="Instruksi atau deskripsi pengerjaan tugas..."
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
+                    />
+                  </div>
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                  {editingAssignmentId && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={closeTeacherForm}
+                      className="w-full sm:w-auto min-h-[42px] px-4 py-2 rounded-xl bg-slate-200/80 hover:bg-slate-200 text-slate-700 font-semibold transition"
+                    >
+                      Batal Edit
+                    </button>
+                  )}
                   <button
                     type="submit"
                     disabled={busy}
@@ -1189,10 +1584,12 @@ export default function PembelajaranLmsPage() {
                   >
                     {busy ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : editingAssignmentId ? (
+                      <Save className="w-3.5 h-3.5" />
                     ) : (
                       <Plus className="w-3.5 h-3.5" />
                     )}
-                    Terbitkan Tugas
+                    {editingAssignmentId ? 'Simpan Perubahan Tugas' : 'Terbitkan Tugas'}
                   </button>
                 </div>
               </form>
@@ -1271,7 +1668,30 @@ export default function PembelajaranLmsPage() {
                           )}
                         </div>
 
-                        {!isTeacher && (
+                        {isTeacher ? (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => startEditAssignment(a)}
+                              className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:border-emerald-300 hover:text-emerald-700 text-slate-700 font-semibold disabled:opacity-40 transition"
+                            >
+                              <Pencil className="w-3 h-3" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() =>
+                                setDeleteModal({ kind: 'ASSIGNMENT', id: a.id, title: a.title })
+                              }
+                              className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50/70 hover:bg-rose-100 text-rose-700 font-semibold disabled:opacity-40 transition"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Hapus</span>
+                            </button>
+                          </div>
+                        ) : (
                           <button
                             type="button"
                             disabled={busy}
@@ -1380,10 +1800,12 @@ export default function PembelajaranLmsPage() {
                 className="p-4 sm:p-5 rounded-2xl bg-slate-50/90 border border-slate-200/90 space-y-4"
               >
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-slate-900">Buat Kuis / CBT Baru</h2>
+                  <h2 className="text-sm font-bold text-slate-900">
+                    {editingQuizId ? 'Edit Kuis / CBT' : 'Buat Kuis / CBT Baru'}
+                  </h2>
                   <button
                     type="button"
-                    onClick={() => setShowCreateForm(false)}
+                    onClick={closeTeacherForm}
                     className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60"
                     aria-label="Tutup form kuis"
                   >
@@ -1391,56 +1813,93 @@ export default function PembelajaranLmsPage() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                  <select
-                    required
-                    disabled={busy}
-                    value={quizForm.subject_id}
-                    onChange={(e) => setQuizForm({ ...quizForm, subject_id: e.target.value })}
-                    className={INPUT_CLASS}
-                  >
-                    <option value="">-- Mata Pelajaran * --</option>
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label htmlFor="quiz-subject-id" className={LABEL_CLASS}>
+                      Mata Pelajaran <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      id="quiz-subject-id"
+                      required
+                      disabled={busy}
+                      value={quizForm.subject_id}
+                      onChange={(e) => {
+                        const nextSubj = e.target.value;
+                        setQuizForm((prev) => ({
+                          ...prev,
+                          subject_id: nextSubj,
+                          classroom_id: pickNextClassroom(nextSubj, prev.classroom_id),
+                        }));
+                      }}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="">-- Pilih Mata Pelajaran --</option>
+                      {subjects.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="quiz-classroom-id" className={LABEL_CLASS}>
+                      Rombel / Kelas <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      id="quiz-classroom-id"
+                      required
+                      disabled={busy || !quizForm.subject_id}
+                      value={quizForm.classroom_id}
+                      onChange={(e) => setQuizForm({ ...quizForm, classroom_id: e.target.value })}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="">
+                        {quizForm.subject_id
+                          ? '-- Pilih Rombel yang Diajar --'
+                          : '-- Pilih Mata Pelajaran dahulu --'}
                       </option>
-                    ))}
-                  </select>
-                  <select
-                    required
-                    disabled={busy}
-                    value={quizForm.classroom_id}
-                    onChange={(e) => setQuizForm({ ...quizForm, classroom_id: e.target.value })}
-                    className={INPUT_CLASS}
-                  >
-                    <option value="">-- Rombel * --</option>
-                    {classrooms.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        Kelas {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    required
-                    disabled={busy}
-                    value={quizForm.title}
-                    onChange={(e) => setQuizForm({ ...quizForm, title: e.target.value })}
-                    placeholder="Judul Kuis / CBT *"
-                    className={INPUT_CLASS}
-                  />
-                  <input
-                    type="number"
-                    min={5}
-                    max={180}
-                    disabled={busy}
-                    value={quizForm.duration_minutes}
-                    onChange={(e) =>
-                      setQuizForm({ ...quizForm, duration_minutes: Number(e.target.value) || 30 })
-                    }
-                    placeholder="Durasi (menit)"
-                    aria-label="Durasi kuis dalam menit"
-                    className={`${INPUT_CLASS} font-mono`}
-                  />
+                      {quizClassroomOptions.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Kelas {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="quiz-title" className={LABEL_CLASS}>
+                      Judul Kuis / CBT <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      id="quiz-title"
+                      required
+                      disabled={busy}
+                      value={quizForm.title}
+                      onChange={(e) => setQuizForm({ ...quizForm, title: e.target.value })}
+                      placeholder="Minimal 3 karakter"
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="quiz-duration" className={LABEL_CLASS}>
+                      Durasi Pengerjaan (Menit) <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      id="quiz-duration"
+                      type="number"
+                      min={5}
+                      max={180}
+                      disabled={busy}
+                      value={quizForm.duration_minutes}
+                      onChange={(e) =>
+                        setQuizForm({ ...quizForm, duration_minutes: Number(e.target.value) || 30 })
+                      }
+                      placeholder="5 – 180 menit"
+                      className={`${INPUT_CLASS} font-mono`}
+                    />
+                  </div>
                 </div>
 
                 {/* Daftar Soal Dinamis */}
@@ -1454,7 +1913,7 @@ export default function PembelajaranLmsPage() {
                     return (
                       <div
                         key={qIdx}
-                        className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-2.5"
+                        className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-3"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
@@ -1473,50 +1932,84 @@ export default function PembelajaranLmsPage() {
                           )}
                         </div>
 
-                        <input
-                          required
-                          disabled={busy}
-                          value={dq.question}
-                          onChange={(e) => updateDraft({ question: e.target.value })}
-                          placeholder={`Pertanyaan Soal ${qIdx + 1} *`}
-                          className={INPUT_CLASS}
-                        />
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                        <div>
+                          <label htmlFor={`quiz-q-${qIdx}-question`} className={LABEL_CLASS}>
+                            Pertanyaan Soal #{qIdx + 1} <span className="text-rose-600">*</span>
+                          </label>
                           <input
+                            id={`quiz-q-${qIdx}-question`}
                             required
                             disabled={busy}
-                            value={dq.optA}
-                            onChange={(e) => updateDraft({ optA: e.target.value })}
-                            placeholder="Pilihan A *"
-                            className={INPUT_CLASS}
-                          />
-                          <input
-                            required
-                            disabled={busy}
-                            value={dq.optB}
-                            onChange={(e) => updateDraft({ optB: e.target.value })}
-                            placeholder="Pilihan B *"
-                            className={INPUT_CLASS}
-                          />
-                          <input
-                            disabled={busy}
-                            value={dq.optC}
-                            onChange={(e) => updateDraft({ optC: e.target.value })}
-                            placeholder="Pilihan C (opsional)"
-                            className={INPUT_CLASS}
-                          />
-                          <input
-                            disabled={busy}
-                            value={dq.optD}
-                            onChange={(e) => updateDraft({ optD: e.target.value })}
-                            placeholder="Pilihan D (opsional)"
+                            value={dq.question}
+                            onChange={(e) => updateDraft({ question: e.target.value })}
+                            placeholder={`Tuliskan pertanyaan untuk Soal ${qIdx + 1}...`}
                             className={INPUT_CLASS}
                           />
                         </div>
 
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                          <div>
+                            <label htmlFor={`quiz-q-${qIdx}-opt-a`} className={LABEL_CLASS}>
+                              Pilihan A <span className="text-rose-600">*</span>
+                            </label>
+                            <input
+                              id={`quiz-q-${qIdx}-opt-a`}
+                              required
+                              disabled={busy}
+                              value={dq.optA}
+                              onChange={(e) => updateDraft({ optA: e.target.value })}
+                              placeholder="Jawaban A"
+                              className={INPUT_CLASS}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor={`quiz-q-${qIdx}-opt-b`} className={LABEL_CLASS}>
+                              Pilihan B <span className="text-rose-600">*</span>
+                            </label>
+                            <input
+                              id={`quiz-q-${qIdx}-opt-b`}
+                              required
+                              disabled={busy}
+                              value={dq.optB}
+                              onChange={(e) => updateDraft({ optB: e.target.value })}
+                              placeholder="Jawaban B"
+                              className={INPUT_CLASS}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor={`quiz-q-${qIdx}-opt-c`} className={LABEL_CLASS}>
+                              Pilihan C (Opsional)
+                            </label>
+                            <input
+                              id={`quiz-q-${qIdx}-opt-c`}
+                              disabled={busy}
+                              value={dq.optC}
+                              onChange={(e) => updateDraft({ optC: e.target.value })}
+                              placeholder="Jawaban C"
+                              className={INPUT_CLASS}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor={`quiz-q-${qIdx}-opt-d`} className={LABEL_CLASS}>
+                              Pilihan D (Opsional)
+                            </label>
+                            <input
+                              id={`quiz-q-${qIdx}-opt-d`}
+                              disabled={busy}
+                              value={dq.optD}
+                              onChange={(e) => updateDraft({ optD: e.target.value })}
+                              placeholder="Jawaban D"
+                              className={INPUT_CLASS}
+                            />
+                          </div>
+                        </div>
+
                         <div className="max-w-xs">
+                          <label htmlFor={`quiz-q-${qIdx}-correct`} className={LABEL_CLASS}>
+                            Kunci Jawaban Benar <span className="text-rose-600">*</span>
+                          </label>
                           <select
+                            id={`quiz-q-${qIdx}-correct`}
                             disabled={busy}
                             value={dq.correctIndex}
                             onChange={(e) => updateDraft({ correctIndex: Number(e.target.value) })}
@@ -1548,18 +2041,32 @@ export default function PembelajaranLmsPage() {
                   >
                     <Plus className="w-3.5 h-3.5" /> Tambah Soal ({quizDraftQuestions.length})
                   </button>
-                  <button
-                    type="submit"
-                    disabled={busy}
-                    className="w-full sm:w-auto min-h-[42px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold transition"
-                  >
-                    {busy ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="w-3.5 h-3.5" />
+                  <div className="flex flex-col-reverse sm:flex-row gap-2">
+                    {editingQuizId && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={closeTeacherForm}
+                        className="w-full sm:w-auto min-h-[42px] px-4 py-2 rounded-xl bg-slate-200/80 hover:bg-slate-200 text-slate-700 font-semibold transition"
+                      >
+                        Batal Edit
+                      </button>
                     )}
-                    Terbitkan Kuis CBT
-                  </button>
+                    <button
+                      type="submit"
+                      disabled={busy}
+                      className="w-full sm:w-auto min-h-[42px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold transition"
+                    >
+                      {busy ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : editingQuizId ? (
+                        <Save className="w-3.5 h-3.5" />
+                      ) : (
+                        <Plus className="w-3.5 h-3.5" />
+                      )}
+                      {editingQuizId ? 'Simpan Perubahan Kuis' : 'Terbitkan Kuis CBT'}
+                    </button>
+                  </div>
                 </div>
               </form>
             )}
@@ -1714,7 +2221,30 @@ export default function PembelajaranLmsPage() {
                             </h3>
                           </div>
 
-                          {!isTeacher && (
+                          {isTeacher ? (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => startEditQuiz(qz)}
+                                className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:border-emerald-300 hover:text-emerald-700 text-slate-700 font-semibold disabled:opacity-40 transition"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() =>
+                                  setDeleteModal({ kind: 'QUIZ', id: qz.id, title: qz.title })
+                                }
+                                className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50/70 hover:bg-rose-100 text-rose-700 font-semibold disabled:opacity-40 transition"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Hapus</span>
+                              </button>
+                            </div>
+                          ) : (
                             <button
                               type="button"
                               disabled={qzQuestions.length === 0}
@@ -1989,6 +2519,76 @@ export default function PembelajaranLmsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Modal Konfirmasi Hapus Materi / Tugas / Kuis CBT */}
+      {deleteModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="lms-delete-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !busy) setDeleteModal(null);
+          }}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
+        >
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
+            <div className="flex items-start justify-between gap-3 px-5 sm:px-6 py-4 border-b border-slate-100">
+              <div className="min-w-0">
+                <h2 id="lms-delete-modal-title" className="text-base font-bold text-slate-900">
+                  Konfirmasi Penghapusan
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Tindakan ini tidak dapat dibatalkan.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setDeleteModal(null)}
+                aria-label="Tutup modal"
+                className="min-w-[36px] min-h-[36px] inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 disabled:opacity-40 shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 sm:p-6 space-y-4">
+              <p className="text-xs text-slate-700 leading-relaxed [overflow-wrap:anywhere]">
+                Apakah Anda yakin ingin menghapus{' '}
+                <strong>
+                  {deleteModal.kind === 'MATERIAL'
+                    ? 'materi ajar'
+                    : deleteModal.kind === 'ASSIGNMENT'
+                    ? 'tugas online'
+                    : 'kuis CBT'}
+                </strong>{' '}
+                berjudul <strong>&ldquo;{deleteModal.title}&rdquo;</strong>?
+              </p>
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setDeleteModal(null)}
+                  className="min-h-[42px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold disabled:opacity-40"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleConfirmDelete()}
+                  className="min-h-[42px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50"
+                >
+                  {busy ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  Ya, Hapus
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

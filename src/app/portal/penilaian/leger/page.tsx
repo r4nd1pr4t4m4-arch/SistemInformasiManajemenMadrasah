@@ -8,9 +8,11 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  LayoutGrid,
   Loader2,
   Pencil,
   RefreshCw,
+  Table2,
   X,
 } from 'lucide-react';
 import {
@@ -72,6 +74,7 @@ interface LegerPayload {
 
 export default function LegerERaportPage() {
   const [classroomId, setClassroomId] = useState('');
+  const [viewMode, setViewMode] = useState<'TABLE' | 'CARD'>('TABLE');
   const [data, setData] = useState<LegerPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -315,7 +318,8 @@ export default function LegerERaportPage() {
               <select
                 value={classroomId || data.selectedClassroom?.id || ''}
                 onChange={(e) => setClassroomId(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800"
+                aria-label="Pilih rombel kelas"
+                className="min-h-[38px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800"
               >
                 {data.classrooms.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -324,11 +328,43 @@ export default function LegerERaportPage() {
                 ))}
               </select>
             )}
+            <div
+              role="group"
+              aria-label="Pilih tampilan data leger"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-100/80 p-0.5"
+            >
+              <button
+                type="button"
+                aria-pressed={viewMode === 'TABLE'}
+                onClick={() => setViewMode('TABLE')}
+                className={`min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  viewMode === 'TABLE'
+                    ? 'bg-white text-emerald-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Table2 className="w-3.5 h-3.5" />
+                <span>Tabel</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={viewMode === 'CARD'}
+                onClick={() => setViewMode('CARD')}
+                className={`min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  viewMode === 'CARD'
+                    ? 'bg-white text-emerald-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Kartu</span>
+              </button>
+            </div>
             <button
               type="button"
               disabled={!data || data.rows.length === 0}
               onClick={handleExportLegerExcel}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold transition"
+              className="min-h-[38px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold transition"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Ekspor Leger XLSX</span>
@@ -336,7 +372,8 @@ export default function LegerERaportPage() {
             <button
               type="button"
               onClick={() => void loadLeger(classroomId || undefined)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700"
+              aria-label="Segarkan data leger"
+              className="min-h-[38px] inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -356,7 +393,7 @@ export default function LegerERaportPage() {
           <div className="rounded-2xl bg-slate-50 border border-dashed border-slate-200 p-8 text-center text-xs text-slate-500">
             Belum ada siswa terdaftar di rombel ini untuk Tahun Ajaran aktif.
           </div>
-        ) : (
+        ) : viewMode === 'TABLE' ? (
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
@@ -445,6 +482,157 @@ export default function LegerERaportPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {data.rows.map((row) => {
+              const belowKkmCount = data.subjects.reduce((acc, sub) => {
+                const val = row.subjectScores[sub.id];
+                return val !== null && val < sub.kkm ? acc + 1 : acc;
+              }, 0);
+
+              return (
+                <article
+                  key={row.student_id}
+                  className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3.5 shadow-2xs min-w-0"
+                >
+                  {/* Header Kartu: Peringkat, Nama, NIS, Status */}
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <span className="inline-flex items-center justify-center min-w-[36px] h-9 px-2 rounded-xl bg-emerald-50 border border-emerald-200/70 text-emerald-700 text-xs font-black tabular-nums shrink-0">
+                        #{row.rank}
+                      </span>
+                      <div className="min-w-0">
+                        <h2 className="text-sm font-bold text-slate-900 leading-snug [overflow-wrap:anywhere]">
+                          {row.full_name}
+                        </h2>
+                        <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                          NIS: {row.nis || '-'}
+                          {row.nisn ? ` • NISN: ${row.nisn}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${
+                        row.reportCard?.is_published
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                          : 'bg-slate-100 text-slate-500 border border-slate-200/70'
+                      }`}
+                    >
+                      {row.reportCard?.is_published ? 'Terbit' : 'Draft'}
+                    </span>
+                  </div>
+
+                  {/* Ringkasan Rata-rata, Kehadiran, & Status KKM */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-xl bg-slate-50 border border-slate-200/70 px-2.5 py-2 text-center">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Rata-Rata
+                      </p>
+                      <p className="text-sm font-extrabold font-mono text-slate-900 mt-0.5 tabular-nums">
+                        {formatScoreDecimal(row.average)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-200/70 px-2.5 py-2 text-center">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        S / I / A
+                      </p>
+                      <p className="text-sm font-bold font-mono text-slate-800 mt-0.5 tabular-nums">
+                        {row.attendance.sakit}/{row.attendance.izin}/{row.attendance.alpa}
+                      </p>
+                    </div>
+                    <div
+                      className={`rounded-xl border px-2.5 py-2 text-center ${
+                        belowKkmCount > 0
+                          ? 'bg-rose-50/70 border-rose-200/80'
+                          : 'bg-emerald-50/60 border-emerald-200/70'
+                      }`}
+                    >
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        &lt; KKM
+                      </p>
+                      <p
+                        className={`text-sm font-extrabold font-mono mt-0.5 tabular-nums ${
+                          belowKkmCount > 0 ? 'text-rose-700' : 'text-emerald-700'
+                        }`}
+                      >
+                        {belowKkmCount}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Daftar Nilai per Mata Pelajaran */}
+                  {data.subjects.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Nilai Mata Pelajaran ({data.subjects.length})
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {data.subjects.map((sub) => {
+                          const val = row.subjectScores[sub.id];
+                          const belowKkm = val !== null && val < sub.kkm;
+                          return (
+                            <div
+                              key={sub.id}
+                              className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border text-xs min-w-0 ${
+                                belowKkm
+                                  ? 'bg-rose-50/60 border-rose-200/80'
+                                  : 'bg-slate-50/70 border-slate-200/70'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <p className="font-semibold text-slate-800 truncate" title={sub.name}>
+                                  {sub.name}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-mono">
+                                  {sub.code ? `${sub.code} • ` : ''}KKM {sub.kkm}
+                                </p>
+                              </div>
+                              <span
+                                className={`font-mono text-xs font-extrabold tabular-nums shrink-0 ${
+                                  belowKkm ? 'text-rose-700' : 'text-slate-900'
+                                }`}
+                              >
+                                {formatScoreDecimal(val)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Aksi Kartu */}
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2.5 border-t border-slate-100">
+                    {data.canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(row)}
+                        className="flex-1 sm:flex-none min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:border-emerald-300 text-slate-700 text-xs font-semibold transition"
+                        title="Edit Catatan & Non-Akademik"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Catatan</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={downloadingStudentId === row.student_id}
+                      onClick={() => void handleDownloadStudentPdf(row)}
+                      className="flex-1 sm:flex-none min-h-[38px] inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold transition"
+                      title="Cetak Buku E-Raport PDF"
+                    >
+                      {downloadingStudentId === row.student_id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5" />
+                      )}
+                      <span>Cetak PDF</span>
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </div>

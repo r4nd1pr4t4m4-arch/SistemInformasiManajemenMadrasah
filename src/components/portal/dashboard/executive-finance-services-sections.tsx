@@ -210,7 +210,7 @@ export function DashboardExecutiveSection({
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-12 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 min-w-0">
         {hasRole([
           'SUPERADMIN',
           'OPERATOR',
@@ -219,48 +219,48 @@ export function DashboardExecutiveSection({
           'KEPALA_TU',
           'STAF_TU',
         ]) && (
-          <div className="lg:col-span-6 glass-card rounded-3xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
+          <div className="lg:col-span-6 glass-card rounded-3xl p-4 sm:p-6 space-y-4 min-w-0 max-w-full overflow-hidden">
+            <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 min-w-0">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-bold text-slate-900 break-words">
                   Kondisi Sarana &amp; Prasarana
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 break-words">
                   Total {exec.facilities.totalItems} item inventaris ({exec.facilities.totalUnits}{' '}
                   unit)
                 </p>
               </div>
               <Link
                 href="/portal/cms/sarana-prasarana"
-                className="text-xs font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1"
+                className="text-xs font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1 shrink-0"
               >
-                Kelola Sarpras <ArrowUpRight className="w-3.5 h-3.5" />
+                Kelola Sarpras <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="rounded-2xl bg-emerald-50/70 border border-emerald-200 p-3.5">
-                <p className="text-emerald-800 font-medium">Kondisi Baik</p>
-                <p className="text-xl font-extrabold text-emerald-900 mt-0.5">
+            <div className="grid grid-cols-2 gap-3 text-xs min-w-0">
+              <div className="rounded-2xl bg-emerald-50/70 border border-emerald-200 p-3 sm:p-3.5 min-w-0">
+                <p className="text-emerald-800 font-medium break-words">Kondisi Baik</p>
+                <p className="text-lg sm:text-xl font-extrabold text-emerald-900 mt-0.5 tabular-nums">
                   {exec.facilities.goodConditionCount} Item
                 </p>
               </div>
-              <div className="rounded-2xl bg-rose-50/70 border border-rose-200 p-3.5">
-                <p className="text-rose-800 font-medium">Perlu Perbaikan / Rusak</p>
-                <p className="text-xl font-extrabold text-rose-900 mt-0.5">
+              <div className="rounded-2xl bg-rose-50/70 border border-rose-200 p-3 sm:p-3.5 min-w-0">
+                <p className="text-rose-800 font-medium break-words">Perlu Perbaikan / Rusak</p>
+                <p className="text-lg sm:text-xl font-extrabold text-rose-900 mt-0.5 tabular-nums">
                   {exec.facilities.needsAttentionCount} Item
                 </p>
               </div>
             </div>
 
             {exec.facilities.damagedList.length > 0 && (
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 {exec.facilities.damagedList.map((f) => (
                   <div
                     key={f.id}
-                    className="modular-card rounded-xl p-2.5 flex items-center justify-between text-xs"
+                    className="modular-card rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs min-w-0"
                   >
-                    <span className="font-semibold text-slate-800">
+                    <span className="font-semibold text-slate-800 min-w-0 flex-1 break-words">
                       {f.name} ({f.quantity} unit)
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 font-semibold text-[11px] shrink-0">
@@ -274,21 +274,21 @@ export function DashboardExecutiveSection({
         )}
 
         {hasRole(['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'KEPALA_TU', 'STAF_TU']) && (
-          <div className="lg:col-span-6 glass-card rounded-3xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
+          <div className="lg:col-span-6 glass-card rounded-3xl p-4 sm:p-6 space-y-4 min-w-0 max-w-full overflow-hidden">
+            <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 min-w-0">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-bold text-slate-900 break-words">
                   Arsip Persuratan Tata Usaha Terbaru
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 break-words">
                   Rekam surat masuk &amp; surat keluar terakhir
                 </p>
               </div>
               <Link
                 href="/portal/layanan/persuratan"
-                className="text-xs font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1"
+                className="text-xs font-semibold text-emerald-700 hover:underline inline-flex items-center gap-1 shrink-0"
               >
-                Buka Persuratan <ArrowUpRight className="w-3.5 h-3.5" />
+                Buka Persuratan <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
               </Link>
             </div>
 
@@ -297,19 +297,21 @@ export function DashboardExecutiveSection({
                 Belum ada arsip surat yang tercatat.
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 {exec.recentLetters.map((l) => (
                   <div
                     key={l.id}
-                    className="modular-card rounded-xl p-3 flex items-center justify-between gap-2.5 text-xs min-w-0"
+                    className="modular-card rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2.5 text-xs min-w-0 overflow-hidden"
                   >
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="font-mono font-bold text-emerald-700 truncate">
                         {l.letter_number} • {l.direction}
                       </p>
                       <p className="font-bold text-slate-900 truncate">{l.subject}</p>
                     </div>
-                    <span className="text-slate-500 shrink-0">{l.letter_date}</span>
+                    <span className="text-[11px] text-slate-500 shrink-0 tabular-nums">
+                      {l.letter_date}
+                    </span>
                   </div>
                 ))}
               </div>

@@ -3,13 +3,11 @@
 import Link from 'next/link';
 import {
   ArrowUpRight,
-  Award,
   Calendar,
   CheckCircle2,
   Clock,
   MapPin,
   RefreshCw,
-  ShieldCheck,
   Sparkles,
   TrendingUp,
   Wallet,
@@ -34,38 +32,27 @@ export function DashboardHeroSection({
   onRefresh: () => void;
 }) {
   const user = data.user;
-  const teacher = data.teacherProfile;
-  const additionalDuties = teacher?.additionalDuties || [];
-  const homeroomClasses = teacher?.homeroomClassrooms || [];
-  const teaching = data.teachingSummary;
 
   return (
     <section className="glass-card rounded-3xl p-5 sm:p-8 space-y-5 relative overflow-hidden">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
         <div className="space-y-2.5 max-w-3xl min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold">
-              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-              <span>
-                Peran:{' '}
-                {(user?.roles || []).length > 0
-                  ? (user?.roles || []).map((r) => formatEnum(r)).join(' • ')
-                  : 'Pengguna'}
-              </span>
-            </span>
-            {data.academicYear && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-50 border border-sky-200/80 text-sky-800 text-xs font-semibold">
-                <Calendar className="w-3.5 h-3.5" />
-                TA {data.academicYear.name} ({data.academicYear.semester})
-              </span>
-            )}
-            {todayFormatted && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
-                <Clock className="w-3.5 h-3.5 text-slate-500" />
-                {todayFormatted}
-              </span>
-            )}
-          </div>
+          {(data.academicYear || todayFormatted) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {data.academicYear && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-50 border border-sky-200/80 text-sky-800 text-xs font-semibold">
+                  <Calendar className="w-3.5 h-3.5" />
+                  TA {data.academicYear.name} ({data.academicYear.semester})
+                </span>
+              )}
+              {todayFormatted && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
+                  <Clock className="w-3.5 h-3.5 text-slate-500" />
+                  {todayFormatted}
+                </span>
+              )}
+            </div>
+          )}
 
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             Assalamu&apos;alaikum, {user?.fullName || 'Pengguna'}
@@ -120,53 +107,6 @@ export function DashboardHeroSection({
           >
             Lihat Kalender <ArrowUpRight className="w-3.5 h-3.5" />
           </Link>
-        </div>
-      )}
-
-      {teacher && (
-        <div className="pt-4 border-t border-slate-200/70 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-              <Award className="w-4 h-4 text-emerald-700" />
-              Status GTK &amp; Tugas Tambahan:
-            </span>
-            <span className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold">
-              {teacher.staff_type} {teacher.employment_status ? `(${teacher.employment_status})` : ''}
-            </span>
-            {homeroomClasses.map((cls) => (
-              <span
-                key={cls.id}
-                className="px-2.5 py-1 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-semibold"
-              >
-                Wali Kelas {cls.name}
-              </span>
-            ))}
-            {teaching?.isPicketToday && (
-              <span className="px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
-                Guru Piket Hari Ini ({DAY_NAMES[data.todayDayOfWeek]})
-              </span>
-            )}
-            {additionalDuties.map((duty) => (
-              <span
-                key={duty.id}
-                className="px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold"
-                title={duty.decree_number ? `SK: ${duty.decree_number}` : undefined}
-              >
-                {duty.name}
-                {duty.receives_allowance && duty.monthly_allowance > 0
-                  ? ` (${formatRupiah(duty.monthly_allowance)}/bln)`
-                  : ''}
-              </span>
-            ))}
-            {additionalDuties.length === 0 && homeroomClasses.length === 0 && (
-              <span className="text-xs text-slate-500 italic">
-                Tidak ada SK tugas tambahan struktural aktif
-              </span>
-            )}
-          </div>
-          {teacher.nip && (
-            <span className="text-[11px] font-mono text-slate-500">NIP: {teacher.nip}</span>
-          )}
         </div>
       )}
     </section>

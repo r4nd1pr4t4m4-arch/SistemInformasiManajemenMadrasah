@@ -1,14 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   AlertCircle,
   Award,
+  Calendar,
   CheckCircle2,
   ExternalLink,
+  Layers,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
+  Save,
   Trash2,
   Trophy,
   Users,
@@ -19,8 +23,9 @@ interface EkskulRow {
   id: string;
   name: string;
   category: string;
+  coach_teacher_id?: string | null;
   schedule_info: string | null;
-  coach?: { full_name: string } | null;
+  coach?: { id?: string; full_name: string } | null;
 }
 
 interface MemberRow {
@@ -29,8 +34,8 @@ interface MemberRow {
   student_id: string;
   grade: string;
   attendance_count: number;
-  student?: { full_name: string; nis: string | null } | null;
-  extracurricular?: { name: string } | null;
+  student?: { id?: string; full_name: string; nis: string | null } | null;
+  extracurricular?: { id?: string; name: string; coach_teacher_id?: string | null } | null;
 }
 
 interface PortfolioRow {
@@ -43,6 +48,20 @@ interface PortfolioRow {
   certificate_url: string | null;
   student?: { full_name: string; nis: string | null } | null;
 }
+
+const INPUT_CLASS =
+  'w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-50 disabled:opacity-60';
+
+const LABEL_CLASS = 'block text-[11px] font-semibold text-slate-700 mb-1';
+
+const EKSKUL_CATEGORIES = [
+  'OLAHRAGA',
+  'SENI',
+  'AKADEMIK',
+  'KEAGAMAAN',
+  'KEPANDUAN',
+  'UMUM',
+] as const;
 
 function getTodayWibIso(): string {
   try {
@@ -71,16 +90,25 @@ export default function EkstrakurikulerPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{
     id: string;
-    target: 'member' | 'portfolio';
+    target: 'ekskul' | 'member' | 'portfolio';
     label: string;
   } | null>(null);
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  const [ekskuls, setEkskuls] = useState<EkskulRow[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [canManagePortfolio, setCanManagePortfolio] = useState(false);
+  const [manageableEkskulIds, setManageableEkskulIds] = useState<string[]>([]);
+
+  const [masterEkskuls, setMasterEkskuls] = useState<EkskulRow[]>([]);
+  const [manageableEkskuls, setManageableEkskuls] = useState<EkskulRow[]>([]);
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [portfolios, setPortfolios] = useState<PortfolioRow[]>([]);
-  const [students, setStudents] = useState<Array<{ id: string; full_name: string }>>([]);
+  const [students, setStudents] = useState<Array<{ id: string; full_name: string; nis?: string | null }>>([]);
   const [teachers, setTeachers] = useState<Array<{ id: string; full_name: string }>>([]);
+
+  // Mode edit Master Ekskul (Admin) & Anggota Ekskul (Admin / Pembina)
+  const [editingEkskulId, setEditingEkskulId] = useState<string | null>(null);
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
 
   const [ekskulForm, setEkskulForm] = useState({
     name: '',
@@ -138,11 +166,19 @@ export default function EkstrakurikulerPage() {
       if (!res.ok) {
         setLoadError(data.error || 'Gagal memuat data ekstrakurikuler.');
       } else {
-        setEkskuls(data.extracurriculars || []);
-        setMembers(data.members || []);
-        setPortfolios(data.portfolios || []);
-        setStudents(data.students || []);
-        setTeachers(data.teachers || []);
+        setIsAdmin(Boolean(data.isAdmin));
+        setCanManagePortfolio(Boolean(data.canManagePortfolio));
+        setManageableEkskulIds(
+          Array.isArray(data.manageableEkskulIds) ? data.manageableEkskulIds : []
+        );
+        setMasterEkskuls(
+          Array.isArray(data.masterExtracurriculars) ? data.masterExtracurriculars : []
+        );
+        setManageableEkskuls(Array.isArray(data.extracurriculars) ? data.extracurriculars : []);
+        setMembers(Array.isArray(data.members) ? data.members : []);
+        setPortfolios(Array.isArray(data.portfolios) ? data.portfolios : []);
+        setStudents(Array.isArray(data.students) ? data.students : []);
+        setTeachers(Array.isArray(data.teachers) ? data.teachers : []);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -171,6 +207,17 @@ export default function EkstrakurikulerPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [confirmDelete, deletingId]);
 
+  const manageableEkskulIdSet = useMemo(() => new Set(manageableEkskulIds), [manageableEkskulIds]);
+  const canManageAnyMember = isAdmin || manageableEkskuls.length > 0;
+
+  const memberCountByEkskul = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const m of members) {
+      counts.set(m.extracurricular_id, (counts.get(m.extracurricular_id) || 0) + 1);
+    }
+    return counts;
+  }, [members]);
+
   async function postAction(payload: Record<string, unknown>, msg: string) {
     setSaving(true);
     try {
@@ -195,6 +242,43 @@ export default function EkstrakurikulerPage() {
     }
   }
 
+  function resetEkskulForm() {
+    setEditingEkskulId(null);
+    setEkskulForm({ name: '', category: 'OLAHRAGA', coach_teacher_id: '', schedule_info: '' });
+  }
+
+  function startEditEkskul(ek: EkskulRow) {
+    setEditingEkskulId(ek.id);
+    setEkskulForm({
+      name: ek.name || '',
+      category: ek.category || 'UMUM',
+      coach_teacher_id: ek.coach_teacher_id || ek.coach?.id || '',
+      schedule_info: ek.schedule_info || '',
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function resetMemberForm() {
+    setEditingMemberId(null);
+    setMemberForm({
+      extracurricular_id: '',
+      student_id: '',
+      grade: 'Baik',
+      attendance_count: 1,
+    });
+  }
+
+  function startEditMember(m: MemberRow) {
+    setEditingMemberId(m.id);
+    setMemberForm({
+      extracurricular_id: m.extracurricular_id,
+      student_id: m.student_id,
+      grade: m.grade || 'Baik',
+      attendance_count: Number(m.attendance_count) || 0,
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   async function handleConfirmDelete() {
     if (!confirmDelete) return;
     setDeletingId(confirmDelete.id);
@@ -208,8 +292,16 @@ export default function EkstrakurikulerPage() {
         showToast(data.error || 'Gagal menghapus data.', 'err');
         return;
       }
+      if (confirmDelete.target === 'ekskul' && editingEkskulId === confirmDelete.id) {
+        resetEkskulForm();
+      }
+      if (confirmDelete.target === 'member' && editingMemberId === confirmDelete.id) {
+        resetMemberForm();
+      }
       showToast(
-        confirmDelete.target === 'member'
+        confirmDelete.target === 'ekskul'
+          ? 'Master ekstrakurikuler berhasil dihapus.'
+          : confirmDelete.target === 'member'
           ? 'Anggota ekstrakurikuler berhasil dihapus.'
           : 'Portofolio prestasi siswa berhasil dihapus.'
       );
@@ -222,22 +314,40 @@ export default function EkstrakurikulerPage() {
     }
   }
 
-  async function handleCreateEkskul(e: FormEvent) {
+  async function handleSubmitEkskul(e: FormEvent) {
     e.preventDefault();
+    const isEditing = Boolean(editingEkskulId);
     const ok = await postAction(
-      { action: 'CREATE_EKSKUL', ...ekskulForm, coach_teacher_id: ekskulForm.coach_teacher_id || null },
-      'Ekstrakurikuler berhasil ditambahkan.'
+      {
+        action: isEditing ? 'UPDATE_EKSKUL' : 'CREATE_EKSKUL',
+        ...(isEditing ? { id: editingEkskulId } : {}),
+        ...ekskulForm,
+        coach_teacher_id: ekskulForm.coach_teacher_id || null,
+      },
+      isEditing
+        ? 'Master ekstrakurikuler berhasil diperbarui.'
+        : 'Master ekstrakurikuler berhasil ditambahkan.'
     );
-    if (ok) setEkskulForm({ name: '', category: 'OLAHRAGA', coach_teacher_id: '', schedule_info: '' });
+    if (ok) resetEkskulForm();
   }
 
-  async function handleEnrollMember(e: FormEvent) {
+  async function handleSubmitMember(e: FormEvent) {
     e.preventDefault();
+    const isEditing = Boolean(editingMemberId);
     const ok = await postAction(
-      { action: 'ENROLL_MEMBER', ...memberForm },
-      'Anggota & nilai ekstrakurikuler berhasil disimpan.'
+      {
+        action: isEditing ? 'UPDATE_MEMBER' : 'ENROLL_MEMBER',
+        ...(isEditing ? { id: editingMemberId } : {}),
+        ...memberForm,
+      },
+      isEditing
+        ? 'Data anggota & nilai ekstrakurikuler berhasil diperbarui.'
+        : 'Anggota & nilai ekstrakurikuler berhasil disimpan.'
     );
-    if (ok) setMemberForm((prev) => ({ ...prev, student_id: '' }));
+    if (ok) {
+      if (isEditing) resetMemberForm();
+      else setMemberForm((prev) => ({ ...prev, student_id: '' }));
+    }
   }
 
   async function handleCreatePortfolio(e: FormEvent) {
@@ -260,7 +370,7 @@ export default function EkstrakurikulerPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6 min-w-0">
       {toast && (
         <div
           role="status"
@@ -276,7 +386,7 @@ export default function EkstrakurikulerPage() {
             ) : (
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
             )}
-            <span className="break-words">{toast.text}</span>
+            <span className="[overflow-wrap:anywhere]">{toast.text}</span>
           </div>
           <button
             type="button"
@@ -296,7 +406,7 @@ export default function EkstrakurikulerPage() {
         >
           <div className="flex items-center gap-2 min-w-0">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span className="break-words">{loadError}</span>
+            <span className="[overflow-wrap:anywhere]">{loadError}</span>
           </div>
           <button
             type="button"
@@ -308,7 +418,7 @@ export default function EkstrakurikulerPage() {
         </div>
       )}
 
-      <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
+      <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4 min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
@@ -329,236 +439,578 @@ export default function EkstrakurikulerPage() {
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+        {/* Tabulasi Horizontal Scrollable */}
+        <div
+          role="tablist"
+          aria-label="Menu Ekstrakurikuler dan Portofolio Prestasi"
+          className="flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-slate-200 pb-3 -mx-1 px-1 no-scrollbar"
+        >
           <button
             type="button"
+            role="tab"
+            aria-selected={tab === 'EKSKUL'}
             onClick={() => setTab('EKSKUL')}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition ${
+            className={`min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 transition ${
               tab === 'EKSKUL'
-                ? 'bg-emerald-700 text-white'
-                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'bg-white border border-slate-200 text-slate-600 hover:border-emerald-300 hover:text-emerald-700'
             }`}
           >
-            <Users className="w-3.5 h-3.5" /> Ekstrakurikuler &amp; Anggota ({ekskuls.length})
+            <Users className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Ekstrakurikuler &amp; Anggota ({isAdmin ? masterEkskuls.length : members.length})
+            </span>
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={tab === 'PORTOFOLIO'}
             onClick={() => setTab('PORTOFOLIO')}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition ${
+            className={`min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 transition ${
               tab === 'PORTOFOLIO'
-                ? 'bg-emerald-700 text-white'
-                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'bg-white border border-slate-200 text-slate-600 hover:border-emerald-300 hover:text-emerald-700'
             }`}
           >
-            <Award className="w-3.5 h-3.5" /> Portofolio Prestasi Siswa ({portfolios.length})
+            <Award className="w-3.5 h-3.5 shrink-0" />
+            <span>Portofolio Prestasi Siswa ({portfolios.length})</span>
           </button>
         </div>
 
         {tab === 'EKSKUL' ? (
           <div className="space-y-6 text-xs">
-            <div className="grid lg:grid-cols-2 gap-4">
-              <form onSubmit={handleCreateEkskul} className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-                <h2 className="font-bold text-slate-900">Tambah Master Ekstrakurikuler</h2>
-                <div className="grid sm:grid-cols-2 gap-2.5">
-                  <input
-                    required
-                    value={ekskulForm.name}
-                    onChange={(e) => setEkskulForm({ ...ekskulForm, name: e.target.value })}
-                    placeholder="Nama Ekskul (mis. Pramuka)"
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
-                  />
-                  <select
-                    value={ekskulForm.coach_teacher_id}
-                    onChange={(e) => setEkskulForm({ ...ekskulForm, coach_teacher_id: e.target.value })}
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
+            {/* Form Master (Khusus Admin) & Form Anggota/Nilai (Admin + Guru Pembina Ekskul Terkait) */}
+            {(isAdmin || canManageAnyMember) && (
+              <div className={`grid gap-4 ${isAdmin ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
+                {isAdmin && (
+                  <form
+                    onSubmit={handleSubmitEkskul}
+                    className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3"
                   >
-                    <option value="">-- Pembina (Opsional) --</option>
-                    {teachers.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.full_name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    value={ekskulForm.schedule_info}
-                    onChange={(e) => setEkskulForm({ ...ekskulForm, schedule_info: e.target.value })}
-                    placeholder="Jadwal (mis. Jumat 14:30)"
-                    className="sm:col-span-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold transition"
-                >
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                  Simpan Ekskul
-                </button>
-              </form>
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="text-sm font-bold text-slate-900">
+                        {editingEkskulId
+                          ? 'Edit Master Ekstrakurikuler'
+                          : 'Tambah Master Ekstrakurikuler'}
+                      </h2>
+                      {editingEkskulId && (
+                        <button
+                          type="button"
+                          onClick={resetEkskulForm}
+                          className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-200/60"
+                        >
+                          Batal Edit
+                        </button>
+                      )}
+                    </div>
 
-              <form onSubmit={handleEnrollMember} className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-                <h2 className="font-bold text-slate-900">Daftarkan / Nilai Anggota Ekskul</h2>
-                <div className="grid sm:grid-cols-2 gap-2.5">
-                  <select
-                    required
-                    value={memberForm.extracurricular_id}
-                    onChange={(e) => setMemberForm({ ...memberForm, extracurricular_id: e.target.value })}
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
-                  >
-                    <option value="">-- Pilih Ekskul --</option>
-                    {ekskuls.map((ek) => (
-                      <option key={ek.id} value={ek.id}>
-                        {ek.name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    required
-                    value={memberForm.student_id}
-                    onChange={(e) => setMemberForm({ ...memberForm, student_id: e.target.value })}
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
-                  >
-                    <option value="">-- Pilih Siswa --</option>
-                    {students.map((st) => (
-                      <option key={st.id} value={st.id}>
-                        {st.full_name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={memberForm.grade}
-                    onChange={(e) => setMemberForm({ ...memberForm, grade: e.target.value })}
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
-                  >
-                    <option value="Sangat Baik">Sangat Baik</option>
-                    <option value="Baik">Baik</option>
-                    <option value="Cukup">Cukup</option>
-                  </select>
-                  <input
-                    type="number"
-                    min={0}
-                    value={memberForm.attendance_count}
-                    onChange={(e) => setMemberForm({ ...memberForm, attendance_count: Number(e.target.value) || 0 })}
-                    placeholder="Jumlah Hadir Latihan"
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-mono"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold transition"
-                >
-                  {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Simpan Anggota &amp; Nilai
-                </button>
-              </form>
-            </div>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="ekskul-name" className={LABEL_CLASS}>
+                          Nama Ekstrakurikuler <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          id="ekskul-name"
+                          required
+                          value={ekskulForm.name}
+                          onChange={(e) => setEkskulForm({ ...ekskulForm, name: e.target.value })}
+                          placeholder="mis. Pramuka / Futsal"
+                          className={INPUT_CLASS}
+                        />
+                      </div>
 
+                      <div>
+                        <label htmlFor="ekskul-category" className={LABEL_CLASS}>
+                          Kategori <span className="text-rose-600">*</span>
+                        </label>
+                        <select
+                          id="ekskul-category"
+                          value={ekskulForm.category}
+                          onChange={(e) =>
+                            setEkskulForm({ ...ekskulForm, category: e.target.value })
+                          }
+                          className={INPUT_CLASS}
+                        >
+                          {EKSKUL_CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label htmlFor="ekskul-coach" className={LABEL_CLASS}>
+                          Guru Pembina (Opsional)
+                        </label>
+                        <select
+                          id="ekskul-coach"
+                          value={ekskulForm.coach_teacher_id}
+                          onChange={(e) =>
+                            setEkskulForm({ ...ekskulForm, coach_teacher_id: e.target.value })
+                          }
+                          className={INPUT_CLASS}
+                        >
+                          <option value="">-- Pilih Guru Pembina --</option>
+                          {teachers.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.full_name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label htmlFor="ekskul-schedule" className={LABEL_CLASS}>
+                          Jadwal Latihan (Opsional)
+                        </label>
+                        <input
+                          id="ekskul-schedule"
+                          value={ekskulForm.schedule_info}
+                          onChange={(e) =>
+                            setEkskulForm({ ...ekskulForm, schedule_info: e.target.value })
+                          }
+                          placeholder="mis. Jumat 14:30"
+                          className={INPUT_CLASS}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold transition"
+                      >
+                        {saving ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : editingEkskulId ? (
+                          <Save className="w-3.5 h-3.5" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5" />
+                        )}
+                        {editingEkskulId ? 'Simpan Perubahan' : 'Simpan Ekskul'}
+                      </button>
+                      {editingEkskulId && (
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={resetEkskulForm}
+                          className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-200/80 hover:bg-slate-200 text-slate-700 font-semibold transition"
+                        >
+                          Batal
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                )}
+
+                {canManageAnyMember && (
+                  <form
+                    onSubmit={handleSubmitMember}
+                    className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <h2 className="text-sm font-bold text-slate-900">
+                          {editingMemberId
+                            ? 'Edit Anggota & Nilai Ekstrakurikuler'
+                            : 'Daftarkan / Nilai Anggota Ekstrakurikuler'}
+                        </h2>
+                        {!isAdmin && (
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Anda hanya dapat menginput, mengedit, dan menghapus anggota pada ekstrakurikuler yang Anda bina.
+                          </p>
+                        )}
+                      </div>
+                      {editingMemberId && (
+                        <button
+                          type="button"
+                          onClick={resetMemberForm}
+                          className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-200/60 shrink-0"
+                        >
+                          Batal Edit
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="member-ekskul" className={LABEL_CLASS}>
+                          Ekstrakurikuler <span className="text-rose-600">*</span>
+                        </label>
+                        <select
+                          id="member-ekskul"
+                          required
+                          value={memberForm.extracurricular_id}
+                          onChange={(e) =>
+                            setMemberForm({ ...memberForm, extracurricular_id: e.target.value })
+                          }
+                          className={INPUT_CLASS}
+                        >
+                          <option value="">-- Pilih Ekstrakurikuler --</option>
+                          {manageableEkskuls.map((ek) => (
+                            <option key={ek.id} value={ek.id}>
+                              {ek.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label htmlFor="member-student" className={LABEL_CLASS}>
+                          Nama Siswa <span className="text-rose-600">*</span>
+                        </label>
+                        <select
+                          id="member-student"
+                          required
+                          value={memberForm.student_id}
+                          onChange={(e) =>
+                            setMemberForm({ ...memberForm, student_id: e.target.value })
+                          }
+                          className={INPUT_CLASS}
+                        >
+                          <option value="">-- Pilih Siswa --</option>
+                          {students.map((st) => (
+                            <option key={st.id} value={st.id}>
+                              {st.full_name} {st.nis ? `(${st.nis})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label htmlFor="member-grade" className={LABEL_CLASS}>
+                          Predikat Nilai <span className="text-rose-600">*</span>
+                        </label>
+                        <select
+                          id="member-grade"
+                          value={memberForm.grade}
+                          onChange={(e) => setMemberForm({ ...memberForm, grade: e.target.value })}
+                          className={INPUT_CLASS}
+                        >
+                          <option value="Sangat Baik">Sangat Baik</option>
+                          <option value="Baik">Baik</option>
+                          <option value="Cukup">Cukup</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label htmlFor="member-attendance" className={LABEL_CLASS}>
+                          Jumlah Hadir Latihan <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          id="member-attendance"
+                          type="number"
+                          min={0}
+                          required
+                          value={memberForm.attendance_count}
+                          onChange={(e) =>
+                            setMemberForm({
+                              ...memberForm,
+                              attendance_count: Number(e.target.value) || 0,
+                            })
+                          }
+                          placeholder="0"
+                          className={`${INPUT_CLASS} font-mono`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold transition"
+                      >
+                        {saving ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : editingMemberId ? (
+                          <Save className="w-3.5 h-3.5" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5" />
+                        )}
+                        {editingMemberId ? 'Simpan Perubahan Nilai' : 'Simpan Anggota & Nilai'}
+                      </button>
+                      {editingMemberId && (
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={resetMemberForm}
+                          className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-200/80 hover:bg-slate-200 text-slate-700 font-semibold transition"
+                        >
+                          Batal
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {/* Daftar Master Ekstrakurikuler — HANYA tampil untuk Admin (SUPERADMIN & OPERATOR) */}
+            {isAdmin && (
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-emerald-700" />
+                    <span>Daftar Master Ekstrakurikuler ({masterEkskuls.length})</span>
+                  </h3>
+                </div>
+                {masterEkskuls.length === 0 ? (
+                  <div className="rounded-2xl bg-slate-50 border border-dashed border-slate-200 p-6 text-center text-slate-500">
+                    {loading
+                      ? 'Memuat daftar master ekstrakurikuler...'
+                      : 'Belum ada master ekstrakurikuler terdaftar.'}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {masterEkskuls.map((ek) => (
+                      <article
+                        key={ek.id}
+                        className="modular-card rounded-2xl p-4 flex flex-col justify-between gap-3 border border-slate-200/80 min-w-0"
+                      >
+                        <div className="space-y-1.5 min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 font-bold text-[10px]">
+                              {ek.category || 'UMUM'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold text-[10px] tabular-nums">
+                              {memberCountByEkskul.get(ek.id) || 0} anggota
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-slate-900 text-sm [overflow-wrap:anywhere]">
+                            {ek.name}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 [overflow-wrap:anywhere]">
+                            Pembina:{' '}
+                            <strong className="text-slate-700">
+                              {ek.coach?.full_name || 'Belum ditentukan'}
+                            </strong>
+                          </p>
+                          {ek.schedule_info && (
+                            <p className="text-[11px] text-slate-500 inline-flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-emerald-600 shrink-0" />
+                              <span>{ek.schedule_info}</span>
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-slate-100">
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => startEditEkskul(ek)}
+                            className="min-h-[32px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:border-emerald-300 hover:text-emerald-700 text-slate-700 font-semibold text-[11px] transition"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={Boolean(deletingId)}
+                            onClick={() =>
+                              setConfirmDelete({
+                                id: ek.id,
+                                target: 'ekskul',
+                                label: ek.name,
+                              })
+                            }
+                            className="min-h-[32px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50/70 hover:bg-rose-100 text-rose-700 font-semibold text-[11px] transition"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Hapus
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Daftar Anggota & Predikat */}
             <div className="space-y-2">
-              <h3 className="font-bold text-slate-900">Daftar Anggota &amp; Predikat ({members.length})</h3>
+              <h3 className="font-bold text-slate-900 text-sm">
+                Daftar Anggota &amp; Predikat ({members.length})
+              </h3>
               {members.length === 0 ? (
                 <div className="rounded-2xl bg-slate-50 border border-dashed border-slate-200 p-8 text-center text-slate-500">
-                  {loading ? 'Memuat daftar anggota...' : 'Belum ada anggota ekstrakurikuler terdaftar.'}
+                  {loading
+                    ? 'Memuat daftar anggota...'
+                    : 'Belum ada anggota ekstrakurikuler terdaftar.'}
                 </div>
               ) : (
-                members.map((m) => (
-                  <div
-                    key={m.id}
-                    className="modular-card rounded-2xl p-3.5 flex items-center justify-between gap-2 border border-slate-200/80"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-bold text-slate-900 break-words">
-                        {m.student?.full_name || 'Siswa'} —{' '}
-                        <span className="text-emerald-700">{m.extracurricular?.name || '-'}</span>
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        Predikat: <strong>{m.grade}</strong> • Kehadiran latihan: <strong>{m.attendance_count}x</strong>
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={Boolean(deletingId)}
-                      onClick={() =>
-                        setConfirmDelete({
-                          id: m.id,
-                          target: 'member',
-                          label: `${m.student?.full_name || 'Siswa'} (${m.extracurricular?.name || 'Ekskul'})`,
-                        })
-                      }
-                      aria-label={`Hapus anggota ${m.student?.full_name || 'Siswa'}`}
-                      className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 disabled:opacity-40 shrink-0 transition"
+                members.map((m) => {
+                  const canEditThisMember =
+                    isAdmin || manageableEkskulIdSet.has(m.extracurricular_id);
+                  return (
+                    <div
+                      key={m.id}
+                      className="modular-card rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-2 border border-slate-200/80"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 [overflow-wrap:anywhere]">
+                          {m.student?.full_name || 'Siswa'} —{' '}
+                          <span className="text-emerald-700">{m.extracurricular?.name || '-'}</span>
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Predikat: <strong>{m.grade}</strong> • Kehadiran latihan:{' '}
+                          <strong>{m.attendance_count}x</strong>
+                        </p>
+                      </div>
+                      {canEditThisMember && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => startEditMember(m)}
+                            className="min-h-[32px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:border-emerald-300 hover:text-emerald-700 text-slate-700 font-semibold text-[11px] transition"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={Boolean(deletingId)}
+                            onClick={() =>
+                              setConfirmDelete({
+                                id: m.id,
+                                target: 'member',
+                                label: `${m.student?.full_name || 'Siswa'} (${m.extracurricular?.name || 'Ekskul'})`,
+                              })
+                            }
+                            aria-label={`Hapus anggota ${m.student?.full_name || 'Siswa'}`}
+                            className="min-h-[32px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50/70 hover:bg-rose-100 text-rose-700 font-semibold text-[11px] disabled:opacity-40 transition"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Hapus
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
         ) : (
           <div className="space-y-5 text-xs">
-            <form onSubmit={handleCreatePortfolio} className="grid sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
-              <select
-                required
-                value={portForm.student_id}
-                onChange={(e) => setPortForm({ ...portForm, student_id: e.target.value })}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
+            {canManagePortfolio && (
+              <form
+                onSubmit={handleCreatePortfolio}
+                className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3"
               >
-                <option value="">-- Pilih Siswa --</option>
-                {students.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name}
-                  </option>
-                ))}
-              </select>
-              <input
-                required
-                value={portForm.title}
-                onChange={(e) => setPortForm({ ...portForm, title: e.target.value })}
-                placeholder="Judul Prestasi / Sertifikat *"
-                className="sm:col-span-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
-              />
-              <select
-                value={portForm.level}
-                onChange={(e) => setPortForm({ ...portForm, level: e.target.value })}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
-              >
-                <option value="SEKOLAH">Tingkat Sekolah</option>
-                <option value="KECAMATAN">Kecamatan</option>
-                <option value="KABUPATEN">Kabupaten/Kota</option>
-                <option value="PROVINSI">Provinsi</option>
-                <option value="NASIONAL">Nasional</option>
-              </select>
-              <input
-                type="date"
-                required
-                value={portForm.achieved_date}
-                onChange={(e) => setPortForm({ ...portForm, achieved_date: e.target.value })}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
-              />
-              <input
-                type="url"
-                value={portForm.certificate_url}
-                onChange={(e) => setPortForm({ ...portForm, certificate_url: e.target.value })}
-                placeholder="URL Sertifikat Digital (Opsional)"
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
-              />
-              <div className="sm:col-span-3 flex justify-end">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold transition"
-                >
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                  Tambah Portofolio Prestasi
-                </button>
-              </div>
-            </form>
+                <h2 className="text-sm font-bold text-slate-900">
+                  Tambah Portofolio Prestasi Siswa
+                </h2>
+
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div>
+                    <label htmlFor="port-student" className={LABEL_CLASS}>
+                      Nama Siswa <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      id="port-student"
+                      required
+                      value={portForm.student_id}
+                      onChange={(e) => setPortForm({ ...portForm, student_id: e.target.value })}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="">-- Pilih Siswa --</option>
+                      {students.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name} {s.nis ? `(${s.nis})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label htmlFor="port-title" className={LABEL_CLASS}>
+                      Judul Prestasi / Sertifikat <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      id="port-title"
+                      required
+                      value={portForm.title}
+                      onChange={(e) => setPortForm({ ...portForm, title: e.target.value })}
+                      placeholder="mis. Juara 1 KSM Matematika Tingkat Kabupaten"
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="port-level" className={LABEL_CLASS}>
+                      Tingkat Prestasi <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      id="port-level"
+                      value={portForm.level}
+                      onChange={(e) => setPortForm({ ...portForm, level: e.target.value })}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="SEKOLAH">Tingkat Sekolah</option>
+                      <option value="KECAMATAN">Kecamatan</option>
+                      <option value="KABUPATEN">Kabupaten/Kota</option>
+                      <option value="PROVINSI">Provinsi</option>
+                      <option value="NASIONAL">Nasional</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="port-date" className={LABEL_CLASS}>
+                      Tanggal Perolehan <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      id="port-date"
+                      type="date"
+                      required
+                      value={portForm.achieved_date}
+                      onChange={(e) => setPortForm({ ...portForm, achieved_date: e.target.value })}
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="port-certificate-url" className={LABEL_CLASS}>
+                      URL Sertifikat Digital (Opsional)
+                    </label>
+                    <input
+                      id="port-certificate-url"
+                      type="url"
+                      value={portForm.certificate_url}
+                      onChange={(e) =>
+                        setPortForm({ ...portForm, certificate_url: e.target.value })
+                      }
+                      placeholder="https://..."
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold transition"
+                  >
+                    {saving ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="w-3.5 h-3.5" />
+                    )}
+                    Tambah Portofolio Prestasi
+                  </button>
+                </div>
+              </form>
+            )}
 
             <div className="space-y-2">
               {portfolios.length === 0 ? (
                 <div className="rounded-2xl bg-slate-50 border border-dashed border-slate-200 p-8 text-center text-slate-500">
-                  {loading ? 'Memuat portofolio prestasi...' : 'Belum ada portofolio prestasi siswa tercatat.'}
+                  {loading
+                    ? 'Memuat portofolio prestasi...'
+                    : 'Belum ada portofolio prestasi siswa tercatat.'}
                 </div>
               ) : (
                 portfolios.map((p) => (
@@ -567,7 +1019,7 @@ export default function EkstrakurikulerPage() {
                     className="modular-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-2 border border-slate-200/80"
                   >
                     <div className="min-w-0">
-                      <p className="font-bold text-slate-900 break-words">
+                      <p className="font-bold text-slate-900 [overflow-wrap:anywhere]">
                         {p.student?.full_name || 'Siswa'} — {p.title}
                       </p>
                       <p className="text-[11px] text-slate-500">
@@ -585,21 +1037,23 @@ export default function EkstrakurikulerPage() {
                           Sertifikat <ExternalLink className="w-3 h-3" />
                         </a>
                       )}
-                      <button
-                        type="button"
-                        disabled={Boolean(deletingId)}
-                        onClick={() =>
-                          setConfirmDelete({
-                            id: p.id,
-                            target: 'portfolio',
-                            label: `${p.student?.full_name || 'Siswa'} — ${p.title}`,
-                          })
-                        }
-                        aria-label={`Hapus portofolio ${p.title}`}
-                        className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 disabled:opacity-40 transition"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {canManagePortfolio && (
+                        <button
+                          type="button"
+                          disabled={Boolean(deletingId)}
+                          onClick={() =>
+                            setConfirmDelete({
+                              id: p.id,
+                              target: 'portfolio',
+                              label: `${p.student?.full_name || 'Siswa'} — ${p.title}`,
+                            })
+                          }
+                          aria-label={`Hapus portofolio ${p.title}`}
+                          className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 disabled:opacity-40 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))
@@ -627,12 +1081,16 @@ export default function EkstrakurikulerPage() {
               </div>
               <div className="space-y-1 min-w-0">
                 <h2 id="ekskul-delete-modal-title" className="text-base font-bold text-slate-900">
-                  {confirmDelete.target === 'member'
+                  {confirmDelete.target === 'ekskul'
+                    ? 'Hapus Master Ekstrakurikuler?'
+                    : confirmDelete.target === 'member'
                     ? 'Hapus Anggota Ekstrakurikuler?'
                     : 'Hapus Portofolio Prestasi?'}
                 </h2>
-                <p className="text-xs text-slate-600 leading-relaxed break-words">
-                  Anda akan menghapus data <strong className="text-slate-900">{confirmDelete.label}</strong>. Tindakan ini tidak dapat dibatalkan.
+                <p className="text-xs text-slate-600 leading-relaxed [overflow-wrap:anywhere]">
+                  Anda akan menghapus data{' '}
+                  <strong className="text-slate-900">{confirmDelete.label}</strong>. Tindakan ini
+                  tidak dapat dibatalkan.
                 </p>
               </div>
             </div>

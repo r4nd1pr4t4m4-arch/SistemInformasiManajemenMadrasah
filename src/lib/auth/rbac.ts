@@ -544,6 +544,11 @@ export const PERMISSIONS = {
     'WAKA_KESISWAAN',
     'GURU_BK',
   ] as AppRole[],
+  BK_KASUS_ACCESS: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'GURU_BK',
+  ] as AppRole[],
   GURU_WALI_VIEW: [
     'SUPERADMIN',
     'OPERATOR',
@@ -984,6 +989,7 @@ const PREFIX_ROUTE_RULES: Array<[string, AppRole[]]> = [
   ['/portal/keuangan', PERMISSIONS.SPP_VIEW],
   ['/portal/layanan/persuratan', PERMISSIONS.PERSURATAN_VIEW],
   ['/portal/layanan/perpustakaan', PERMISSIONS.PERPUSTAKAAN_VIEW],
+  ['/portal/layanan/bk/kasus', PERMISSIONS.BK_KASUS_ACCESS],
   ['/portal/layanan/bk', PERMISSIONS.BK_VIEW],
   ['/portal/layanan/guru-wali', PERMISSIONS.GURU_WALI_VIEW],
   ['/portal/layanan/alumni', PERMISSIONS.ALUMNI_VIEW],

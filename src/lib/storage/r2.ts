@@ -11,7 +11,8 @@ export type StorageFolder =
   | 'letters'
   | 'avatars'
   | 'student-documents'
-  | 'institution-logos';
+  | 'institution-logos'
+  | 'bk-evidence';
 
 async function getR2Client(): Promise<S3Client> {
   const accountId = process.env.R2_ACCOUNT_ID;

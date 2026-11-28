@@ -2,9 +2,185 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { decimalNumber } from '@/lib/validation/decimal-schema';
-import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
+import { getCurrentUserWithRoles, hasAnyRole, type AuthenticatedSession } from '@/lib/auth/session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import { sanitizeApiError } from '@/lib/security/api-error';
+
+interface ScopedOption {
+  id: string;
+  name: string;
+}
+
+interface TeacherLmsScope {
+  teacherId: string | null;
+  pairKeys: Set<string>;
+  subjects: ScopedOption[];
+  classrooms: ScopedOption[];
+  classroomsBySubject: Record<string, ScopedOption[]>;
+}
+
+const FORBIDDEN_SCOPE_MSG =
+  'Anda hanya dapat melihat dan mengelola mata pelajaran serta rombel yang Anda ajar sesuai jadwal mengajar.';
+
+function makePairKey(subjectId: string | null | undefined, classroomId: string | null | undefined): string {
+  return `${subjectId || ''}:${classroomId || ''}`;
+}
+
+function isAllowedPair(
+  scope: TeacherLmsScope,
+  subjectId: string | null | undefined,
+  classroomId: string | null | undefined
+): boolean {
+  if (!subjectId || !classroomId) return false;
+  return scope.pairKeys.has(makePairKey(subjectId, classroomId));
+}
+
+async function getTeacherLmsScope(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  session: AuthenticatedSession
+): Promise<TeacherLmsScope> {
+  const teacherId = session.teacherAssignments?.teacherId || null;
+  const pairKeys = new Set<string>();
+  const subjectMap = new Map<string, string>();
+  const classroomMap = new Map<string, string>();
+  const classroomsBySubjectMap = new Map<string, Map<string, string>>();
+
+  const addPair = (
+    subjectId: string | null | undefined,
+    subjectName: string | null | undefined,
+    classroomId: string | null | undefined,
+    classroomName: string | null | undefined
+  ) => {
+    if (!subjectId || !classroomId) return;
+    pairKeys.add(makePairKey(subjectId, classroomId));
+    if (!subjectMap.has(subjectId)) {
+      subjectMap.set(subjectId, subjectName || 'Mapel');
+    }
+    if (!classroomMap.has(classroomId)) {
+      classroomMap.set(classroomId, classroomName || 'Rombel');
+    }
+    let subjClassrooms = classroomsBySubjectMap.get(subjectId);
+    if (!subjClassrooms) {
+      subjClassrooms = new Map<string, string>();
+      classroomsBySubjectMap.set(subjectId, subjClassrooms);
+    }
+    if (!subjClassrooms.has(classroomId)) {
+      subjClassrooms.set(classroomId, classroomName || 'Rombel');
+    }
+  };
+
+  // Fast path: gunakan taughtSubjects yang sudah di-load oleh session
+  const sessionTaught = session.teacherAssignments?.taughtSubjects || [];
+  if (sessionTaught.length > 0) {
+    for (const subj of sessionTaught) {
+      for (const cls of subj.classrooms || []) {
+        addPair(subj.subjectId, subj.subjectName, cls.id, cls.name);
+      }
+    }
+  } else if (teacherId) {
+    // Fallback jika tahun ajaran aktif belum disetel pada session
+    const { data: activeYearRow } = await supabase
+      .from('academic_years')
+      .select('id')
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+
+    let schedulesQuery = supabase
+      .from('schedules')
+      .select('subject_id, classroom_id, subject:subjects(id, name), classroom:classrooms(id, name)')
+      .eq('teacher_id', teacherId);
+
+    if (activeYearRow?.id) {
+      schedulesQuery = schedulesQuery.eq('academic_year_id', activeYearRow.id);
+    }
+
+    const { data: scheduleRows } = await schedulesQuery;
+    for (const row of scheduleRows || []) {
+      const sub = Array.isArray(row.subject) ? row.subject[0] : row.subject;
+      const cls = Array.isArray(row.classroom) ? row.classroom[0] : row.classroom;
+      addPair(
+        (sub?.id as string | undefined) || (row.subject_id as string | undefined),
+        (sub?.name as string | undefined) || 'Mapel',
+        (cls?.id as string | undefined) || (row.classroom_id as string | undefined),
+        (cls?.name as string | undefined) || 'Rombel'
+      );
+    }
+  }
+
+  const sortByName = (a: ScopedOption, b: ScopedOption) => a.name.localeCompare(b.name, 'id');
+  const subjects = Array.from(subjectMap.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort(sortByName);
+  const classrooms = Array.from(classroomMap.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort(sortByName);
+
+  const classroomsBySubject: Record<string, ScopedOption[]> = {};
+  for (const [subjId, clsMap] of classroomsBySubjectMap.entries()) {
+    classroomsBySubject[subjId] = Array.from(clsMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort(sortByName);
+  }
+
+  return {
+    teacherId,
+    pairKeys,
+    subjects,
+    classrooms,
+    classroomsBySubject,
+  };
+}
+
+const materialPayloadSchema = z.object({
+  subject_id: z.string().uuid('Mata pelajaran wajib dipilih.'),
+  classroom_id: z.string().uuid('Rombel wajib dipilih.'),
+  title: z.string().trim().min(3, 'Judul materi minimal 3 karakter.'),
+  chapter_label: z.string().optional().nullable(),
+  material_type: z.enum(['MODUL_PDF', 'VIDEO', 'LINK', 'CATATAN']).default('MODUL_PDF'),
+  file_url: z
+    .string()
+    .optional()
+    .nullable()
+    .refine(
+      (val) => {
+        if (!val || !val.trim()) return true;
+        const trimmed = val.trim();
+        return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('/');
+      },
+      { message: 'URL file/tautan harus diawali http://, https://, atau /.' }
+    ),
+  content: z.string().optional().nullable(),
+});
+
+const assignmentPayloadSchema = z.object({
+  subject_id: z.string().uuid('Mata pelajaran wajib dipilih.'),
+  classroom_id: z.string().uuid('Rombel wajib dipilih.'),
+  title: z.string().trim().min(3, 'Judul tugas minimal 3 karakter.'),
+  description: z.string().optional().nullable(),
+  due_at: z.string().optional().nullable(),
+  max_score: decimalNumber({ min: 1, max: 100, maxDecimals: 2, label: 'Nilai maksimal' }).default(100),
+});
+
+const quizPayloadSchema = z.object({
+  subject_id: z.string().uuid('Mata pelajaran wajib dipilih.'),
+  classroom_id: z.string().uuid('Rombel wajib dipilih.'),
+  title: z.string().trim().min(3, 'Judul kuis CBT minimal 3 karakter.'),
+  duration_minutes: z.number().int().min(5).max(180).default(30),
+  questions: z
+    .array(
+      z
+        .object({
+          question: z.string().trim().min(2, 'Teks pertanyaan minimal 2 karakter.'),
+          options: z.array(z.string().trim().min(1)).min(2, 'Minimal 2 pilihan jawaban.').max(5),
+          correctIndex: z.number().int().min(0).max(4),
+        })
+        .refine((q) => q.correctIndex < q.options.length, {
+          message: 'Kunci jawaban harus sesuai dengan pilihan yang tersedia.',
+        })
+    )
+    .min(1, 'Minimal 1 soal wajib diisi.'),
+});
 
 export async function GET() {
   const session = await getCurrentUserWithRoles();
@@ -12,6 +188,7 @@ export async function GET() {
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({
       isTeacher: false,
+      hasTeachingSchedule: false,
       studentId: null,
       materials: [],
       assignments: [],
@@ -20,6 +197,7 @@ export async function GET() {
       attempts: [],
       subjects: [],
       classrooms: [],
+      classroomsBySubject: {},
     });
   }
 
@@ -29,7 +207,7 @@ export async function GET() {
   let myStudentId: string | null = null;
   let myClassroomId: string | null = null;
 
-  if (session.roles.includes('SISWA')) {
+  if (!isTeacher && session.roles.includes('SISWA')) {
     const { data: st } = await supabase
       .from('students')
       .select('id')
@@ -48,34 +226,39 @@ export async function GET() {
     }
   }
 
-  const [matRes, asgRes, subRes, qzRes, attRes, subjRes, clsRes] = await Promise.all([
+  const [matRes, asgRes, subRes, qzRes, attRes, subjRes, clsRes, teacherScope] = await Promise.all([
     supabase
       .from('lms_materials')
       .select('*, subject:subjects(id, name), classroom:classrooms(id, name), teacher:teachers_staff(full_name)')
       .order('created_at', { ascending: false })
-      .limit(150),
+      .limit(200),
     supabase
       .from('lms_assignments')
       .select('*, subject:subjects(id, name), classroom:classrooms(id, name), teacher:teachers_staff(full_name)')
       .order('created_at', { ascending: false })
-      .limit(150),
+      .limit(200),
     supabase
       .from('lms_submissions')
       .select('*, student:students(id, full_name, nis)')
       .order('submitted_at', { ascending: false })
-      .limit(300),
+      .limit(400),
     supabase
       .from('lms_quizzes')
       .select('*, subject:subjects(id, name), classroom:classrooms(id, name)')
       .order('created_at', { ascending: false })
-      .limit(100),
+      .limit(150),
     supabase
       .from('lms_quiz_attempts')
       .select('*, student:students(id, full_name, nis)')
       .order('submitted_at', { ascending: false })
-      .limit(300),
-    supabase.from('subjects').select('id, name, code').order('name'),
-    supabase.from('classrooms').select('id, name, grade_level').order('name'),
+      .limit(400),
+    isTeacher
+      ? Promise.resolve({ data: [] as ScopedOption[] })
+      : supabase.from('subjects').select('id, name, code').order('name'),
+    isTeacher
+      ? Promise.resolve({ data: [] as ScopedOption[] })
+      : supabase.from('classrooms').select('id, name, grade_level').order('name'),
+    isTeacher ? getTeacherLmsScope(supabase, session) : Promise.resolve(null),
   ]);
 
   let materials = matRes.error ? [] : matRes.data || [];
@@ -84,7 +267,18 @@ export async function GET() {
   let quizzes = qzRes.error ? [] : qzRes.data || [];
   let attempts = attRes.error ? [] : attRes.data || [];
 
-  if (!isTeacher && myStudentId) {
+  if (isTeacher && teacherScope) {
+    // Setiap guru (termasuk guru dengan tugas tambahan admin) hanya boleh melihat
+    // materi, tugas, dan kuis CBT untuk pasangan (mata pelajaran, rombel) yang ia ajar saja.
+    materials = materials.filter((m) => isAllowedPair(teacherScope, m.subject_id, m.classroom_id));
+    assignments = assignments.filter((a) => isAllowedPair(teacherScope, a.subject_id, a.classroom_id));
+    quizzes = quizzes.filter((q) => isAllowedPair(teacherScope, q.subject_id, q.classroom_id));
+
+    const allowedAssignmentIds = new Set(assignments.map((a) => a.id as string));
+    const allowedQuizIds = new Set(quizzes.map((q) => q.id as string));
+    submissions = submissions.filter((s) => allowedAssignmentIds.has(s.assignment_id as string));
+    attempts = attempts.filter((a) => allowedQuizIds.has(a.quiz_id as string));
+  } else if (!isTeacher && myStudentId) {
     if (myClassroomId) {
       materials = materials.filter((m) => !m.classroom_id || m.classroom_id === myClassroomId);
       assignments = assignments.filter((a) => a.classroom_id === myClassroomId);
@@ -109,14 +303,16 @@ export async function GET() {
 
   return NextResponse.json({
     isTeacher,
+    hasTeachingSchedule: Boolean(teacherScope && teacherScope.pairKeys.size > 0),
     studentId: myStudentId,
     materials,
     assignments,
     submissions,
     quizzes,
     attempts,
-    subjects: subjRes.data || [],
-    classrooms: clsRes.data || [],
+    subjects: isTeacher && teacherScope ? teacherScope.subjects : subjRes.data || [],
+    classrooms: isTeacher && teacherScope ? teacherScope.classrooms : clsRes.data || [],
+    classroomsBySubject: isTeacher && teacherScope ? teacherScope.classroomsBySubject : {},
   });
 }
 
@@ -128,41 +324,25 @@ export async function POST(request: Request) {
   }
 
   const isTeacher = hasAnyRole(session, PERMISSIONS.PENILAIAN_TEACHER);
-  const teacherId = session.teacherAssignments?.teacherId || null;
   const supabase = createSupabaseAdminClient();
 
   try {
     const body = await request.json();
 
+    // ==================== MATERI ====================
     if (body.action === 'CREATE_MATERIAL') {
-      if (!isTeacher) return NextResponse.json({ error: 'Hanya guru/admin yang dapat menambah materi.' }, { status: 403 });
-      const p = z
-        .object({
-          subject_id: z.string().uuid(),
-          classroom_id: z.string().uuid().optional().nullable(),
-          title: z.string().trim().min(3),
-          chapter_label: z.string().optional().nullable(),
-          material_type: z.enum(['MODUL_PDF', 'VIDEO', 'LINK', 'CATATAN']).default('MODUL_PDF'),
-          file_url: z
-            .string()
-            .optional()
-            .nullable()
-            .refine(
-              (val) => {
-                if (!val || !val.trim()) return true;
-                const trimmed = val.trim();
-                return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('/');
-              },
-              { message: 'URL file/tautan harus diawali http://, https://, atau /.' }
-            ),
-          content: z.string().optional().nullable(),
-        })
-        .safeParse(body);
+      if (!isTeacher) return NextResponse.json({ error: 'Hanya guru yang dapat menambah materi.' }, { status: 403 });
+      const p = materialPayloadSchema.safeParse(body);
       if (!p.success) {
         return NextResponse.json(
           { error: p.error.issues[0]?.message || 'Data materi tidak valid.' },
           { status: 400 }
         );
+      }
+
+      const teacherScope = await getTeacherLmsScope(supabase, session);
+      if (!isAllowedPair(teacherScope, p.data.subject_id, p.data.classroom_id)) {
+        return NextResponse.json({ error: FORBIDDEN_SCOPE_MSG }, { status: 403 });
       }
 
       const { data, error } = await supabase
@@ -172,8 +352,7 @@ export async function POST(request: Request) {
           file_url: p.data.file_url?.trim() || null,
           content: p.data.content?.trim() || null,
           chapter_label: p.data.chapter_label?.trim() || null,
-          classroom_id: p.data.classroom_id || null,
-          teacher_id: teacherId,
+          teacher_id: teacherScope.teacherId,
           created_by: session.userId,
         })
         .select('*')
@@ -182,32 +361,160 @@ export async function POST(request: Request) {
       return NextResponse.json({ material: data });
     }
 
+    if (body.action === 'UPDATE_MATERIAL') {
+      if (!isTeacher) return NextResponse.json({ error: 'Hanya guru yang dapat memperbarui materi.' }, { status: 403 });
+      const p = materialPayloadSchema.extend({ id: z.string().uuid() }).safeParse(body);
+      if (!p.success) {
+        return NextResponse.json(
+          { error: p.error.issues[0]?.message || 'Data pembaruan materi tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const teacherScope = await getTeacherLmsScope(supabase, session);
+      const { data: existing } = await supabase
+        .from('lms_materials')
+        .select('id, subject_id, classroom_id')
+        .eq('id', p.data.id)
+        .maybeSingle();
+      if (!existing) return NextResponse.json({ error: 'Materi tidak ditemukan.' }, { status: 404 });
+
+      if (
+        !isAllowedPair(teacherScope, existing.subject_id, existing.classroom_id) ||
+        !isAllowedPair(teacherScope, p.data.subject_id, p.data.classroom_id)
+      ) {
+        return NextResponse.json({ error: FORBIDDEN_SCOPE_MSG }, { status: 403 });
+      }
+
+      const { id, ...rest } = p.data;
+      const { data, error } = await supabase
+        .from('lms_materials')
+        .update({
+          ...rest,
+          file_url: rest.file_url?.trim() || null,
+          content: rest.content?.trim() || null,
+          chapter_label: rest.chapter_label?.trim() || null,
+        })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      return NextResponse.json({ material: data });
+    }
+
+    if (body.action === 'DELETE_MATERIAL') {
+      if (!isTeacher) return NextResponse.json({ error: 'Hanya guru yang dapat menghapus materi.' }, { status: 403 });
+      const p = z.object({ id: z.string().uuid() }).safeParse(body);
+      if (!p.success) return NextResponse.json({ error: 'ID materi tidak valid.' }, { status: 400 });
+
+      const teacherScope = await getTeacherLmsScope(supabase, session);
+      const { data: existing } = await supabase
+        .from('lms_materials')
+        .select('id, subject_id, classroom_id')
+        .eq('id', p.data.id)
+        .maybeSingle();
+      if (!existing) return NextResponse.json({ error: 'Materi tidak ditemukan.' }, { status: 404 });
+
+      if (!isAllowedPair(teacherScope, existing.subject_id, existing.classroom_id)) {
+        return NextResponse.json({ error: FORBIDDEN_SCOPE_MSG }, { status: 403 });
+      }
+
+      const { error } = await supabase.from('lms_materials').delete().eq('id', p.data.id);
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      return NextResponse.json({ deleted: true, id: p.data.id });
+    }
+
+    // ==================== TUGAS ====================
     if (body.action === 'CREATE_ASSIGNMENT') {
       if (!isTeacher) return NextResponse.json({ error: 'Akses ditolak.' }, { status: 403 });
-      const p = z
-        .object({
-          subject_id: z.string().uuid(),
-          classroom_id: z.string().uuid(),
-          title: z.string().trim().min(3),
-          description: z.string().optional().nullable(),
-          due_at: z.string().optional().nullable(),
-          max_score: decimalNumber({ min: 1, max: 100, maxDecimals: 2, label: 'Nilai maksimal' }).default(100),
-        })
-        .safeParse(body);
-      if (!p.success) return NextResponse.json({ error: 'Data tugas tidak valid.' }, { status: 400 });
+      const p = assignmentPayloadSchema.safeParse(body);
+      if (!p.success) {
+        return NextResponse.json(
+          { error: p.error.issues[0]?.message || 'Data tugas tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const teacherScope = await getTeacherLmsScope(supabase, session);
+      if (!isAllowedPair(teacherScope, p.data.subject_id, p.data.classroom_id)) {
+        return NextResponse.json({ error: FORBIDDEN_SCOPE_MSG }, { status: 403 });
+      }
 
       const { data, error } = await supabase
         .from('lms_assignments')
         .insert({
           ...p.data,
+          description: p.data.description?.trim() || null,
           due_at: p.data.due_at || null,
-          teacher_id: teacherId,
+          teacher_id: teacherScope.teacherId,
           created_by: session.userId,
         })
         .select('*')
         .single();
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ assignment: data });
+    }
+
+    if (body.action === 'UPDATE_ASSIGNMENT') {
+      if (!isTeacher) return NextResponse.json({ error: 'Akses ditolak.' }, { status: 403 });
+      const p = assignmentPayloadSchema.extend({ id: z.string().uuid() }).safeParse(body);
+      if (!p.success) {
+        return NextResponse.json(
+          { error: p.error.issues[0]?.message || 'Data pembaruan tugas tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const teacherScope = await getTeacherLmsScope(supabase, session);
+      const { data: existing } = await supabase
+        .from('lms_assignments')
+        .select('id, subject_id, classroom_id')
+        .eq('id', p.data.id)
+        .maybeSingle();
+      if (!existing) return NextResponse.json({ error: 'Tugas tidak ditemukan.' }, { status: 404 });
+
+      if (
+        !isAllowedPair(teacherScope, existing.subject_id, existing.classroom_id) ||
+        !isAllowedPair(teacherScope, p.data.subject_id, p.data.classroom_id)
+      ) {
+        return NextResponse.json({ error: FORBIDDEN_SCOPE_MSG }, { status: 403 });
+      }
+
+      const { id, ...rest } = p.data;
+      const { data, error } = await supabase
+        .from('lms_assignments')
+        .update({
+          ...rest,
+          description: rest.description?.trim() || null,
+          due_at: rest.due_at || null,
+        })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      return NextResponse.json({ assignment: data });
+    }
+
+    if (body.action === 'DELETE_ASSIGNMENT') {
+      if (!isTeacher) return NextResponse.json({ error: 'Akses ditolak.' }, { status: 403 });
+      const p = z.object({ id: z.string().uuid() }).safeParse(body);
+      if (!p.success) return NextResponse.json({ error: 'ID tugas tidak valid.' }, { status: 400 });
+
+      const teacherScope = await getTeacherLmsScope(supabase, session);
+      const { data: existing } = await supabase
+        .from('lms_assignments')
+        .select('id, subject_id, classroom_id')
+        .eq('id', p.data.id)
+        .maybeSingle();
+      if (!existing) return NextResponse.json({ error: 'Tugas tidak ditemukan.' }, { status: 404 });
+
+      if (!isAllowedPair(teacherScope, existing.subject_id, existing.classroom_id)) {
+        return NextResponse.json({ error: FORBIDDEN_SCOPE_MSG }, { status: 403 });
+      }
+
+      const { error } = await supabase.from('lms_assignments').delete().eq('id', p.data.id);
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      return NextResponse.json({ deleted: true, id: p.data.id });
     }
 
     if (body.action === 'SUBMIT_ASSIGNMENT') {
@@ -256,6 +563,21 @@ export async function POST(request: Request) {
         .safeParse(body);
       if (!p.success) return NextResponse.json({ error: 'Nilai tidak valid.' }, { status: 400 });
 
+      const teacherScope = await getTeacherLmsScope(supabase, session);
+      const { data: existingSub } = await supabase
+        .from('lms_submissions')
+        .select('id, assignment:lms_assignments(subject_id, classroom_id)')
+        .eq('id', p.data.submission_id)
+        .maybeSingle();
+      if (!existingSub) return NextResponse.json({ error: 'Pengumpulan tugas tidak ditemukan.' }, { status: 404 });
+
+      const parentAsg = Array.isArray(existingSub.assignment)
+        ? existingSub.assignment[0]
+        : existingSub.assignment;
+      if (!isAllowedPair(teacherScope, parentAsg?.subject_id, parentAsg?.classroom_id)) {
+        return NextResponse.json({ error: FORBIDDEN_SCOPE_MSG }, { status: 403 });
+      }
+
       const { data, error } = await supabase
         .from('lms_submissions')
         .update({
@@ -271,29 +593,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ submission: data });
     }
 
+    // ==================== KUIS CBT ====================
     if (body.action === 'CREATE_QUIZ') {
       if (!isTeacher) return NextResponse.json({ error: 'Akses ditolak.' }, { status: 403 });
-      const p = z
-        .object({
-          subject_id: z.string().uuid(),
-          classroom_id: z.string().uuid(),
-          title: z.string().trim().min(3),
-          duration_minutes: z.number().int().min(5).max(180).default(30),
-          questions: z
-            .array(
-              z
-                .object({
-                  question: z.string().trim().min(2, 'Teks pertanyaan minimal 2 karakter.'),
-                  options: z.array(z.string().trim().min(1)).min(2, 'Minimal 2 pilihan jawaban.').max(5),
-                  correctIndex: z.number().int().min(0).max(4),
-                })
-                .refine((q) => q.correctIndex < q.options.length, {
-                  message: 'Kunci jawaban harus sesuai dengan pilihan yang tersedia.',
-                })
-            )
-            .min(1, 'Minimal 1 soal wajib diisi.'),
-        })
-        .safeParse(body);
+      const p = quizPayloadSchema.safeParse(body);
       if (!p.success) {
         return NextResponse.json(
           { error: p.error.issues[0]?.message || 'Data kuis CBT tidak valid.' },
@@ -301,11 +604,16 @@ export async function POST(request: Request) {
         );
       }
 
+      const teacherScope = await getTeacherLmsScope(supabase, session);
+      if (!isAllowedPair(teacherScope, p.data.subject_id, p.data.classroom_id)) {
+        return NextResponse.json({ error: FORBIDDEN_SCOPE_MSG }, { status: 403 });
+      }
+
       const { data, error } = await supabase
         .from('lms_quizzes')
         .insert({
           ...p.data,
-          teacher_id: teacherId,
+          teacher_id: teacherScope.teacherId,
           is_published: true,
           created_by: session.userId,
         })
@@ -313,6 +621,66 @@ export async function POST(request: Request) {
         .single();
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       return NextResponse.json({ quiz: data });
+    }
+
+    if (body.action === 'UPDATE_QUIZ') {
+      if (!isTeacher) return NextResponse.json({ error: 'Akses ditolak.' }, { status: 403 });
+      const p = quizPayloadSchema.extend({ id: z.string().uuid() }).safeParse(body);
+      if (!p.success) {
+        return NextResponse.json(
+          { error: p.error.issues[0]?.message || 'Data pembaruan kuis CBT tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const teacherScope = await getTeacherLmsScope(supabase, session);
+      const { data: existing } = await supabase
+        .from('lms_quizzes')
+        .select('id, subject_id, classroom_id')
+        .eq('id', p.data.id)
+        .maybeSingle();
+      if (!existing) return NextResponse.json({ error: 'Kuis CBT tidak ditemukan.' }, { status: 404 });
+
+      if (
+        !isAllowedPair(teacherScope, existing.subject_id, existing.classroom_id) ||
+        !isAllowedPair(teacherScope, p.data.subject_id, p.data.classroom_id)
+      ) {
+        return NextResponse.json({ error: FORBIDDEN_SCOPE_MSG }, { status: 403 });
+      }
+
+      const { id, ...rest } = p.data;
+      const { data, error } = await supabase
+        .from('lms_quizzes')
+        .update({
+          ...rest,
+        })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      return NextResponse.json({ quiz: data });
+    }
+
+    if (body.action === 'DELETE_QUIZ') {
+      if (!isTeacher) return NextResponse.json({ error: 'Akses ditolak.' }, { status: 403 });
+      const p = z.object({ id: z.string().uuid() }).safeParse(body);
+      if (!p.success) return NextResponse.json({ error: 'ID kuis CBT tidak valid.' }, { status: 400 });
+
+      const teacherScope = await getTeacherLmsScope(supabase, session);
+      const { data: existing } = await supabase
+        .from('lms_quizzes')
+        .select('id, subject_id, classroom_id')
+        .eq('id', p.data.id)
+        .maybeSingle();
+      if (!existing) return NextResponse.json({ error: 'Kuis CBT tidak ditemukan.' }, { status: 404 });
+
+      if (!isAllowedPair(teacherScope, existing.subject_id, existing.classroom_id)) {
+        return NextResponse.json({ error: FORBIDDEN_SCOPE_MSG }, { status: 403 });
+      }
+
+      const { error } = await supabase.from('lms_quizzes').delete().eq('id', p.data.id);
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      return NextResponse.json({ deleted: true, id: p.data.id });
     }
 
     if (body.action === 'SUBMIT_QUIZ_ATTEMPT') {

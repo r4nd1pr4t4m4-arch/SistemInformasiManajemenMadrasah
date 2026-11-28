@@ -831,7 +831,7 @@ export const ACCORDION_GROUPS: AccordionGroup[] = [
         path: '/portal/layanan/bk/kasus',
         label: 'Kasus BK, SP1–SP3 & Home Visit',
         icon: <ShieldAlert className="w-3.5 h-3.5" />,
-        allowedRoles: PERMISSIONS.BK_VIEW,
+        allowedRoles: PERMISSIONS.BK_KASUS_ACCESS,
       },
       {
         href: '/portal/layanan/guru-wali',
