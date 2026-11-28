@@ -7,6 +7,20 @@ export const PUSH_OPT_IN_DISMISSED_KEY = 'simms_push_optin_dismissed_at';
 export const PUSH_LAST_ENDPOINT_KEY = 'simms_push_last_endpoint';
 export const NOTIF_BROADCAST_CHANNEL_NAME = 'simms_notif_sync_channel';
 
+export type PushSubscribeErrorCode =
+  | 'UNSUPPORTED'
+  | 'INSECURE_CONTEXT'
+  | 'OFFLINE'
+  | 'VAPID_MISSING'
+  | 'PERMISSION_DENIED'
+  | 'PERMISSION_DISMISSED'
+  | 'BRAVE_BLOCKED'
+  | 'PUSH_SERVICE_ERROR'
+  | 'SERVER_ERROR'
+  | 'UNKNOWN';
+
+let cachedServerVapidKey: string | null = null;
+
 export function notifyPushStateChanged(active: boolean) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(
@@ -53,13 +67,18 @@ export function getNotificationPermission(): NotificationPermission | 'unsupport
   return Notification.permission;
 }
 
+function sanitizeVapidKey(raw: string): string {
+  return raw.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+}
+
 export function getClientVapidPublicKey(): string {
-  return (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '').trim();
+  return sanitizeVapidKey(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '');
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const clean = sanitizeVapidKey(base64String);
+  const padding = '='.repeat((4 - (clean.length % 4)) % 4);
+  const base64 = (clean + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
   const buffer = new ArrayBuffer(rawData.length);
   const outputArray = new Uint8Array(buffer);
@@ -69,13 +88,148 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return outputArray;
 }
 
+function decodeAndValidateVapidKey(rawKey: string): Uint8Array<ArrayBuffer> | null {
+  try {
+    const clean = sanitizeVapidKey(rawKey);
+    if (!clean) return null;
+    const bytes = urlBase64ToUint8Array(clean);
+    // Uncompressed P-256 public key wajib 65 byte diawali 0x04
+    if (bytes.length !== 65 || bytes[0] !== 0x04) {
+      return null;
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveVapidKeyBytes(): Promise<Uint8Array<ArrayBuffer> | null> {
+  const envKey = getClientVapidPublicKey();
+  const fromEnv = decodeAndValidateVapidKey(envKey);
+  if (fromEnv) return fromEnv;
+
+  if (cachedServerVapidKey) {
+    const fromCache = decodeAndValidateVapidKey(cachedServerVapidKey);
+    if (fromCache) return fromCache;
+  }
+
+  try {
+    const res = await fetch('/api/push/public-key', { cache: 'no-store' });
+    const data = await res.json().catch(() => null);
+    const serverKey = typeof data?.publicKey === 'string' ? sanitizeVapidKey(data.publicKey) : '';
+    if (serverKey) {
+      const fromServer = decodeAndValidateVapidKey(serverKey);
+      if (fromServer) {
+        cachedServerVapidKey = serverKey;
+        return fromServer;
+      }
+    }
+  } catch {
+    // abaikan
+  }
+  return null;
+}
+
+function areKeyBytesEqual(a: ArrayBuffer | null | undefined, b: Uint8Array): boolean {
+  if (!a || a.byteLength !== b.byteLength) return false;
+  const viewA = new Uint8Array(a);
+  for (let i = 0; i < b.length; i += 1) {
+    if (viewA[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+async function isBraveBrowser(): Promise<boolean> {
+  if (typeof navigator === 'undefined') return false;
+  try {
+    const nav = navigator as Navigator & {
+      brave?: { isBrave?: () => Promise<boolean> };
+    };
+    if (nav.brave && typeof nav.brave.isBrave === 'function') {
+      return await nav.brave.isBrave();
+    }
+  } catch {
+    // abaikan
+  }
+  return false;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ensureActiveServiceWorker(timeoutMs = 10_000): Promise<ServiceWorkerRegistration> {
+  let reg = await navigator.serviceWorker.getRegistration('/');
+  if (!reg) {
+    reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  }
+
+  const readyPromise = navigator.serviceWorker.ready;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error('Service Worker belum siap. Muat ulang halaman lalu coba lagi.')),
+      timeoutMs
+    )
+  );
+  const readyReg = await Promise.race([readyPromise, timeoutPromise]);
+  return readyReg || reg;
+}
+
+function isPushServiceAbortError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = `${err.name} ${err.message}`.toLowerCase();
+  return (
+    msg.includes('push service error') ||
+    msg.includes('registration failed') ||
+    msg.includes('aborterror') ||
+    msg.includes('invalidstateerror')
+  );
+}
+
+async function formatPushSubscribeError(err: unknown): Promise<{
+  code: PushSubscribeErrorCode;
+  message: string;
+}> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return {
+      code: 'OFFLINE',
+      message: 'Perangkat sedang offline. Sambungkan ke internet lalu coba aktifkan kembali.',
+    };
+  }
+
+  if (isPushServiceAbortError(err)) {
+    const brave = await isBraveBrowser();
+    if (brave) {
+      return {
+        code: 'BRAVE_BLOCKED',
+        message:
+          'Browser Brave memblokir layanan Push secara bawaan. Buka brave://settings/privacy lalu aktifkan "Use Google services for push messaging", atau gunakan Chrome/Edge.',
+      };
+    }
+    return {
+      code: 'PUSH_SERVICE_ERROR',
+      message:
+        'Gagal mendaftar ke layanan push browser (FCM). Pastikan tidak dalam mode Incognito, koneksi internet stabil, serta nonaktifkan sementara VPN, Private DNS, atau AdBlocker yang memblokir layanan Google, lalu klik Coba Lagi.',
+    };
+  }
+
+  return {
+    code: 'UNKNOWN',
+    message:
+      err instanceof Error && err.message
+        ? err.message
+        : 'Terjadi kesalahan saat mengaktifkan notifikasi.',
+  };
+}
+
 export function detectDeviceLabel(platform: string): string {
   if (typeof navigator === 'undefined') return 'Perangkat Web';
   const ua = navigator.userAgent || '';
 
   let browser = 'Browser';
   if (/Edg\//i.test(ua)) browser = 'Edge';
-  else if (/OPR\//i.test(ua)) browser = 'Opera';
+  else if (/OPR\/|Opera/i.test(ua)) browser = 'Opera';
+  else if (/SamsungBrowser/i.test(ua)) browser = 'Samsung Internet';
   else if (/Chrome\//i.test(ua)) browser = 'Chrome';
   else if (/Firefox\//i.test(ua)) browser = 'Firefox';
   else if (/Safari\//i.test(ua)) browser = 'Safari';
@@ -106,7 +260,54 @@ export interface SubscribePushResult {
   ok: boolean;
   endpoint?: string;
   permission?: NotificationPermission | 'unsupported';
+  code?: PushSubscribeErrorCode;
   error?: string;
+}
+
+async function subscribeWithRecovery(
+  reg: ServiceWorkerRegistration,
+  appServerKey: Uint8Array<ArrayBuffer>
+): Promise<PushSubscription> {
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) {
+    const existingKey = existing.options?.applicationServerKey;
+    if (!existingKey || areKeyBytesEqual(existingKey, appServerKey)) {
+      return existing;
+    }
+    // Kunci VAPID berubah -> hapus subscription lama agar tidak memicu push service error
+    await existing.unsubscribe().catch(() => {});
+  }
+
+  const delays = [0, 700, 1500];
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < delays.length; attempt += 1) {
+    if (delays[attempt] > 0) {
+      await sleep(delays[attempt]);
+    }
+
+    try {
+      return await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appServerKey,
+      });
+    } catch (err) {
+      lastError = err;
+      if (!isPushServiceAbortError(err) || attempt === delays.length - 1) {
+        break;
+      }
+      // Bersihkan sisa subscription rusak/gantung dan segarkan registrasi SW sebelum retry
+      try {
+        const staleSub = await reg.pushManager.getSubscription();
+        if (staleSub) await staleSub.unsubscribe();
+      } catch {
+        // abaikan
+      }
+      await reg.update().catch(() => {});
+    }
+  }
+
+  throw lastError;
 }
 
 export async function subscribeCurrentDevice(options: {
@@ -116,16 +317,34 @@ export async function subscribeCurrentDevice(options: {
   if (!isPushSupported()) {
     return {
       ok: false,
+      code: 'UNSUPPORTED',
       permission: 'unsupported',
       error: 'Browser atau perangkat ini belum mendukung Web Push Notification.',
     };
   }
 
-  const vapidPublicKey = getClientVapidPublicKey();
-  if (!vapidPublicKey) {
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
     return {
       ok: false,
-      error: 'Kunci VAPID Web Push belum dikonfigurasi di server.',
+      code: 'INSECURE_CONTEXT',
+      error: 'Web Push Notification hanya dapat diaktifkan melalui koneksi HTTPS yang aman.',
+    };
+  }
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return {
+      ok: false,
+      code: 'OFFLINE',
+      error: 'Perangkat sedang offline. Sambungkan ke internet lalu coba aktifkan kembali.',
+    };
+  }
+
+  const appServerKey = await resolveVapidKeyBytes();
+  if (!appServerKey) {
+    return {
+      ok: false,
+      code: 'VAPID_MISSING',
+      error: 'Kunci VAPID Web Push belum dikonfigurasi atau formatnya tidak valid di server.',
     };
   }
 
@@ -138,6 +357,7 @@ export async function subscribeCurrentDevice(options: {
     return {
       ok: false,
       permission,
+      code: permission === 'denied' ? 'PERMISSION_DENIED' : 'PERMISSION_DISMISSED',
       error:
         permission === 'denied'
           ? 'Izin notifikasi diblokir di browser. Aktifkan melalui pengaturan situs browser Anda.'
@@ -146,15 +366,8 @@ export async function subscribeCurrentDevice(options: {
   }
 
   try {
-    const reg = await navigator.serviceWorker.ready;
-    let subscription = await reg.pushManager.getSubscription();
-
-    if (!subscription) {
-      subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-      });
-    }
+    const reg = await ensureActiveServiceWorker();
+    const subscription = await subscribeWithRecovery(reg, appServerKey);
 
     const json = subscription.toJSON();
     const endpoint = json.endpoint || subscription.endpoint;
@@ -162,7 +375,11 @@ export async function subscribeCurrentDevice(options: {
     const auth = json.keys?.auth || '';
 
     if (!endpoint || !p256dh || !auth) {
-      return { ok: false, error: 'Gagal membaca kunci enkripsi langganan push.' };
+      return {
+        ok: false,
+        code: 'UNKNOWN',
+        error: 'Gagal membaca kunci enkripsi langganan push.',
+      };
     }
 
     const res = await fetch('/api/push/subscribe', {
@@ -182,6 +399,7 @@ export async function subscribeCurrentDevice(options: {
     if (!res.ok) {
       return {
         ok: false,
+        code: 'SERVER_ERROR',
         error: data?.error || 'Gagal menyimpan langganan notifikasi ke server.',
       };
     }
@@ -195,12 +413,11 @@ export async function subscribeCurrentDevice(options: {
     notifyPushStateChanged(true);
     return { ok: true, endpoint, permission: 'granted' };
   } catch (err) {
+    const formatted = await formatPushSubscribeError(err);
     return {
       ok: false,
-      error:
-        err instanceof Error
-          ? err.message
-          : 'Terjadi kesalahan saat mengaktifkan notifikasi.',
+      code: formatted.code,
+      error: formatted.message,
     };
   }
 }
@@ -237,10 +454,19 @@ export async function deactivateCurrentDevicePush(
  */
 export async function resyncPushSubscriptionOnPortalLoad(platform: string): Promise<boolean> {
   if (!isPushSupported() || Notification.permission !== 'granted') return false;
-  if (!getClientVapidPublicKey()) return false;
+  const appServerKey = await resolveVapidKeyBytes();
+  if (!appServerKey) return false;
   try {
     const sub = await getExistingPushSubscription();
     if (!sub) return false;
+    // Jika subscription lama memakai VAPID key berbeda, lewati resync agar didaftarkan ulang saat subscribe
+    if (
+      sub.options?.applicationServerKey &&
+      !areKeyBytesEqual(sub.options.applicationServerKey, appServerKey)
+    ) {
+      await sub.unsubscribe().catch(() => {});
+      return false;
+    }
     const json = sub.toJSON();
     const endpoint = json.endpoint || sub.endpoint;
     const p256dh = json.keys?.p256dh || '';

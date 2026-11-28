@@ -102,11 +102,17 @@ export function MandatoryPushModal({
       platform: pwa.platform,
     });
     setIsPushActive(autoSub.ok);
+    if (!autoSub.ok && autoSub.error) {
+      setErrorText(autoSub.error);
+    }
     setChecking(false);
   }, [pwa.ready, pwa.platform, pwa.isStandalone, audienceType]);
 
   useEffect(() => {
-    void verifyPushStatus();
+    const timer = setTimeout(() => {
+      void verifyPushStatus();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [verifyPushStatus]);
 
   // Pantau perubahan status push, izin notifikasi browser, dan saat tab kembali aktif
