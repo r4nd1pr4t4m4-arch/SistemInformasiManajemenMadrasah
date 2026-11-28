@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { decimalNumber } from '@/lib/validation/decimal-schema';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import { sanitizeApiError } from '@/lib/security/api-error';
@@ -160,7 +161,7 @@ export async function POST(request: Request) {
           record_type: z.enum(['PKG', 'SUPERVISI', 'DIKLAT', 'SERTIFIKASI']).default('PKG'),
           title: z.string().trim().min(3),
           period_year: z.number().int().min(2000).max(2100),
-          score: z.number().min(0).max(100).optional().nullable(),
+          score: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Nilai evaluasi' }).optional().nullable(),
           organizer: z.string().optional().nullable(),
           certificate_url: z.string().optional().nullable(),
           notes: z.string().optional().nullable(),

@@ -3,7 +3,8 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { AkademikModal } from '../akademik-ui';
-import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
+import { parseDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 import type {
   GeofenceModalState,
   JtmAdjustModalState,
@@ -139,13 +140,11 @@ export function PresensiModals({
               >
                 JTM yang Diperoleh (Disetujui)
               </label>
-              <input
+              <DecimalInput
                 id="jtm-adjust-approved-input"
-                type="text"
-                inputMode="decimal"
+                maxDecimals={2}
                 value={approvedJtmInput}
-                onChange={(e) => {
-                  const normalized = normalizeDecimalInput(e.target.value);
+                onValueChange={(normalized) => {
                   setJtmDraft({ key: currentAdjustKey, value: normalized });
                   const parsed = parseDecimalInput(normalized);
                   const val =

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { decimalNumber } from '@/lib/validation/decimal-schema';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import {
   getActiveAcademicYear,
@@ -20,7 +21,7 @@ const UpsertRulesSchema = z.object({
       z.object({
         grade_level: z.string().min(1),
         subject_id: z.string().uuid().nullable().optional(),
-        min_score: z.number().min(0).max(100),
+        min_score: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Nilai KKM' }),
       })
     )
     .min(1),

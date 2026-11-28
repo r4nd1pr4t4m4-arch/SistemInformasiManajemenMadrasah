@@ -18,7 +18,8 @@ import {
   useAkademikToast,
 } from '@/components/portal/akademik/akademik-ui';
 import { DEFAULT_KKM_SCORE, type KkmMode } from '@/lib/domain/penilaian';
-import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
+import { parseDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 
 interface SubjectItem {
   id: string;
@@ -204,8 +205,7 @@ export function KkmSettingsWorkspace() {
       if (!res.ok) throw new Error(data.error || 'Gagal mengubah mode KKM.');
       showToast(
         'success',
-        `Mode KKM aktif diubah ke ${
-          mode === 'PER_GRADE' ? 'Per Tingkat Kelas' : 'Per Mata Pelajaran & Tingkat Kelas'
+        `Mode KKM aktif diubah ke ${mode === 'PER_GRADE' ? 'Per Tingkat Kelas' : 'Per Mata Pelajaran & Tingkat Kelas'
         }.`
       );
     } catch (err) {
@@ -238,10 +238,9 @@ export function KkmSettingsWorkspace() {
     });
     showToast(
       'success',
-      `Nilai ${strVal} diterapkan ke ${
-        activeMode === 'PER_GRADE'
-          ? `${gradeLevels.length} tingkat kelas`
-          : `${filteredSubjects.length} mata pelajaran`
+      `Nilai ${strVal} diterapkan ke ${activeMode === 'PER_GRADE'
+        ? `${gradeLevels.length} tingkat kelas`
+        : `${filteredSubjects.length} mata pelajaran`
       }. Klik "Simpan Nilai KKM" untuk menyimpan.`
     );
   }
@@ -349,11 +348,10 @@ export function KkmSettingsWorkspace() {
           aria-checked={activeMode === 'PER_GRADE'}
           disabled={switchingMode}
           onClick={() => handleModeChange('PER_GRADE')}
-          className={`text-left p-4 sm:p-5 rounded-3xl border transition focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-70 ${
-            activeMode === 'PER_GRADE'
+          className={`text-left p-4 sm:p-5 rounded-3xl border transition focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-70 ${activeMode === 'PER_GRADE'
               ? 'bg-emerald-50/95 border-emerald-400 shadow-sm'
               : 'glass-card border-slate-200 hover:border-emerald-300'
-          }`}
+            }`}
         >
           <div className="flex items-center justify-between gap-2 mb-1.5">
             <span className="text-sm font-bold text-slate-900">KKM Per Tingkat Kelas</span>
@@ -374,11 +372,10 @@ export function KkmSettingsWorkspace() {
           aria-checked={activeMode === 'PER_SUBJECT_GRADE'}
           disabled={switchingMode}
           onClick={() => handleModeChange('PER_SUBJECT_GRADE')}
-          className={`text-left p-4 sm:p-5 rounded-3xl border transition focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-70 ${
-            activeMode === 'PER_SUBJECT_GRADE'
+          className={`text-left p-4 sm:p-5 rounded-3xl border transition focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-70 ${activeMode === 'PER_SUBJECT_GRADE'
               ? 'bg-emerald-50/95 border-emerald-400 shadow-sm'
               : 'glass-card border-slate-200 hover:border-emerald-300'
-          }`}
+            }`}
         >
           <div className="flex items-center justify-between gap-2 mb-1.5">
             <span className="text-sm font-bold text-slate-900">
@@ -459,11 +456,10 @@ export function KkmSettingsWorkspace() {
           )}
 
           <div className="flex items-center gap-2 shrink-0">
-            <input
-              type="text"
-              inputMode="decimal"
+            <DecimalInput
+              maxDecimals={2}
               value={bulkScore}
-              onChange={(e) => setBulkScore(normalizeDecimalInput(e.target.value))}
+              onValueChange={setBulkScore}
               placeholder="Nilai massal (0–100)"
               aria-label="Nilai KKM massal"
               className="w-36 sm:w-40 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -503,22 +499,17 @@ export function KkmSettingsWorkspace() {
                 >
                   <span className="text-xs font-bold text-slate-800">Tingkat {grade}</span>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      inputMode="decimal"
+                    <DecimalInput
+                      maxDecimals={2}
                       value={val}
                       aria-label={`Nilai KKM Tingkat ${grade}`}
-                      onChange={(e) =>
-                        setRuleScores((prev) => ({
-                          ...prev,
-                          [key]: normalizeDecimalInput(e.target.value),
-                        }))
+                      onValueChange={(next) =>
+                        setRuleScores((prev) => ({ ...prev, [key]: next }))
                       }
-                      className={`w-full sm:w-36 px-3 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                        valid
+                      className={`w-full sm:w-36 px-3 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${valid
                           ? 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
                           : 'border-rose-400 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                      }`}
+                        }`}
                     />
                   </div>
                 </div>
@@ -557,22 +548,17 @@ export function KkmSettingsWorkspace() {
                           <label className="block text-[11px] font-semibold text-slate-600">
                             Tingkat {g}
                           </label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
+                          <DecimalInput
+                            maxDecimals={2}
                             value={val}
                             aria-label={`KKM ${sub.name} Tingkat ${g}`}
-                            onChange={(e) =>
-                              setRuleScores((prev) => ({
-                                ...prev,
-                                [key]: normalizeDecimalInput(e.target.value),
-                              }))
+                            onValueChange={(next) =>
+                              setRuleScores((prev) => ({ ...prev, [key]: next }))
                             }
-                            className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                              valid
+                            className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${valid
                                 ? 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
                                 : 'border-rose-400 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                            }`}
+                              }`}
                           />
                         </div>
                       );
@@ -612,22 +598,17 @@ export function KkmSettingsWorkspace() {
                         const { valid } = parseKkmInput(val);
                         return (
                           <td key={g} className="px-4 py-2">
-                            <input
-                              type="text"
-                              inputMode="decimal"
+                            <DecimalInput
+                              maxDecimals={2}
                               value={val}
                               aria-label={`KKM ${sub.name} Tingkat ${g}`}
-                              onChange={(e) =>
-                                setRuleScores((prev) => ({
-                                  ...prev,
-                                  [key]: normalizeDecimalInput(e.target.value),
-                                }))
+                              onValueChange={(next) =>
+                                setRuleScores((prev) => ({ ...prev, [key]: next }))
                               }
-                              className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                valid
+                              className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${valid
                                   ? 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
                                   : 'border-rose-400 bg-rose-50 text-rose-900 focus:ring-rose-500'
-                              }`}
+                                }`}
                             />
                           </td>
                         );

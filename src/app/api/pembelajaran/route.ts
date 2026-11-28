@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { decimalNumber } from '@/lib/validation/decimal-schema';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
 import { sanitizeApiError } from '@/lib/security/api-error';
@@ -190,7 +191,7 @@ export async function POST(request: Request) {
           title: z.string().trim().min(3),
           description: z.string().optional().nullable(),
           due_at: z.string().optional().nullable(),
-          max_score: z.number().min(1).max(100).default(100),
+          max_score: decimalNumber({ min: 1, max: 100, maxDecimals: 2, label: 'Nilai maksimal' }).default(100),
         })
         .safeParse(body);
       if (!p.success) return NextResponse.json({ error: 'Data tugas tidak valid.' }, { status: 400 });
@@ -249,7 +250,7 @@ export async function POST(request: Request) {
       const p = z
         .object({
           submission_id: z.string().uuid(),
-          score: z.number().min(0).max(100),
+          score: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Nilai tugas' }),
           teacher_feedback: z.string().optional().nullable(),
         })
         .safeParse(body);

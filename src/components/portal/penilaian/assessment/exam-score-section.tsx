@@ -1,7 +1,7 @@
 'use client';
 
 import { computeExamEffectiveScore, type AssessmentMenuType } from '@/lib/domain/penilaian';
-import { normalizeDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 import {
   EMPTY_EXAM_ROW,
   parseNumericInput,
@@ -198,25 +198,20 @@ export function ExamScoreSection({
                       <label className="text-[11px] font-semibold text-slate-600">
                         Nilai {type}
                       </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
+                      <DecimalInput
+                        maxDecimals={2}
                         disabled={disableScoreInput}
                         value={examRow.score}
-                        onChange={(e) =>
-                          onExamRowChange(st.id, {
-                            ...examRow,
-                            score: normalizeDecimalInput(e.target.value),
-                          })
+                        onValueChange={(val) =>
+                          onExamRowChange(st.id, { ...examRow, score: val })
                         }
                         placeholder="0-100"
-                        className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                          isScoreInvalid
+                        className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${isScoreInvalid
                             ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
                             : needsRemedial
                               ? 'border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-500'
                               : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                        } disabled:bg-slate-100 disabled:text-slate-500`}
+                          } disabled:bg-slate-100 disabled:text-slate-500`}
                       />
                     </div>
 
@@ -225,16 +220,12 @@ export function ExamScoreSection({
                         <label className="text-[11px] font-semibold text-slate-600">
                           Remedial {needsRemedial && <span className="text-rose-600">(Wajib)</span>}
                         </label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
+                        <DecimalInput
+                          maxDecimals={2}
                           disabled={disableRemedialInput}
                           value={examRow.remedial_score}
-                          onChange={(e) =>
-                            onExamRowChange(st.id, {
-                              ...examRow,
-                              remedial_score: normalizeDecimalInput(e.target.value),
-                            })
+                          onValueChange={(val) =>
+                            onExamRowChange(st.id, { ...examRow, remedial_score: val })
                           }
                           placeholder={
                             scoreNum !== null && scoreNum >= kkmMinScore
@@ -245,11 +236,10 @@ export function ExamScoreSection({
                                   ? 'Wajib'
                                   : 'Opsional'
                           }
-                          className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                            missingRequiredRemedial || isRemInvalid
+                          className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${missingRequiredRemedial || isRemInvalid
                               ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
                               : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                          } disabled:bg-slate-100 disabled:text-slate-400`}
+                            } disabled:bg-slate-100 disabled:text-slate-400`}
                         />
                       </div>
                     )}
@@ -259,25 +249,20 @@ export function ExamScoreSection({
                         <label className="text-[11px] font-semibold text-slate-600">
                           Pengayaan
                         </label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
+                        <DecimalInput
+                          maxDecimals={2}
                           disabled={disableEnrichmentInput}
                           value={examRow.enrichment_score}
-                          onChange={(e) =>
-                            onExamRowChange(st.id, {
-                              ...examRow,
-                              enrichment_score: normalizeDecimalInput(e.target.value),
-                            })
+                          onValueChange={(val) =>
+                            onExamRowChange(st.id, { ...examRow, enrichment_score: val })
                           }
                           placeholder={
                             needsRemedial || remNum !== null ? 'Terkunci (Remedial)' : 'Opsional'
                           }
-                          className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                            isEnrInvalid
+                          className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${isEnrInvalid
                               ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
                               : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                          } disabled:bg-slate-100 disabled:text-slate-400`}
+                            } disabled:bg-slate-100 disabled:text-slate-400`}
                         />
                       </div>
                     )}
@@ -363,40 +348,31 @@ export function ExamScoreSection({
                         {st.full_name}
                       </td>
                       <td className="px-3 py-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
+                        <DecimalInput
+                          maxDecimals={2}
                           disabled={disableScoreInput}
                           value={examRow.score}
-                          onChange={(e) =>
-                            onExamRowChange(st.id, {
-                              ...examRow,
-                              score: normalizeDecimalInput(e.target.value),
-                            })
+                          onValueChange={(val) =>
+                            onExamRowChange(st.id, { ...examRow, score: val })
                           }
                           placeholder="0-100"
-                          className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                            isScoreInvalid
+                          className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${isScoreInvalid
                               ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
                               : needsRemedial
                                 ? 'border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-500'
                                 : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                          } disabled:bg-slate-100 disabled:text-slate-500`}
+                            } disabled:bg-slate-100 disabled:text-slate-500`}
                         />
                       </td>
                       {showAnyRemedial && (
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-1.5">
-                            <input
-                              type="text"
-                              inputMode="decimal"
+                            <DecimalInput
+                              maxDecimals={2}
                               disabled={disableRemedialInput}
                               value={examRow.remedial_score}
-                              onChange={(e) =>
-                                onExamRowChange(st.id, {
-                                  ...examRow,
-                                  remedial_score: normalizeDecimalInput(e.target.value),
-                                })
+                              onValueChange={(val) =>
+                                onExamRowChange(st.id, { ...examRow, remedial_score: val })
                               }
                               placeholder={
                                 scoreNum !== null && scoreNum >= kkmMinScore
@@ -407,11 +383,10 @@ export function ExamScoreSection({
                                       ? 'Wajib'
                                       : 'Opsional'
                               }
-                              className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                missingRequiredRemedial || isRemInvalid
+                              className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${missingRequiredRemedial || isRemInvalid
                                   ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
                                   : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                              } disabled:bg-slate-100 disabled:text-slate-400`}
+                                } disabled:bg-slate-100 disabled:text-slate-400`}
                             />
                             {needsRemedial && (
                               <span className="text-[10px] font-bold text-rose-600">Wajib</span>
@@ -421,25 +396,20 @@ export function ExamScoreSection({
                       )}
                       {examConfig.enable_enrichment && (
                         <td className="px-3 py-2">
-                          <input
-                            type="text"
-                            inputMode="decimal"
+                          <DecimalInput
+                            maxDecimals={2}
                             disabled={disableEnrichmentInput}
                             value={examRow.enrichment_score}
-                            onChange={(e) =>
-                              onExamRowChange(st.id, {
-                                ...examRow,
-                                enrichment_score: normalizeDecimalInput(e.target.value),
-                              })
+                            onValueChange={(val) =>
+                              onExamRowChange(st.id, { ...examRow, enrichment_score: val })
                             }
                             placeholder={
                               needsRemedial || remNum !== null ? 'Terkunci' : 'Opsional'
                             }
-                            className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                              isEnrInvalid
+                            className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${isEnrInvalid
                                 ? 'border-rose-500 bg-rose-50 text-rose-900 focus:ring-rose-500'
                                 : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                            } disabled:bg-slate-100 disabled:text-slate-400`}
+                              } disabled:bg-slate-100 disabled:text-slate-400`}
                           />
                         </td>
                       )}

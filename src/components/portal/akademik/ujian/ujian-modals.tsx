@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { AkademikModal } from '../akademik-ui';
-import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
+import { parseDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 import type {
   RemoveRoomMemberModalState,
   SupAdjustModalState,
@@ -81,13 +82,11 @@ export function UjianModals({
               >
                 JTM yang Diperoleh (Disetujui)
               </label>
-              <input
+              <DecimalInput
                 id="sup-adjust-jtm-input"
-                type="text"
-                inputMode="decimal"
+                maxDecimals={2}
                 value={supApprovedJtmInput}
-                onChange={(e) => {
-                  const normalized = normalizeDecimalInput(e.target.value);
+                onValueChange={(normalized) => {
                   setSupJtmDraft({ key: currentSupKey, value: normalized });
                   const parsed = parseDecimalInput(normalized);
                   const val =

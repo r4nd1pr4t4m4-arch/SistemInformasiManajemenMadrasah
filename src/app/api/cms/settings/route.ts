@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connection } from 'next/server';
 import { z } from 'zod';
+import { decimalNumber } from '@/lib/validation/decimal-schema';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { getInstitutionSettings } from '@/lib/data/public-queries';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
@@ -25,8 +26,8 @@ const SettingsUpdateSchema = z.object({
   phone: z.string().optional().nullable(),
   email: z.string().optional().nullable(),
   geofence_enabled: z.boolean().optional().default(true),
-  geofence_lat: z.number().optional().nullable(),
-  geofence_lng: z.number().optional().nullable(),
+  geofence_lat: decimalNumber({ min: -90, max: 90, maxDecimals: 6, label: 'Latitude' }).optional().nullable(),
+  geofence_lng: decimalNumber({ min: -180, max: 180, maxDecimals: 6, label: 'Longitude' }).optional().nullable(),
   geofence_radius_meters: z.number().min(20).max(5000),
   social_links: z
     .object({

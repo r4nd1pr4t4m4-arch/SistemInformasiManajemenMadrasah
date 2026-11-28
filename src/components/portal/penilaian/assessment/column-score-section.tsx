@@ -3,7 +3,7 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import { computeAverageScore, type AssessmentMenuType } from '@/lib/domain/penilaian';
 import { parseNumericInput, type ColumnRow, type StudentRow } from './types';
-import { normalizeDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 
 interface ColumnScoreSectionProps {
   type: Exclude<AssessmentMenuType, 'RAPORT'>;
@@ -109,20 +109,16 @@ export function ColumnScoreSection({
                                 </span>
                               )}
                             </div>
-                            <input
-                              type="text"
-                              inputMode="decimal"
+                            <DecimalInput
+                              maxDecimals={2}
                               disabled={!canEdit}
                               value={raw}
-                              onChange={(e) =>
-                                onScoreChange(key, normalizeDecimalInput(e.target.value))
-                              }
+                              onValueChange={(val) => onScoreChange(key, val)}
                               placeholder="0-100"
-                              className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                isBelowKkm || isInvalidRange
+                              className={`w-full px-2.5 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${isBelowKkm || isInvalidRange
                                   ? 'border-rose-400 bg-rose-50 text-rose-900 focus:ring-rose-500'
                                   : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                              } disabled:bg-slate-100`}
+                                } disabled:bg-slate-100`}
                             />
                           </div>
                         );
@@ -208,20 +204,16 @@ export function ColumnScoreSection({
 
                         return (
                           <td key={col.id} className="px-3 py-2">
-                            <input
-                              type="text"
-                              inputMode="decimal"
+                            <DecimalInput
+                              maxDecimals={2}
                               disabled={!canEdit}
                               value={raw}
-                              onChange={(e) =>
-                                onScoreChange(key, normalizeDecimalInput(e.target.value))
-                              }
+                              onValueChange={(val) => onScoreChange(key, val)}
                               placeholder="0-100"
-                              className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                                isBelowKkm || isInvalidRange
+                              className={`w-24 px-2.5 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 ${isBelowKkm || isInvalidRange
                                   ? 'border-rose-400 bg-rose-50 text-rose-900 focus:ring-rose-500'
                                   : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                              } disabled:bg-slate-100`}
+                                } disabled:bg-slate-100`}
                             />
                           </td>
                         );

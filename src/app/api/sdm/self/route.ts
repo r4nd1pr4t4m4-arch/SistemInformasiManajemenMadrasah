@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
@@ -16,6 +16,12 @@ import {
   thesisArticleUrlSchema,
 } from '@/lib/validation/identity';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import {
+  fetchActiveBiodataReviews,
+  fetchActiveBiodataReviewsForEntities,
+  markChangedFieldsAsRevised,
+  type BiodataReviewRecord,
+} from '@/lib/sdm/biodata-reviews';
 
 const UpdateSelfGtkSchema = z.object({
   scope: z.literal('gtk'),
@@ -67,7 +73,7 @@ function cleanStr(val: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await getCurrentUserWithRoles();
   if (!session) {
     return NextResponse.json({ error: 'Silakan login terlebih dahulu.' }, { status: 401 });
@@ -78,8 +84,151 @@ export async function GET() {
   }
 
   const supabase = createSupabaseAdminClient();
+  const canReview = hasAnyRole(session, PERMISSIONS.BIODATA_REVIEW_MANAGE);
+  const requestedScope = request.nextUrl.searchParams.get('scope');
+  const requestedTeacherId = request.nextUrl.searchParams.get('teacherId');
+  const requestedGuardianId = request.nextUrl.searchParams.get('guardianId');
 
-  const [profileRes, teacherRes, guardiansRes] = await Promise.all([
+  // Mode Admin/TU meninjau GTK lain secara spesifik
+  if (canReview && requestedScope === 'gtk' && requestedTeacherId) {
+    const [teacherRes, teachersListRes] = await Promise.all([
+      supabase
+        .from('teachers_staff')
+        .select('*, profile:profiles(id, full_name, email, phone)')
+        .eq('id', requestedTeacherId)
+        .maybeSingle(),
+      supabase
+        .from('teachers_staff')
+        .select('id, full_name, nip, nuptk, staff_type, profile_id')
+        .order('full_name', { ascending: true }),
+    ]);
+
+    const tRow = teacherRes.data as Record<string, unknown> | null;
+    let gtkPayload: Record<string, unknown> | null = null;
+    let gtkReviews: BiodataReviewRecord[] = [];
+    if (tRow) {
+      const teacherId = String(tRow.id);
+      const prof = Array.isArray(tRow.profile) ? tRow.profile[0] : tRow.profile;
+      const profObj = prof as { full_name?: string; email?: string; phone?: string } | null;
+      const [historyRes, dutiesRes, docsRes, activeReviews] = await Promise.all([
+        supabase
+          .from('employment_histories')
+          .select('*')
+          .eq('teacher_id', teacherId)
+          .order('start_date', { ascending: false }),
+        supabase
+          .from('teacher_additional_duties')
+          .select('*, duty_type:additional_duty_types(code, name), academic_year:academic_years(name)')
+          .eq('teacher_id', teacherId)
+          .order('start_date', { ascending: false }),
+        supabase
+          .from('sdm_documents')
+          .select('*')
+          .eq('entity_type', 'GTK')
+          .eq('entity_id', teacherId)
+          .order('created_at', { ascending: false }),
+        fetchActiveBiodataReviews(supabase, 'GTK', teacherId),
+      ]);
+      gtkReviews = activeReviews;
+      gtkPayload = {
+        teacher: {
+          ...tRow,
+          full_name: profObj?.full_name || tRow.full_name,
+          phone: profObj?.phone ?? tRow.phone ?? null,
+          email: profObj?.email ?? tRow.email ?? null,
+        },
+        employmentHistories: historyRes.data || [],
+        additionalDuties: dutiesRes.data || [],
+        documents: docsRes.data || [],
+      };
+    }
+
+    return NextResponse.json({
+      gtk: gtkPayload,
+      guardians: [],
+      gtkReviews,
+      guardianReviewsById: {},
+      hasDualRole: false,
+      canManageSdm: hasAnyRole(session, PERMISSIONS.SDM_MANAGE),
+      canReview: true,
+      isInspectingOther: Boolean(tRow && tRow.profile_id !== session.userId),
+      teachersList: teachersListRes.data || [],
+      guardiansList: [],
+    });
+  }
+
+  // Mode Admin/TU meninjau Orang Tua/Wali lain secara spesifik
+  if (canReview && requestedScope === 'orang-tua' && requestedGuardianId) {
+    const [guardianRes, guardiansListRes] = await Promise.all([
+      supabase
+        .from('student_guardians')
+        .select(
+          '*, student:students(id, full_name, nis, nisn, status), profile:profiles(id, full_name, email, phone)'
+        )
+        .eq('id', requestedGuardianId)
+        .maybeSingle(),
+      supabase
+        .from('student_guardians')
+        .select('id, full_name, relationship, nik, profile_id, student:students(id, full_name, nis)')
+        .eq('is_active', true)
+        .order('full_name', { ascending: true }),
+    ]);
+
+    const gRow = guardianRes.data as Record<string, unknown> | null;
+    let guardiansPayload: Record<string, unknown>[] = [];
+    let guardianReviewsById: Record<string, BiodataReviewRecord[]> = {};
+    if (gRow) {
+      const guardianId = String(gRow.id);
+      const studentId = gRow.student_id ? String(gRow.student_id) : null;
+      const prof = Array.isArray(gRow.profile) ? gRow.profile[0] : gRow.profile;
+      const profObj = prof as { full_name?: string; email?: string; phone?: string } | null;
+
+      const [{ data: gDocs }, { data: sharedDocs }, activeReviews] = await Promise.all([
+        supabase
+          .from('sdm_documents')
+          .select('*')
+          .eq('entity_type', 'ORANG_TUA')
+          .eq('entity_id', guardianId)
+          .order('created_at', { ascending: false }),
+        studentId
+          ? supabase
+              .from('student_documents')
+              .select('*')
+              .eq('student_id', studentId)
+              .in('document_type', [...FAMILY_SHARED_STUDENT_DOC_TYPES])
+              .order('updated_at', { ascending: false })
+          : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+        fetchActiveBiodataReviews(supabase, 'ORANG_TUA', guardianId),
+      ]);
+
+      guardianReviewsById = { [guardianId]: activeReviews };
+      guardiansPayload = [
+        {
+          ...gRow,
+          full_name: profObj?.full_name || gRow.full_name,
+          phone: profObj?.phone ?? gRow.phone ?? null,
+          email: profObj?.email ?? gRow.email ?? null,
+          documents: gDocs || [],
+          sharedStudentDocuments: sharedDocs || [],
+        },
+      ];
+    }
+
+    return NextResponse.json({
+      gtk: null,
+      guardians: guardiansPayload,
+      gtkReviews: [],
+      guardianReviewsById,
+      hasDualRole: false,
+      canManageSdm: hasAnyRole(session, PERMISSIONS.SDM_MANAGE),
+      canReview: true,
+      isInspectingOther: Boolean(gRow && gRow.profile_id !== session.userId),
+      teachersList: [],
+      guardiansList: guardiansListRes.data || [],
+    });
+  }
+
+  const [profileRes, teacherRes, guardiansRes, teachersListRes, guardiansListRes] = await Promise.all([
     supabase
       .from('profiles')
       .select('full_name, phone, email')
@@ -96,6 +245,19 @@ export async function GET() {
       .eq('profile_id', session.userId)
       .eq('is_active', true)
       .order('is_primary', { ascending: false }),
+    canReview && (!requestedScope || requestedScope === 'gtk')
+      ? supabase
+          .from('teachers_staff')
+          .select('id, full_name, nip, nuptk, staff_type, profile_id')
+          .order('full_name', { ascending: true })
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    canReview && (!requestedScope || requestedScope === 'orang-tua')
+      ? supabase
+          .from('student_guardians')
+          .select('id, full_name, relationship, nik, profile_id, student:students(id, full_name, nis)')
+          .eq('is_active', true)
+          .order('full_name', { ascending: true })
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ]);
 
   const canonicalFullName = profileRes.data?.full_name || session.fullName;
@@ -258,11 +420,30 @@ export async function GET() {
     };
   }
 
+  const [gtkReviews, guardianReviewsById] = await Promise.all([
+    gtkPayload && resolvedTeacher
+      ? fetchActiveBiodataReviews(supabase, 'GTK', String(resolvedTeacher.id))
+      : Promise.resolve([] as BiodataReviewRecord[]),
+    guardianRows.length > 0
+      ? fetchActiveBiodataReviewsForEntities(
+          supabase,
+          'ORANG_TUA',
+          guardianRows.map((g) => String(g.id))
+        )
+      : Promise.resolve({} as Record<string, BiodataReviewRecord[]>),
+  ]);
+
   return NextResponse.json({
     gtk: gtkPayload,
     guardians: guardiansPayload,
+    gtkReviews,
+    guardianReviewsById,
     hasDualRole: Boolean(gtkPayload && guardiansPayload.length > 0),
     canManageSdm: hasAnyRole(session, PERMISSIONS.SDM_MANAGE),
+    canReview,
+    isInspectingOther: false,
+    teachersList: teachersListRes.data || [],
+    guardiansList: guardiansListRes.data || [],
   });
 }
 
@@ -291,7 +472,7 @@ export async function PATCH(request: Request) {
 
       const { data: existing, error: findErr } = await supabase
         .from('teachers_staff')
-        .select('id, profile_id')
+        .select('*')
         .eq('id', parsed.data.id)
         .maybeSingle();
 
@@ -334,20 +515,29 @@ export async function PATCH(request: Request) {
 
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
 
-      await syncSharedBiodataAcrossSelfEntities(
-        supabase,
-        session.userId,
-        {
-          nik: data.nik,
-          address: data.address,
-          rt_rw: data.rt_rw,
-          village: data.village,
-          district: data.district,
-          city: data.city,
-          province: data.province,
-        },
-        { entityType: 'GTK', entityId: data.id }
-      );
+      await Promise.all([
+        syncSharedBiodataAcrossSelfEntities(
+          supabase,
+          session.userId,
+          {
+            nik: data.nik,
+            address: data.address,
+            rt_rw: data.rt_rw,
+            village: data.village,
+            district: data.district,
+            city: data.city,
+            province: data.province,
+          },
+          { entityType: 'GTK', entityId: data.id }
+        ),
+        markChangedFieldsAsRevised(
+          supabase,
+          'GTK',
+          data.id,
+          existing as Record<string, unknown>,
+          data as Record<string, unknown>
+        ),
+      ]);
 
       return NextResponse.json({ teacher: data });
     }
@@ -363,7 +553,7 @@ export async function PATCH(request: Request) {
 
       const { data: existing, error: findErr } = await supabase
         .from('student_guardians')
-        .select('id, profile_id, student_id, relationship')
+        .select('*')
         .eq('id', parsed.data.id)
         .maybeSingle();
 
@@ -394,29 +584,37 @@ export async function PATCH(request: Request) {
 
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
 
-      await syncGuardianToStudent(supabase, {
-        student_id: data.student_id,
-        relationship: data.relationship,
-        full_name: data.full_name,
-        nik: data.nik,
-        occupation: data.occupation,
-        phone: data.phone,
-      });
-
-      await syncSharedBiodataAcrossSelfEntities(
-        supabase,
-        session.userId,
-        {
+      await Promise.all([
+        syncGuardianToStudent(supabase, {
+          student_id: data.student_id,
+          relationship: data.relationship,
+          full_name: data.full_name,
           nik: data.nik,
-          address: data.address,
-          rt_rw: data.rt_rw,
-          village: data.village,
-          district: data.district,
-          city: data.city,
-          province: data.province,
-        },
-        { entityType: 'ORANG_TUA', entityId: data.id }
-      );
+          occupation: data.occupation,
+          phone: data.phone,
+        }),
+        syncSharedBiodataAcrossSelfEntities(
+          supabase,
+          session.userId,
+          {
+            nik: data.nik,
+            address: data.address,
+            rt_rw: data.rt_rw,
+            village: data.village,
+            district: data.district,
+            city: data.city,
+            province: data.province,
+          },
+          { entityType: 'ORANG_TUA', entityId: data.id }
+        ),
+        markChangedFieldsAsRevised(
+          supabase,
+          'ORANG_TUA',
+          data.id,
+          existing as Record<string, unknown>,
+          data as Record<string, unknown>
+        ),
+      ]);
 
       return NextResponse.json({ guardian: data });
     }

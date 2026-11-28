@@ -2,6 +2,7 @@
 
 import { Users } from 'lucide-react';
 import { SdmDocumentSection } from '@/components/sdm/sdm-document-section';
+import type { BiodataReviewItem } from '@/components/sdm/biodata-reviews/types';
 import {
   GTK_DOC_OPTIONS,
   ORANG_TUA_DOC_OPTIONS,
@@ -15,6 +16,12 @@ interface SelfSdmDocumentsSectionProps {
   gtkData: GtkSelfPayload | null;
   guardians: GuardianSelfPayload[];
   onRefresh: () => Promise<void>;
+  readOnly?: boolean;
+  gtkReviews?: BiodataReviewItem[];
+  guardianReviewsById?: Record<string, BiodataReviewItem[]>;
+  canReview?: boolean;
+  onReviewSaved?: (reviewId?: string) => void;
+  onNotifyToast?: (type: 'ok' | 'err', text: string) => void;
 }
 
 export function SelfSdmDocumentsSection({
@@ -22,6 +29,12 @@ export function SelfSdmDocumentsSection({
   gtkData,
   guardians,
   onRefresh,
+  readOnly = false,
+  gtkReviews = [],
+  guardianReviewsById = {},
+  canReview = false,
+  onReviewSaved,
+  onNotifyToast,
 }: SelfSdmDocumentsSectionProps) {
   if (roleScope === 'gtk') {
     if (!gtkData) return null;
@@ -32,7 +45,12 @@ export function SelfSdmDocumentsSection({
         documentOptions={GTK_DOC_OPTIONS}
         documents={gtkData.documents}
         onRefresh={onRefresh}
-        allowSelfManage={true}
+        allowSelfManage={!readOnly}
+        readOnly={readOnly}
+        reviews={gtkReviews}
+        canReview={canReview}
+        onReviewSaved={onReviewSaved}
+        onNotifyToast={onNotifyToast}
       />
     );
   }
@@ -57,7 +75,12 @@ export function SelfSdmDocumentsSection({
             documentOptions={ORANG_TUA_DOC_OPTIONS}
             documents={g.documents}
             onRefresh={onRefresh}
-            allowSelfManage={true}
+            allowSelfManage={!readOnly}
+            readOnly={readOnly}
+            reviews={guardianReviewsById[g.id] || []}
+            canReview={canReview}
+            onReviewSaved={onReviewSaved}
+            onNotifyToast={onNotifyToast}
           />
           {g.sharedStudentDocuments && g.sharedStudentDocuments.length > 0 && (
             <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-2.5 min-w-0">

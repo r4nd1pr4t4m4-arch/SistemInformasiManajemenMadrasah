@@ -1185,6 +1185,13 @@ export const ACCORDION_GROUPS: AccordionGroup[] = [
         allowedRoles: ['SUPERADMIN', 'OPERATOR', 'KEPALA_LEMBAGA', 'KEPALA_TU'],
       },
       {
+        href: '/portal/akun/monitoring-pwa',
+        path: '/portal/akun/monitoring-pwa',
+        label: 'Monitoring Instalasi PWA',
+        icon: <Smartphone className="w-3.5 h-3.5" />,
+        allowedRoles: PERMISSIONS.PWA_MONITORING_VIEW,
+      },
+      {
         href: '/portal/akun/kata-sandi',
         path: '/portal/akun/kata-sandi',
         label: 'Ganti Kata Sandi',
@@ -1338,6 +1345,7 @@ export const PAGE_TITLES: Record<string, string> = {
   '/portal/akun/notifikasi': 'Pusat Notifikasi & Preferensi',
   '/portal/notifikasi/kelola': 'Broadcast, Antrean & Analitik Web Push',
   '/portal/akun/manajemen-pengguna': 'Manajemen Pengguna & Persetujuan Akun',
+  '/portal/akun/monitoring-pwa': 'Monitoring Instalasi PWA',
   '/portal/akun/kata-sandi': 'Ganti Kata Sandi',
   '/portal/akun/mfa': 'Manajemen MFA',
   '/portal/akun/keamanan': 'Keamanan Sesi & Log Audit',

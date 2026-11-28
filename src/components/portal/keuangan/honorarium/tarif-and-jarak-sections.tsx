@@ -15,7 +15,8 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { formatRupiah } from '@/lib/domain/honorarium';
-import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
+import { parseDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 import {
   DAY_LABELS,
   formatDurationLabel,
@@ -335,9 +336,8 @@ export function TarifJamSection({
               Durasi jam sekolah default
             </span>
             <span
-              className={`font-semibold font-mono ${
-                rateValidationError ? 'text-rose-600' : 'text-slate-800'
-              }`}
+              className={`font-semibold font-mono ${rateValidationError ? 'text-rose-600' : 'text-slate-800'
+                }`}
             >
               {formatDurationLabel(schoolStartTime, schoolEndTime)}
             </span>
@@ -426,13 +426,12 @@ export function TarifJamSection({
                 return (
                   <div
                     key={dh.day_of_week}
-                    className={`p-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs transition ${
-                      isInvalid
+                    className={`p-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs transition ${isInvalid
                         ? 'bg-rose-50/70 border-rose-300'
                         : dh.is_active
                           ? 'bg-white border-slate-200'
                           : 'bg-slate-50/80 border-slate-200/70'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between sm:justify-start gap-2 min-w-0">
                       <label className="inline-flex items-center gap-2 min-w-[96px] font-semibold text-slate-800 cursor-pointer">
@@ -455,13 +454,12 @@ export function TarifJamSection({
                       </label>
 
                       <span
-                        className={`sm:hidden text-[11px] font-mono font-medium ${
-                          !dh.is_active
+                        className={`sm:hidden text-[11px] font-mono font-medium ${!dh.is_active
                             ? 'text-slate-400'
                             : isInvalid
                               ? 'text-rose-600'
                               : 'text-emerald-700'
-                        }`}
+                          }`}
                       >
                         {dh.is_active
                           ? formatDurationLabel(dh.start_time, dh.end_time)
@@ -512,13 +510,12 @@ export function TarifJamSection({
                         className="flex-1 sm:flex-none min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
                       />
                       <span
-                        className={`hidden sm:inline-block w-24 text-right text-[11px] font-mono shrink-0 ${
-                          !dh.is_active
+                        className={`hidden sm:inline-block w-24 text-right text-[11px] font-mono shrink-0 ${!dh.is_active
                             ? 'text-slate-400'
                             : isInvalid
                               ? 'text-rose-600 font-semibold'
                               : 'text-slate-600'
-                        }`}
+                          }`}
                       >
                         {dh.is_active
                           ? formatDurationLabel(dh.start_time, dh.end_time)
@@ -751,18 +748,14 @@ export function JarakGuruSection({
                   Jarak Rumah ke Sekolah (KM)
                 </label>
                 <div className="relative">
-                  <input
+                  <DecimalInput
                     id="honor-distance-km"
-                    type="text"
-                    inputMode="decimal"
+                    maxDecimals={2}
                     required
                     disabled={submittingAction === 'UPDATE_TEACHER_DISTANCE'}
                     value={distanceForm.home_distance_km}
-                    onChange={(e) =>
-                      setDistanceForm((prev) => ({
-                        ...prev,
-                        home_distance_km: normalizeDecimalInput(e.target.value),
-                      }))
+                    onValueChange={(next) =>
+                      setDistanceForm((prev) => ({ ...prev, home_distance_km: next }))
                     }
                     placeholder="mis. 4.25"
                     className="w-full rounded-xl border border-slate-300 bg-white pl-3 pr-12 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
@@ -837,11 +830,10 @@ export function JarakGuruSection({
                   key={tab.key}
                   type="button"
                   onClick={() => setDistanceFilter(tab.key)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${
-                    distanceFilter === tab.key
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${distanceFilter === tab.key
                       ? 'bg-slate-900 text-white'
                       : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -898,11 +890,10 @@ export function JarakGuruSection({
                       </p>
                     </div>
                     <span
-                      className={`shrink-0 px-2 py-0.5 rounded-lg font-mono font-semibold text-[11px] ${
-                        km > 0
+                      className={`shrink-0 px-2 py-0.5 rounded-lg font-mono font-semibold text-[11px] ${km > 0
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/70'
                           : 'bg-slate-100 text-slate-500'
-                      }`}
+                        }`}
                     >
                       {km} KM
                     </span>
@@ -930,11 +921,10 @@ export function JarakGuruSection({
                         home_distance_km: String(Number(t.home_distance_km ?? 0)),
                       })
                     }
-                    className={`modular-card rounded-xl p-3 flex items-center justify-between gap-2 text-xs transition w-full cursor-pointer ${
-                      isSelected
+                    className={`modular-card rounded-xl p-3 flex items-center justify-between gap-2 text-xs transition w-full cursor-pointer ${isSelected
                         ? 'ring-2 ring-emerald-500 border-emerald-500 bg-emerald-50/40'
                         : 'hover:border-emerald-300 hover:bg-slate-50/80'
-                    }`}
+                      }`}
                   >
                     {cardContent}
                   </button>

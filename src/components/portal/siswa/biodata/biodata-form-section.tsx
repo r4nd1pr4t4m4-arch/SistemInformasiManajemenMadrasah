@@ -1,9 +1,16 @@
 'use client';
 
-import type { Dispatch, FormEvent, SetStateAction } from 'react';
+import { useMemo, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import Link from 'next/link';
 import { Loader2, Save } from 'lucide-react';
 import { StructuredAddressFields } from '@/components/sdm/structured-address-fields';
+import { FieldReviewControl } from '@/components/sdm/biodata-reviews/field-review-control';
+import {
+  buildReviewMap,
+  getReviewBorderClass,
+  reviewMapKey,
+  type BiodataReviewItem,
+} from '@/components/sdm/biodata-reviews/types';
 import {
   COUNT_OPTIONS_1_TO_12,
   digitsOnly,
@@ -26,6 +33,11 @@ interface BiodataFormSectionProps {
   isCustomSiblingsCount: boolean;
   setIsCustomSiblingsCount: Dispatch<SetStateAction<boolean>>;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  reviews?: BiodataReviewItem[];
+  canReview?: boolean;
+  onRefreshReviews?: () => Promise<void> | void;
+  onReviewSaved?: (reviewId?: string) => void;
+  onNotifyToast?: (type: 'ok' | 'err', text: string) => void;
 }
 
 const INPUT_CLASS =
@@ -46,7 +58,35 @@ export function BiodataFormSection({
   isCustomSiblingsCount,
   setIsCustomSiblingsCount,
   onSubmit,
+  reviews = [],
+  canReview = false,
+  onRefreshReviews,
+  onReviewSaved,
+  onNotifyToast,
 }: BiodataFormSectionProps) {
+  const reviewMap = useMemo(() => buildReviewMap(reviews), [reviews]);
+
+  const getFieldReview = (key: string) =>
+    reviewMap.get(reviewMapKey('BIODATA_FIELD', key)) || null;
+
+  const inputClass = (key: string, base: string) =>
+    `${base} ${getReviewBorderClass(getFieldReview(key))}`.trim();
+
+  const renderReview = (key: string, currentValue?: string | null) => (
+    <FieldReviewControl
+      entityType="SISWA"
+      entityId={studentId}
+      targetKind="BIODATA_FIELD"
+      targetKey={key}
+      review={getFieldReview(key)}
+      canReview={canReview}
+      currentValue={currentValue ?? null}
+      onChanged={() => onRefreshReviews?.()}
+      onReviewSaved={onReviewSaved}
+      onNotifyToast={onNotifyToast}
+    />
+  );
+
   const updateField = <K extends keyof BiodataFormState>(
     field: K,
     value: BiodataFormState[K]
@@ -113,8 +153,9 @@ export function BiodataFormSection({
                     ? 'Nama lengkap hanya dapat diubah melalui Halaman Profil dengan persetujuan Admin'
                     : undefined
                 }
-                className={!isOfficialEditor ? LOCKED_INPUT_CLASS : INPUT_CLASS}
+                className={inputClass('full_name', !isOfficialEditor ? LOCKED_INPUT_CLASS : INPUT_CLASS)}
               />
+              {renderReview('full_name', biodata.full_name)}
             </div>
 
             <div className="min-w-0">
@@ -162,8 +203,9 @@ export function BiodataFormSection({
                 maxLength={NIK_MAX}
                 onChange={(e) => updateField('nik', digitsOnly(e.target.value, NIK_MAX))}
                 placeholder="16 digit angka"
-                className={`${INPUT_CLASS} font-mono`}
+                className={inputClass('nik', `${INPUT_CLASS} font-mono`)}
               />
+              {renderReview('nik', biodata.nik)}
             </div>
 
             <div className="min-w-0">
@@ -177,8 +219,9 @@ export function BiodataFormSection({
                 maxLength={NIK_MAX}
                 onChange={(e) => updateField('kk_number', digitsOnly(e.target.value, NIK_MAX))}
                 placeholder="16 digit angka"
-                className={`${INPUT_CLASS} font-mono`}
+                className={inputClass('kk_number', `${INPUT_CLASS} font-mono`)}
               />
+              {renderReview('kk_number', biodata.kk_number)}
             </div>
 
             <div className="min-w-0">
@@ -189,8 +232,9 @@ export function BiodataFormSection({
                 id="bio-akta"
                 value={biodata.birth_certificate_number}
                 onChange={(e) => updateField('birth_certificate_number', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('birth_certificate_number', INPUT_CLASS)}
               />
+              {renderReview('birth_certificate_number', biodata.birth_certificate_number)}
             </div>
 
             <div className="min-w-0">
@@ -201,11 +245,12 @@ export function BiodataFormSection({
                 id="bio-gender"
                 value={biodata.gender}
                 onChange={(e) => updateField('gender', e.target.value as 'L' | 'P')}
-                className={INPUT_CLASS}
+                className={inputClass('gender', INPUT_CLASS)}
               >
                 <option value="L">Laki-laki</option>
                 <option value="P">Perempuan</option>
               </select>
+              {renderReview('gender', biodata.gender)}
             </div>
 
             <div className="min-w-0">
@@ -216,8 +261,9 @@ export function BiodataFormSection({
                 id="bio-birth-place"
                 value={biodata.birth_place}
                 onChange={(e) => updateField('birth_place', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('birth_place', INPUT_CLASS)}
               />
+              {renderReview('birth_place', biodata.birth_place)}
             </div>
 
             <div className="min-w-0">
@@ -229,8 +275,9 @@ export function BiodataFormSection({
                 type="date"
                 value={biodata.birth_date}
                 onChange={(e) => updateField('birth_date', e.target.value)}
-                className={`${INPUT_CLASS} font-mono`}
+                className={inputClass('birth_date', `${INPUT_CLASS} font-mono`)}
               />
+              {renderReview('birth_date', biodata.birth_date)}
             </div>
 
             <div className="min-w-0">
@@ -241,7 +288,7 @@ export function BiodataFormSection({
                 id="bio-religion"
                 value={biodata.religion || 'Islam'}
                 onChange={(e) => updateField('religion', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('religion', INPUT_CLASS)}
               >
                 {RELIGION_OPTIONS.map((rel) => (
                   <option key={rel} value={rel}>
@@ -249,6 +296,7 @@ export function BiodataFormSection({
                   </option>
                 ))}
               </select>
+              {renderReview('religion', biodata.religion)}
             </div>
 
             <div className="min-w-0">
@@ -270,7 +318,7 @@ export function BiodataFormSection({
                     updateField('child_order', v);
                   }
                 }}
-                className={INPUT_CLASS}
+                className={inputClass('child_order', INPUT_CLASS)}
               >
                 <option value="">-- Pilih --</option>
                 {COUNT_OPTIONS_1_TO_12.map((opt) => (
@@ -291,10 +339,11 @@ export function BiodataFormSection({
                     placeholder="Masukkan urutan anak..."
                     value={biodata.child_order}
                     onChange={(e) => updateField('child_order', e.target.value)}
-                    className={INPUT_CLASS}
+                    className={inputClass('child_order', INPUT_CLASS)}
                   />
                 </div>
               )}
+              {renderReview('child_order', biodata.child_order)}
             </div>
 
             <div className="min-w-0">
@@ -319,7 +368,7 @@ export function BiodataFormSection({
                     updateField('siblings_count', v);
                   }
                 }}
-                className={INPUT_CLASS}
+                className={inputClass('siblings_count', INPUT_CLASS)}
               >
                 <option value="">-- Pilih --</option>
                 {COUNT_OPTIONS_1_TO_12.map((opt) => (
@@ -340,13 +389,14 @@ export function BiodataFormSection({
                     placeholder="Masukkan jumlah saudara..."
                     value={biodata.siblings_count}
                     onChange={(e) => updateField('siblings_count', e.target.value)}
-                    className={INPUT_CLASS}
+                    className={inputClass('siblings_count', INPUT_CLASS)}
                   />
                 </div>
               )}
               <p className="text-[10px] text-slate-400 mt-1">
                 Jumlah Saudara tersebut juga termasuk anda.
               </p>
+              {renderReview('siblings_count', biodata.siblings_count)}
             </div>
 
             <div className="min-w-0">
@@ -373,8 +423,9 @@ export function BiodataFormSection({
                     ? 'No. HP / WhatsApp hanya dapat diubah melalui Halaman Profil'
                     : undefined
                 }
-                className={!isOfficialEditor ? LOCKED_INPUT_CLASS : INPUT_CLASS}
+                className={inputClass('phone', !isOfficialEditor ? LOCKED_INPUT_CLASS : INPUT_CLASS)}
               />
+              {renderReview('phone', biodata.phone)}
             </div>
 
             <div className="min-w-0">
@@ -400,8 +451,9 @@ export function BiodataFormSection({
                     ? 'Email hanya dapat diubah melalui Halaman Profil'
                     : undefined
                 }
-                className={!isOfficialEditor ? LOCKED_INPUT_CLASS : INPUT_CLASS}
+                className={inputClass('email', !isOfficialEditor ? LOCKED_INPUT_CLASS : INPUT_CLASS)}
               />
+              {renderReview('email', biodata.email)}
             </div>
           </div>
         </section>
@@ -437,6 +489,12 @@ export function BiodataFormSection({
               }))
             }
           />
+          {renderReview(
+            'address_group',
+            [biodata.address, biodata.rt_rw, biodata.village, biodata.district, biodata.city, biodata.province]
+              .filter(Boolean)
+              .join(', ')
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
             <div className="min-w-0">
               <label htmlFor="bio-postal" className="block font-semibold text-slate-600 mb-1">
@@ -449,8 +507,9 @@ export function BiodataFormSection({
                 placeholder="5 digit angka"
                 value={biodata.postal_code}
                 onChange={(e) => updateField('postal_code', digitsOnly(e.target.value, 5))}
-                className={`${INPUT_CLASS} font-mono`}
+                className={inputClass('postal_code', `${INPUT_CLASS} font-mono`)}
               />
+              {renderReview('postal_code', biodata.postal_code)}
             </div>
             <div className="sm:col-span-2 min-w-0">
               <label htmlFor="bio-prev-school" className="block font-semibold text-slate-600 mb-1">
@@ -460,8 +519,9 @@ export function BiodataFormSection({
                 id="bio-prev-school"
                 value={biodata.previous_school}
                 onChange={(e) => updateField('previous_school', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('previous_school', INPUT_CLASS)}
               />
+              {renderReview('previous_school', biodata.previous_school)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-prev-npsn" className="block font-semibold text-slate-600 mb-1">
@@ -476,8 +536,9 @@ export function BiodataFormSection({
                 onChange={(e) =>
                   updateField('previous_school_npsn', digitsOnly(e.target.value, 8))
                 }
-                className={`${INPUT_CLASS} font-mono`}
+                className={inputClass('previous_school_npsn', `${INPUT_CLASS} font-mono`)}
               />
+              {renderReview('previous_school_npsn', biodata.previous_school_npsn)}
             </div>
           </div>
         </section>
@@ -499,8 +560,9 @@ export function BiodataFormSection({
                 id="bio-kip"
                 value={biodata.kip_number}
                 onChange={(e) => updateField('kip_number', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('kip_number', INPUT_CLASS)}
               />
+              {renderReview('kip_number', biodata.kip_number)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-kis" className="block font-semibold text-slate-600 mb-1">
@@ -510,8 +572,9 @@ export function BiodataFormSection({
                 id="bio-kis"
                 value={biodata.kis_number}
                 onChange={(e) => updateField('kis_number', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('kis_number', INPUT_CLASS)}
               />
+              {renderReview('kis_number', biodata.kis_number)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-kks" className="block font-semibold text-slate-600 mb-1">
@@ -521,8 +584,9 @@ export function BiodataFormSection({
                 id="bio-kks"
                 value={biodata.kks_number}
                 onChange={(e) => updateField('kks_number', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('kks_number', INPUT_CLASS)}
               />
+              {renderReview('kks_number', biodata.kks_number)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-pkh" className="block font-semibold text-slate-600 mb-1">
@@ -532,8 +596,9 @@ export function BiodataFormSection({
                 id="bio-pkh"
                 value={biodata.pkh_number}
                 onChange={(e) => updateField('pkh_number', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('pkh_number', INPUT_CLASS)}
               />
+              {renderReview('pkh_number', biodata.pkh_number)}
             </div>
           </div>
         </section>
@@ -555,8 +620,9 @@ export function BiodataFormSection({
                 id="bio-father-name"
                 value={biodata.father_name}
                 onChange={(e) => updateField('father_name', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('father_name', INPUT_CLASS)}
               />
+              {renderReview('father_name', biodata.father_name)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-father-nik" className="block font-semibold text-slate-600 mb-1">
@@ -569,8 +635,9 @@ export function BiodataFormSection({
                 maxLength={NIK_MAX}
                 onChange={(e) => updateField('father_nik', digitsOnly(e.target.value, NIK_MAX))}
                 placeholder="16 digit angka"
-                className={`${INPUT_CLASS} font-mono`}
+                className={inputClass('father_nik', `${INPUT_CLASS} font-mono`)}
               />
+              {renderReview('father_nik', biodata.father_nik)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-father-job" className="block font-semibold text-slate-600 mb-1">
@@ -580,8 +647,9 @@ export function BiodataFormSection({
                 id="bio-father-job"
                 value={biodata.father_job}
                 onChange={(e) => updateField('father_job', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('father_job', INPUT_CLASS)}
               />
+              {renderReview('father_job', biodata.father_job)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-father-phone" className="block font-semibold text-slate-600 mb-1">
@@ -596,8 +664,9 @@ export function BiodataFormSection({
                   updateField('father_phone', digitsOnly(e.target.value, PHONE_MAX))
                 }
                 placeholder="Maks. 12 digit"
-                className={INPUT_CLASS}
+                className={inputClass('father_phone', INPUT_CLASS)}
               />
+              {renderReview('father_phone', biodata.father_phone)}
             </div>
 
             <div className="min-w-0">
@@ -608,8 +677,9 @@ export function BiodataFormSection({
                 id="bio-mother-name"
                 value={biodata.mother_name}
                 onChange={(e) => updateField('mother_name', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('mother_name', INPUT_CLASS)}
               />
+              {renderReview('mother_name', biodata.mother_name)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-mother-nik" className="block font-semibold text-slate-600 mb-1">
@@ -622,8 +692,9 @@ export function BiodataFormSection({
                 maxLength={NIK_MAX}
                 onChange={(e) => updateField('mother_nik', digitsOnly(e.target.value, NIK_MAX))}
                 placeholder="16 digit angka"
-                className={`${INPUT_CLASS} font-mono`}
+                className={inputClass('mother_nik', `${INPUT_CLASS} font-mono`)}
               />
+              {renderReview('mother_nik', biodata.mother_nik)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-mother-job" className="block font-semibold text-slate-600 mb-1">
@@ -633,8 +704,9 @@ export function BiodataFormSection({
                 id="bio-mother-job"
                 value={biodata.mother_job}
                 onChange={(e) => updateField('mother_job', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('mother_job', INPUT_CLASS)}
               />
+              {renderReview('mother_job', biodata.mother_job)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-mother-phone" className="block font-semibold text-slate-600 mb-1">
@@ -649,8 +721,9 @@ export function BiodataFormSection({
                   updateField('mother_phone', digitsOnly(e.target.value, PHONE_MAX))
                 }
                 placeholder="Maks. 12 digit"
-                className={INPUT_CLASS}
+                className={inputClass('mother_phone', INPUT_CLASS)}
               />
+              {renderReview('mother_phone', biodata.mother_phone)}
             </div>
 
             <div className="min-w-0">
@@ -661,8 +734,9 @@ export function BiodataFormSection({
                 id="bio-guardian-name"
                 value={biodata.guardian_name}
                 onChange={(e) => updateField('guardian_name', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('guardian_name', INPUT_CLASS)}
               />
+              {renderReview('guardian_name', biodata.guardian_name)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-guardian-nik" className="block font-semibold text-slate-600 mb-1">
@@ -675,8 +749,9 @@ export function BiodataFormSection({
                 maxLength={NIK_MAX}
                 onChange={(e) => updateField('guardian_nik', digitsOnly(e.target.value, NIK_MAX))}
                 placeholder="16 digit angka"
-                className={`${INPUT_CLASS} font-mono`}
+                className={inputClass('guardian_nik', `${INPUT_CLASS} font-mono`)}
               />
+              {renderReview('guardian_nik', biodata.guardian_nik)}
             </div>
             <div className="min-w-0">
               <label htmlFor="bio-guardian-job" className="block font-semibold text-slate-600 mb-1">
@@ -686,8 +761,9 @@ export function BiodataFormSection({
                 id="bio-guardian-job"
                 value={biodata.guardian_job}
                 onChange={(e) => updateField('guardian_job', e.target.value)}
-                className={INPUT_CLASS}
+                className={inputClass('guardian_job', INPUT_CLASS)}
               />
+              {renderReview('guardian_job', biodata.guardian_job)}
             </div>
             <div className="min-w-0">
               <label
@@ -705,8 +781,9 @@ export function BiodataFormSection({
                   updateField('guardian_phone', digitsOnly(e.target.value, PHONE_MAX))
                 }
                 placeholder="Maks. 12 digit"
-                className={INPUT_CLASS}
+                className={inputClass('guardian_phone', INPUT_CLASS)}
               />
+              {renderReview('guardian_phone', biodata.guardian_phone)}
             </div>
           </div>
         </section>

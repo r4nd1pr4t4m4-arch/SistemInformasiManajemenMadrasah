@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { decimalNumber } from '@/lib/validation/decimal-schema';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import {
   computeAverageScore,
@@ -15,11 +16,11 @@ import {
 const SaveWeightsSchema = z.object({
   subject_id: z.string().uuid(),
   classroom_id: z.string().uuid(),
-  weight_formatif: z.number().min(0).max(100),
-  weight_sumatif: z.number().min(0).max(100),
-  weight_sts: z.number().min(0).max(100),
-  weight_sas: z.number().min(0).max(100),
-  weight_praktik: z.number().min(0).max(100).default(0),
+  weight_formatif: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Bobot Formatif' }),
+  weight_sumatif: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Bobot Sumatif' }),
+  weight_sts: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Bobot STS' }),
+  weight_sas: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Bobot SAS' }),
+  weight_praktik: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Bobot Praktik' }).default(0),
 });
 
 function hasEditPermission(

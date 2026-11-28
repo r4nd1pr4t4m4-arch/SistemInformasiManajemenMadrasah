@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
+import { parseDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 import {
   AlertCircle,
   BookOpen,
@@ -1935,17 +1936,14 @@ export default function PembelajaranLmsPage() {
                 >
                   Nilai (0–100) <span className="text-rose-600">*</span>
                 </label>
-                <input
+                <DecimalInput
                   id="lms-grade-score"
-                  type="text"
-                  inputMode="decimal"
+                  maxDecimals={2}
                   required
                   disabled={busy}
                   value={gradeModal.score}
-                  onChange={(e) =>
-                    setGradeModal((prev) =>
-                      prev ? { ...prev, score: normalizeDecimalInput(e.target.value) } : null
-                    )
+                  onValueChange={(next) =>
+                    setGradeModal((prev) => (prev ? { ...prev, score: next } : null))
                   }
                   className={`${INPUT_CLASS} font-mono`}
                 />

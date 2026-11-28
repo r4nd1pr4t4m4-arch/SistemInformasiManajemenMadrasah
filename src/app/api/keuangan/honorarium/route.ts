@@ -10,6 +10,7 @@ import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { mapDutyCodeToRole } from '@/lib/auth/rbac';
 import { sanitizeApiError } from '@/lib/security/api-error';
 import { recordAuditLog } from '@/lib/security/audit-log';
+import { decimalNumber } from '@/lib/validation/decimal-schema';
 
 const UpdateRateSchema = z.object({
   action: z.literal('UPDATE_RATE'),
@@ -22,7 +23,7 @@ const UpdateRateSchema = z.object({
 const UpdateTeacherDistanceSchema = z.object({
   action: z.literal('UPDATE_TEACHER_DISTANCE'),
   teacher_id: z.string().uuid(),
-  home_distance_km: z.number().min(0).max(500),
+  home_distance_km: decimalNumber({ min: 0, max: 500, maxDecimals: 2, label: 'Jarak rumah' }),
 });
 
 const UpdateDailyHoursSchema = z.object({
@@ -70,7 +71,7 @@ const UpdateStatusSchema = z.object({
 const UpdateHonorariumSchema = z.object({
   action: z.literal('UPDATE_HONORARIUM'),
   honorarium_id: z.string().uuid(),
-  total_jtm: z.number().min(0),
+  total_jtm: decimalNumber({ min: 0, maxDecimals: 2, label: 'Total JTM' }),
   rate_per_jtm: z.number().min(0),
   additional_duty_allowance: z.number().min(0),
   transport_allowance: z.number().min(0),

@@ -144,6 +144,7 @@ export async function notifyUserDirect(params: {
   body: string;
   url: string;
   dedupeKey?: string;
+  dedupeWindowMinutes?: number;
   createdBy?: string | null;
 }) {
   await safeDispatch(async () => {
@@ -156,6 +157,7 @@ export async function notifyUserDirect(params: {
       sourceType: 'SYSTEM_EVENT',
       createdBy: params.createdBy ?? null,
       dedupeKey: params.dedupeKey ?? null,
+      dedupeWindowMinutes: params.dedupeWindowMinutes,
       target: { userIds: [params.userId] },
     });
   });

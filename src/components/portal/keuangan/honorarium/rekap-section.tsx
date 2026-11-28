@@ -14,7 +14,8 @@ import {
   X,
 } from 'lucide-react';
 import { formatRupiah } from '@/lib/domain/honorarium';
-import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
+import { parseDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 import type { HonorariumSlipData } from '@/lib/cards/honorarium-slip-png';
 import {
   MONTH_OPTIONS,
@@ -443,11 +444,10 @@ export function RekapSection({
                   key={tab.key}
                   type="button"
                   onClick={() => setRekapStatusFilter(tab.key)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${
-                    rekapStatusFilter === tab.key
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${rekapStatusFilter === tab.key
                       ? 'bg-slate-900 text-white'
                       : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -546,9 +546,8 @@ export function RekapSection({
                 return (
                   <div
                     key={h.id}
-                    className={`modular-card rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs transition ${
-                      isSelected ? 'ring-1 ring-emerald-400 bg-emerald-50/30' : ''
-                    }`}
+                    className={`modular-card rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs transition ${isSelected ? 'ring-1 ring-emerald-400 bg-emerald-50/30' : ''
+                      }`}
                   >
                     <div className="flex items-start gap-2.5 min-w-0">
                       {canManage && (
@@ -720,18 +719,14 @@ export function RekapSection({
                   >
                     Total JTM
                   </label>
-                  <input
+                  <DecimalInput
                     id="edit-honor-total-jtm"
-                    type="text"
-                    inputMode="decimal"
+                    maxDecimals={2}
                     required
                     disabled={submittingAction === 'UPDATE_HONORARIUM'}
                     value={editForm.total_jtm}
-                    onChange={(e) =>
-                      setEditForm((prev) => ({
-                        ...prev,
-                        total_jtm: normalizeDecimalInput(e.target.value),
-                      }))
+                    onValueChange={(next) =>
+                      setEditForm((prev) => ({ ...prev, total_jtm: next }))
                     }
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 disabled:bg-slate-100"
                   />

@@ -33,6 +33,11 @@ export const metadata: Metadata = {
     title: "SiM-M",
   },
   icons: {
+    icon: [
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
+    ],
+    shortcut: "/icons/icon.svg",
     apple: "/icons/apple-touch-icon.png",
   },
 };

@@ -33,6 +33,12 @@ import {
   DigitalStudentCardSection,
   DokumenSection,
 } from './biodata/dokumen-and-card-section';
+import { ReviewSummaryBanner } from '@/components/sdm/biodata-reviews/review-summary-banner';
+import {
+  UnsentReviewLeaveModal,
+  useUnsentReviewSession,
+} from '@/components/sdm/biodata-reviews/unsent-review-guard';
+import type { BiodataReviewItem } from '@/components/sdm/biodata-reviews/types';
 
 export type { BiodataDokumenSection };
 
@@ -49,6 +55,8 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
   const [deleteTargetDoc, setDeleteTargetDoc] = useState<StudentDocument | null>(null);
   const [isStaff, setIsStaff] = useState(false);
   const [isOfficialEditor, setIsOfficialEditor] = useState(false);
+  const [canReview, setCanReview] = useState(false);
+  const [reviews, setReviews] = useState<BiodataReviewItem[]>([]);
   const [studentsList, setStudentsList] = useState<StudentRef[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [studentId, setStudentId] = useState<string | null>(null);
@@ -111,6 +119,8 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
     (data: Awaited<ReturnType<typeof fetchBiodataPayload>>) => {
       setIsStaff(Boolean(data.isStaff));
       setIsOfficialEditor(Boolean(data.isOfficialEditor));
+      setCanReview(Boolean(data.canReview));
+      setReviews(Array.isArray(data.reviews) ? data.reviews : []);
       setStudentsList(data.studentsList || []);
       const s = data.student;
       if (s) {
@@ -174,12 +184,27 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
     [applyBiodataPayload, fetchBiodataPayload, loadError, showToast]
   );
 
+  const unsentSession = useUnsentReviewSession({
+    entityType: 'SISWA',
+    entityId: studentId,
+    entityLabel: biodata.full_name || null,
+    canReview,
+    allowedBasePath: '/portal/siswa/biodata-dokumen',
+    reviews,
+    onAfterCancel: () => loadData(studentId || undefined, 'refresh'),
+    onNotifyToast: showToast,
+  });
+
   useEffect(() => {
     let cancelled = false;
     const seq = ++requestSeqRef.current;
+    const initialStudentId =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('studentId') || undefined
+        : undefined;
     (async () => {
       try {
-        const data = await fetchBiodataPayload();
+        const data = await fetchBiodataPayload(initialStudentId);
         if (!cancelled && seq === requestSeqRef.current) {
           applyBiodataPayload(data);
         }
@@ -454,8 +479,17 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
                   value={selectedStudentId}
                   onChange={(e) => {
                     const nextId = e.target.value;
-                    setSelectedStudentId(nextId);
-                    if (nextId) void loadData(nextId, 'refresh');
+                    if (nextId === selectedStudentId) return;
+                    unsentSession.guardAction(() => {
+                      setSelectedStudentId(nextId);
+                      if (typeof window !== 'undefined') {
+                        const url = new URL(window.location.href);
+                        if (nextId) url.searchParams.set('studentId', nextId);
+                        else url.searchParams.delete('studentId');
+                        window.history.replaceState({}, '', url.toString());
+                      }
+                      if (nextId) void loadData(nextId, 'refresh');
+                    });
                   }}
                   className="w-full sm:w-64 min-w-0 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                 >
@@ -489,7 +523,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
           className="grid grid-cols-2 sm:flex sm:items-center gap-2 border-t border-slate-200/70 pt-3.5"
         >
           <Link
-            href="/portal/siswa/biodata-dokumen/biodata"
+            href={
+              isStaff && selectedStudentId
+                ? `/portal/siswa/biodata-dokumen/biodata?studentId=${encodeURIComponent(selectedStudentId)}`
+                : '/portal/siswa/biodata-dokumen/biodata'
+            }
             role="tab"
             aria-selected={tab === 'biodata'}
             className={`inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
@@ -502,7 +540,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
             <span className="truncate">Biodata Lengkap</span>
           </Link>
           <Link
-            href="/portal/siswa/biodata-dokumen/dokumen"
+            href={
+              isStaff && selectedStudentId
+                ? `/portal/siswa/biodata-dokumen/dokumen?studentId=${encodeURIComponent(selectedStudentId)}`
+                : '/portal/siswa/biodata-dokumen/dokumen'
+            }
             role="tab"
             aria-selected={tab === 'dokumen'}
             className={`inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
@@ -592,6 +634,26 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
         </div>
       </div>
 
+      <ReviewSummaryBanner
+        entityType="SISWA"
+        entityId={studentId}
+        activeSection={tab}
+        otherSectionHref={
+          tab === 'biodata'
+            ? isStaff && selectedStudentId
+              ? `/portal/siswa/biodata-dokumen/dokumen?studentId=${encodeURIComponent(selectedStudentId)}`
+              : '/portal/siswa/biodata-dokumen/dokumen'
+            : isStaff && selectedStudentId
+              ? `/portal/siswa/biodata-dokumen/biodata?studentId=${encodeURIComponent(selectedStudentId)}`
+              : '/portal/siswa/biodata-dokumen/biodata'
+        }
+        reviews={reviews}
+        canReview={canReview}
+        unsentCount={unsentSession.unsentCount}
+        onNotified={unsentSession.clearUnsent}
+        onNotifyToast={showToast}
+      />
+
       {tab === 'biodata' ? (
         <div className="space-y-6">
           <BiodataFormSection
@@ -608,6 +670,11 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
             isCustomSiblingsCount={isCustomSiblingsCount}
             setIsCustomSiblingsCount={setIsCustomSiblingsCount}
             onSubmit={handleSaveBiodata}
+            reviews={reviews}
+            canReview={canReview}
+            onRefreshReviews={() => loadData(studentId || undefined, 'refresh')}
+            onReviewSaved={unsentSession.markReviewSaved}
+            onNotifyToast={showToast}
           />
           {studentRecord && <DigitalStudentCardSection studentRecord={studentRecord} />}
         </div>
@@ -627,8 +694,15 @@ export function BiodataDokumenWorkspace({ section }: { section: BiodataDokumenSe
           deletingDocId={deletingDocId}
           onUploadDocument={handleUploadDocument}
           onDeleteDocument={(doc) => setDeleteTargetDoc(doc)}
+          reviews={reviews}
+          canReview={canReview}
+          onRefreshReviews={() => loadData(studentId || undefined, 'refresh')}
+          onReviewSaved={unsentSession.markReviewSaved}
+          onNotifyToast={showToast}
         />
       )}
+
+      <UnsentReviewLeaveModal {...unsentSession.modalProps} />
 
       {/* Modal Konfirmasi Hapus Dokumen */}
       {deleteTargetDoc && (

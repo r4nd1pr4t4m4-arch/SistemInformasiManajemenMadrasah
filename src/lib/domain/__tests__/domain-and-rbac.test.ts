@@ -33,9 +33,17 @@ import {
 } from '../savings-history-filter';
 import {
   formatScoreDecimal,
+  hasMaxDecimals,
   normalizeDecimalInput,
   parseDecimalInput,
+  roundDecimal,
 } from '../../validation/decimal';
+import { decimalNumber } from '../../validation/decimal-schema';
+import {
+  getReviewTargetLabel,
+  getReviewTargetMeta,
+  isValidReviewTarget,
+} from '../../sdm/biodata-review-registry';
 
 describe('Domain: Tabungan Fee & Pembulatan (tabungan-fee.ts)', () => {
   it('membulatkan fee ratusan < 330 ke ribuan bawah (000)', () => {
@@ -416,5 +424,70 @@ describe('Domain: Pembulatan Honorarium JTM Desimal & Utilitas Desimal (decimal.
     assert.equal(formatScoreDecimal(85), '85');
     assert.equal(formatScoreDecimal(85.756), '85.76');
     assert.equal(formatScoreDecimal(null), '-');
+  });
+
+  it('membulatkan angka tepi IEEE-754 (1.005) secara akurat dengan roundDecimal dan memvalidasi batas digit desimal', () => {
+    assert.equal(roundDecimal(1.005, 2), 1.01);
+    assert.equal(roundDecimal(-1.005, 2), -1.01);
+    assert.equal(roundDecimal(85.125, 2), 85.13);
+    assert.equal(roundDecimal(-0.0001, 2), 0);
+
+    assert.equal(hasMaxDecimals(85.75, 2), true);
+    assert.equal(hasMaxDecimals(85.755, 2), false);
+    assert.equal(normalizeDecimalInput('85,759', { maxDecimals: 2 }), '85.75');
+
+    const scoreSchema = decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Nilai' });
+    assert.equal(scoreSchema.safeParse(85.75).success, true);
+    assert.equal(scoreSchema.safeParse(85.755).success, false);
+    assert.equal(scoreSchema.safeParse(-1).success, false);
+    assert.equal(scoreSchema.safeParse(101).success, false);
+  });
+});
+
+describe('SDM Biodata & Dokumen Reviews: Registry & RBAC', () => {
+  it('membatasi hak akses BIODATA_REVIEW_MANAGE hanya untuk Admin/TU', () => {
+    assert.equal(hasRolePermission(['SUPERADMIN'], PERMISSIONS.BIODATA_REVIEW_MANAGE), true);
+    assert.equal(hasRolePermission(['OPERATOR'], PERMISSIONS.BIODATA_REVIEW_MANAGE), true);
+    assert.equal(hasRolePermission(['KEPALA_TU'], PERMISSIONS.BIODATA_REVIEW_MANAGE), true);
+    assert.equal(hasRolePermission(['STAF_TU'], PERMISSIONS.BIODATA_REVIEW_MANAGE), true);
+    assert.equal(hasRolePermission(['WALI_KELAS'], PERMISSIONS.BIODATA_REVIEW_MANAGE), false);
+    assert.equal(hasRolePermission(['GURU'], PERMISSIONS.BIODATA_REVIEW_MANAGE), false);
+    assert.equal(hasRolePermission(['SISWA'], PERMISSIONS.BIODATA_REVIEW_MANAGE), false);
+    assert.equal(hasRolePermission(['ORANG_TUA'], PERMISSIONS.BIODATA_REVIEW_MANAGE), false);
+  });
+
+  it('menerima target biodata & dokumen valid dan menolak field terkunci admin-only', () => {
+    assert.equal(isValidReviewTarget('SISWA', 'BIODATA_FIELD', 'nik'), true);
+    assert.equal(isValidReviewTarget('SISWA', 'BIODATA_FIELD', 'address_group'), true);
+    assert.equal(isValidReviewTarget('SISWA', 'DOCUMENT_TYPE', 'KK'), true);
+    assert.equal(isValidReviewTarget('SISWA', 'BIODATA_FIELD', 'nis'), false);
+    assert.equal(isValidReviewTarget('SISWA', 'BIODATA_FIELD', 'nisn'), false);
+
+    assert.equal(isValidReviewTarget('GTK', 'BIODATA_FIELD', 'education_level'), true);
+    assert.equal(isValidReviewTarget('GTK', 'DOCUMENT_TYPE', 'SK_PENGANGKATAN'), true);
+    assert.equal(isValidReviewTarget('GTK', 'BIODATA_FIELD', 'nip'), false);
+    assert.equal(isValidReviewTarget('GTK', 'BIODATA_FIELD', 'nuptk'), false);
+
+    assert.equal(isValidReviewTarget('ORANG_TUA', 'BIODATA_FIELD', 'occupation'), true);
+    assert.equal(isValidReviewTarget('ORANG_TUA', 'DOCUMENT_TYPE', 'SURAT_KUASA_WALI'), true);
+    assert.equal(isValidReviewTarget('ORANG_TUA', 'BIODATA_FIELD', 'relationship'), false);
+
+    assert.equal(getReviewTargetLabel('SISWA', 'DOCUMENT_TYPE', 'AKTA_KELAHIRAN'), 'Akta Kelahiran');
+    assert.equal(getReviewTargetMeta('GTK', 'BIODATA_FIELD', 'full_name')?.editHint, 'ACCOUNT_PROFILE');
+  });
+
+  it('membatasi Monitoring Instalasi PWA hanya untuk SUPERADMIN dan OPERATOR', () => {
+    assert.equal(hasRolePermission(['SUPERADMIN'], PERMISSIONS.PWA_MONITORING_VIEW), true);
+    assert.equal(hasRolePermission(['OPERATOR'], PERMISSIONS.PWA_MONITORING_VIEW), true);
+    assert.equal(hasRolePermission(['KEPALA_TU'], PERMISSIONS.PWA_MONITORING_VIEW), false);
+    assert.equal(hasRolePermission(['STAF_TU'], PERMISSIONS.PWA_MONITORING_VIEW), false);
+    assert.equal(hasRolePermission(['GURU'], PERMISSIONS.PWA_MONITORING_VIEW), false);
+    assert.equal(hasRolePermission(['SISWA'], PERMISSIONS.PWA_MONITORING_VIEW), false);
+
+    assert.equal(canAccessPortalPath('/portal/akun/monitoring-pwa', ['SUPERADMIN']), true);
+    assert.equal(canAccessPortalPath('/portal/akun/monitoring-pwa', ['OPERATOR']), true);
+    assert.equal(canAccessPortalPath('/portal/akun/monitoring-pwa', ['KEPALA_TU']), false);
+    assert.equal(canAccessPortalPath('/portal/akun/monitoring-pwa', ['GURU']), false);
+    assert.equal(canAccessPortalPath('/portal/akun/monitoring-pwa', ['SISWA']), false);
   });
 });

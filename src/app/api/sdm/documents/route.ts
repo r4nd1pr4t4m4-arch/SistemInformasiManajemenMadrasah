@@ -11,6 +11,7 @@ import {
   syncStudentDocToGuardians,
 } from '@/lib/sdm/sync';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { markDocumentReviewAsRevised } from '@/lib/sdm/biodata-reviews';
 
 async function resolveOwnerProfileIdOfSdmEntity(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
@@ -308,6 +309,10 @@ export async function POST(request: NextRequest) {
 
       if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
       savedDoc = data;
+    }
+
+    if (entityType === 'GTK' || entityType === 'ORANG_TUA') {
+      await markDocumentReviewAsRevised(supabase, entityType, entityId, documentType);
     }
 
     if (entityType === 'ORANG_TUA') {

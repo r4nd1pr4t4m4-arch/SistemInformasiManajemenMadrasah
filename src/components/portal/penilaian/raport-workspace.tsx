@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
+import { parseDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 import {
   AlertTriangle,
   Award,
@@ -247,8 +248,8 @@ export function RaportWorkspace({ subjectId, classrooms }: RaportWorkspaceProps)
     const classAvg =
       complete.length > 0
         ? Math.round(
-            (complete.reduce((acc, r) => acc + (r.raportScore ?? 0), 0) / complete.length) * 100
-          ) / 100
+          (complete.reduce((acc, r) => acc + (r.raportScore ?? 0), 0) / complete.length) * 100
+        ) / 100
         : null;
     return { total: computedRows.length, passed, failed, incomplete, classAvg };
   }, [computedRows, kkm.minScore]);
@@ -314,8 +315,8 @@ export function RaportWorkspace({ subjectId, classrooms }: RaportWorkspaceProps)
         r.raportScore === null
           ? 'Belum Lengkap'
           : r.raportScore >= kkm.minScore
-          ? 'Tuntas'
-          : 'Belum Tuntas'
+            ? 'Tuntas'
+            : 'Belum Tuntas'
       );
       return base;
     });
@@ -434,11 +435,10 @@ export function RaportWorkspace({ subjectId, classrooms }: RaportWorkspaceProps)
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                weightError
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${weightError
                   ? 'bg-rose-100 text-rose-800'
                   : 'bg-emerald-100 text-emerald-800'
-              }`}
+                }`}
             >
               {weightError ? (
                 <AlertTriangle className="w-3.5 h-3.5" />
@@ -483,22 +483,17 @@ export function RaportWorkspace({ subjectId, classrooms }: RaportWorkspaceProps)
                   {item.label}
                 </label>
                 <div className="relative">
-                  <input
-                    type="text"
-                    inputMode="decimal"
+                  <DecimalInput
+                    maxDecimals={2}
                     disabled={!canEdit}
                     value={rawStr}
-                    onChange={(e) =>
-                      setWeightsInput((prev) => ({
-                        ...prev,
-                        [item.key]: normalizeDecimalInput(e.target.value),
-                      }))
+                    onValueChange={(next) =>
+                      setWeightsInput((prev) => ({ ...prev, [item.key]: next }))
                     }
-                    className={`w-full pr-7 pl-3 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${
-                      isInvalidCell
+                    className={`w-full pr-7 pl-3 py-2 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${isInvalidCell
                         ? 'border-rose-400 bg-rose-50 text-rose-900 focus:ring-rose-500'
                         : 'border-slate-200 bg-white text-slate-800 focus:ring-emerald-500'
-                    } disabled:bg-slate-100`}
+                      } disabled:bg-slate-100`}
                   />
                   <span className="absolute right-2.5 top-2 text-xs text-slate-400 font-semibold">
                     %

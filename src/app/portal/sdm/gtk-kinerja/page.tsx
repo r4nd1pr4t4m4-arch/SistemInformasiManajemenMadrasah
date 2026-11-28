@@ -15,7 +15,8 @@ import {
   X,
 } from 'lucide-react';
 import { buildVerificationUrl } from '@/lib/verification/document-verify';
-import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
+import { parseDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 
 interface TeacherOpt {
   id: string;
@@ -588,13 +589,10 @@ export default function SdmGtkModernPage() {
                   placeholder="Judul PKG / Diklat *"
                   className="lg:col-span-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs"
                 />
-                <input
-                  type="text"
-                  inputMode="decimal"
+                <DecimalInput
+                  maxDecimals={2}
                   value={evalForm.score}
-                  onChange={(e) =>
-                    setEvalForm({ ...evalForm, score: normalizeDecimalInput(e.target.value) })
-                  }
+                  onValueChange={(next) => setEvalForm({ ...evalForm, score: next })}
                   placeholder="Nilai (0-100, mis. 88.5)"
                   className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm sm:text-xs font-mono"
                 />

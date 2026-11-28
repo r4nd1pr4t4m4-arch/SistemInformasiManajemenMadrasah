@@ -12,6 +12,12 @@ import {
 } from '@/lib/sdm/sync';
 import { nikSchema, kkSchema, phoneSchema } from '@/lib/validation/identity';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import {
+  fetchActiveBiodataReviews,
+  markChangedFieldsAsRevised,
+  markDocumentReviewAsRevised,
+  type BiodataReviewRecord,
+} from '@/lib/sdm/biodata-reviews';
 
 const STAFF_ROLES: AppRole[] = [
   'SUPERADMIN',
@@ -224,15 +230,21 @@ export async function GET(request: NextRequest) {
   const scopedStudentIds = await getAllowedStudentIdsForScopedRole(supabase, session);
 
   const student = await resolveTargetStudent(supabase, session, requestedStudentId);
+  const canReview = session.roles.some((r) => PERMISSIONS.BIODATA_REVIEW_MANAGE.includes(r));
 
   let documents: unknown[] = [];
+  let reviews: BiodataReviewRecord[] = [];
   if (student) {
-    const { data: docs } = await supabase
-      .from('student_documents')
-      .select('*')
-      .eq('student_id', student.id)
-      .order('created_at', { ascending: false });
+    const [{ data: docs }, activeReviews] = await Promise.all([
+      supabase
+        .from('student_documents')
+        .select('*')
+        .eq('student_id', student.id)
+        .order('created_at', { ascending: false }),
+      fetchActiveBiodataReviews(supabase, 'SISWA', student.id),
+    ]);
     documents = docs || [];
+    reviews = activeReviews;
   }
 
   let studentsList: unknown[] = [];
@@ -254,6 +266,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     student,
     documents,
+    reviews,
+    canReview,
     isStaff: isStaff || Boolean(scopedStudentIds && scopedStudentIds.length > 0),
     isOfficialEditor: isStaff,
     studentsList,
@@ -323,6 +337,13 @@ export async function PATCH(request: NextRequest) {
               phone: data.phone,
             }),
         syncStudentToGuardians(supabase, data.id, fields),
+        markChangedFieldsAsRevised(
+          supabase,
+          'SISWA',
+          data.id,
+          existing as Record<string, unknown>,
+          data as Record<string, unknown>
+        ),
       ]);
 
       return NextResponse.json({ student: data });
@@ -416,18 +437,21 @@ export async function POST(request: NextRequest) {
           .select('*')
           .single();
         if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
-        await syncStudentDocToGuardians(supabase, {
-          studentId: student.id,
-          documentType: parsed.data.document_type,
-          documentTitle: parsed.data.document_title || null,
-          documentNumber: parsed.data.document_number || null,
-          fileName: parsed.data.file_name,
-          fileUrl: parsed.data.file_url,
-          objectKey: parsed.data.object_key || null,
-          mimeType: parsed.data.mime_type || null,
-          fileSize: parsed.data.file_size || null,
-          uploadedBy: session.userId,
-        });
+        await Promise.all([
+          syncStudentDocToGuardians(supabase, {
+            studentId: student.id,
+            documentType: parsed.data.document_type,
+            documentTitle: parsed.data.document_title || null,
+            documentNumber: parsed.data.document_number || null,
+            fileName: parsed.data.file_name,
+            fileUrl: parsed.data.file_url,
+            objectKey: parsed.data.object_key || null,
+            mimeType: parsed.data.mime_type || null,
+            fileSize: parsed.data.file_size || null,
+            uploadedBy: session.userId,
+          }),
+          markDocumentReviewAsRevised(supabase, 'SISWA', student.id, parsed.data.document_type),
+        ]);
         return NextResponse.json({ document: data });
       }
     }
@@ -438,18 +462,21 @@ export async function POST(request: NextRequest) {
       .select('*')
       .single();
     if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
-    await syncStudentDocToGuardians(supabase, {
-      studentId: student.id,
-      documentType: parsed.data.document_type,
-      documentTitle: parsed.data.document_title || null,
-      documentNumber: parsed.data.document_number || null,
-      fileName: parsed.data.file_name,
-      fileUrl: parsed.data.file_url,
-      objectKey: parsed.data.object_key || null,
-      mimeType: parsed.data.mime_type || null,
-      fileSize: parsed.data.file_size || null,
-      uploadedBy: session.userId,
-    });
+    await Promise.all([
+      syncStudentDocToGuardians(supabase, {
+        studentId: student.id,
+        documentType: parsed.data.document_type,
+        documentTitle: parsed.data.document_title || null,
+        documentNumber: parsed.data.document_number || null,
+        fileName: parsed.data.file_name,
+        fileUrl: parsed.data.file_url,
+        objectKey: parsed.data.object_key || null,
+        mimeType: parsed.data.mime_type || null,
+        fileSize: parsed.data.file_size || null,
+        uploadedBy: session.userId,
+      }),
+      markDocumentReviewAsRevised(supabase, 'SISWA', student.id, parsed.data.document_type),
+    ]);
     return NextResponse.json({ document: data }, { status: 201 });
   } catch {
     return NextResponse.json({ error: 'Gagal menyimpan dokumen siswa.' }, { status: 500 });

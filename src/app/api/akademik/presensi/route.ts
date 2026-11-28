@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { decimalNumber } from '@/lib/validation/decimal-schema';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { verifyGeofence } from '@/lib/domain/geofence';
 import { calculateLateJtm, getWibTodayDateString } from '@/lib/domain/jtm-late-penalty';
@@ -54,7 +55,7 @@ const ConfirmScheduleSessionSchema = z.object({
   exam_supervisor_id: z.string().uuid().optional().nullable(),
   picket_attendance_id: z.string().uuid().optional().nullable(),
   committee_attendance_id: z.string().uuid().optional().nullable(),
-  approved_jtm: z.number().min(0).max(24).optional().nullable(),
+  approved_jtm: decimalNumber({ min: 0, max: 24, maxDecimals: 2, label: 'JTM disetujui' }).optional().nullable(),
   diff_recipient_teacher_id: z.string().uuid().optional().nullable(),
   diff_reason: z.string().optional().nullable(),
 });
@@ -62,10 +63,10 @@ const ConfirmScheduleSessionSchema = z.object({
 const ConfirmAttendanceSchema = z.object({
   action: z.literal('CONFIRM_ATTENDANCE'),
   attendance_id: z.string().uuid(),
-  picket_jtm: z.number().min(0).max(24).optional(),
+  picket_jtm: decimalNumber({ min: 0, max: 24, maxDecimals: 2, label: 'JTM piket' }).optional(),
   picket_attendance_id: z.string().uuid().optional().nullable(),
   committee_attendance_id: z.string().uuid().optional().nullable(),
-  approved_jtm: z.number().min(0).max(24).optional().nullable(),
+  approved_jtm: decimalNumber({ min: 0, max: 24, maxDecimals: 2, label: 'JTM disetujui' }).optional().nullable(),
   diff_recipient_teacher_id: z.string().uuid().optional().nullable(),
   diff_reason: z.string().optional().nullable(),
 });
@@ -106,7 +107,7 @@ const DelegationSchema = z.object({
   original_teacher_id: z.string().uuid(),
   substitute_teacher_id: z.string().uuid(),
   schedule_id: z.string().uuid().optional().nullable(),
-  jtm_transferred: z.number().min(0.01).max(12).default(2),
+  jtm_transferred: decimalNumber({ min: 0.01, max: 12, maxDecimals: 2, label: 'JTM delegasi' }).default(2),
   reason: z.string().optional().nullable(),
 });
 

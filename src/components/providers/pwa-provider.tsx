@@ -18,6 +18,11 @@ import {
   OFFLINE_QUEUE_EVENT,
 } from '@/lib/pwa/offline-sync';
 import { PUSH_RECEIVED_EVENT } from '@/lib/pwa/push-client';
+import {
+  markPendingPwaInstall,
+  readPendingPwaInstall,
+  reportPwaInstallation,
+} from '@/lib/pwa/install-tracker';
 
 export type PwaPlatform =
   | 'android-chrome'
@@ -194,6 +199,22 @@ function PwaRouteTracker() {
     };
   }, [pathname]);
 
+  // 5. Pelacakan Instalasi PWA (mode standalone / ?source=pwa / deferred linking pasca-login)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!pathname.startsWith('/portal')) return;
+
+    const standalone = detectStandalone();
+    const hasPending = Boolean(readPendingPwaInstall());
+    if (!standalone && !hasPending) return;
+
+    void reportPwaInstallation({
+      platform: detectPlatform(),
+      installSource: standalone ? 'STANDALONE_LAUNCH' : 'DEFERRED_LINK',
+      displayMode: standalone ? 'standalone' : 'browser',
+    });
+  }, [pathname]);
+
   return null;
 }
 
@@ -257,6 +278,15 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     const handleAppInstalled = () => {
       setDeferredPrompt(null);
       setIsStandalone(detectStandalone());
+      markPendingPwaInstall('APPINSTALLED_EVENT');
+      if (window.location.pathname.startsWith('/portal')) {
+        void reportPwaInstallation({
+          platform: detectPlatform(),
+          installSource: 'APPINSTALLED_EVENT',
+          displayMode: detectStandalone() ? 'standalone' : 'browser',
+          force: true,
+        });
+      }
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);

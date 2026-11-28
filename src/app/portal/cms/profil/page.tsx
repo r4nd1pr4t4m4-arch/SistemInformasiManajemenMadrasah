@@ -22,7 +22,8 @@ import { notifyInstitutionSettingsUpdated } from '@/lib/hooks/use-institution-se
 import { InstitutionLogo } from '@/components/ui/institution-logo';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
-import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
+import { parseDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 
 interface ToastState {
   type: 'success' | 'error';
@@ -391,11 +392,11 @@ export default function CmsProfilPage() {
                 </div>
                 <div className="min-w-0 space-y-1">
                   <p className="text-xs sm:text-sm font-bold text-slate-900">
-                    Logo Madrasah / Sekolah &amp; Favicon
+                    Logo Madrasah / Sekolah
                   </p>
                   <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Logo ini otomatis disinkronkan ke Navbar, Footer, Sidebar Portal, Kartu Digital,
-                    dan Favicon browser. Format PNG/JPG/WEBP/SVG (maks. 2 MB).
+                    Logo ini otomatis disinkronkan ke Navbar, Footer, Sidebar Portal, dan Kartu
+                    Digital. Format PNG/JPG/WEBP/SVG (maks. 2 MB).
                   </p>
                 </div>
               </div>
@@ -598,14 +599,11 @@ export default function CmsProfilPage() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Latitude Sekolah
                 </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
+                <DecimalInput
+                  allowNegative
+                  maxDecimals={6}
                   value={geoLatInput}
-                  onChange={(e) => {
-                    const normalized = normalizeDecimalInput(e.target.value, {
-                      allowNegative: true,
-                    });
+                  onValueChange={(normalized) => {
                     setGeoLatInput(normalized);
                     const parsed = parseDecimalInput(normalized, { allowNegative: true });
                     setSettings({
@@ -621,14 +619,11 @@ export default function CmsProfilPage() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Longitude Sekolah
                 </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
+                <DecimalInput
+                  allowNegative
+                  maxDecimals={6}
                   value={geoLngInput}
-                  onChange={(e) => {
-                    const normalized = normalizeDecimalInput(e.target.value, {
-                      allowNegative: true,
-                    });
+                  onValueChange={(normalized) => {
                     setGeoLngInput(normalized);
                     const parsed = parseDecimalInput(normalized, { allowNegative: true });
                     setSettings({

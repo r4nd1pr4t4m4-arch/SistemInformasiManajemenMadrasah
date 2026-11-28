@@ -653,6 +653,13 @@ export const PERMISSIONS = {
     'KEPALA_TU',
     'STAF_TU',
   ] as AppRole[],
+  BIODATA_REVIEW_MANAGE: [
+    'SUPERADMIN',
+    'OPERATOR',
+    'KEPALA_TU',
+    'STAF_TU',
+  ] as AppRole[],
+  PWA_MONITORING_VIEW: ['SUPERADMIN', 'OPERATOR'] as AppRole[],
 
   // Manajemen Pengguna
   USER_MANAGEMENT_VIEW: [
@@ -946,6 +953,7 @@ const EXACT_ROUTE_RULES: Record<string, AppRole[]> = {
   '/portal/keuangan/tabungan/aturan-fee': PERMISSIONS.TABUNGAN_MANAGE,
   '/portal/layanan/persuratan/template': PERMISSIONS.PERSURATAN_MANAGE,
   '/portal/layanan/perpustakaan/anggota': PERMISSIONS.PERPUSTAKAAN_VIEW,
+  '/portal/akun/monitoring-pwa': PERMISSIONS.PWA_MONITORING_VIEW,
   '/portal/cms/ppdb': PERMISSIONS.CMS_PPDB_VIEW,
   '/portal/cms/manajemen-ppdb': PERMISSIONS.CMS_PPDB_VIEW,
   '/portal/cms/sarana-prasarana': PERMISSIONS.CMS_SARPRAS_VIEW,

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { decimalNumber } from '@/lib/validation/decimal-schema';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import {
   calculateWithdrawalFee,
@@ -52,7 +53,7 @@ const UpdateFeeTiersSchema = z.object({
       label: z.string().optional().nullable(),
       min_amount: z.number().min(0),
       max_amount: z.number().min(0).nullable().optional(),
-      fee_percentage: z.number().min(0).max(100),
+      fee_percentage: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Persentase fee' }),
       is_active: z.boolean().default(true),
     })
   ),
@@ -271,10 +272,10 @@ export async function POST(request: Request) {
         parsed.data.owner_type === 'SISWA'
           ? 'TAB-S'
           : parsed.data.owner_type === 'GURU'
-          ? 'TAB-G'
-          : parsed.data.owner_type === 'TU'
-          ? 'TAB-T'
-          : 'TAB-U';
+            ? 'TAB-G'
+            : parsed.data.owner_type === 'TU'
+              ? 'TAB-T'
+              : 'TAB-U';
       const accountNumber = `${prefix}-${Date.now().toString().slice(-6)}`;
 
       const { data: account, error } = await supabase

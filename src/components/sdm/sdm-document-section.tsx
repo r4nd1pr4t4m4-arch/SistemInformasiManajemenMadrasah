@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   CheckCircle2,
   ExternalLink,
@@ -13,6 +13,13 @@ import {
 } from 'lucide-react';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
+import { FieldReviewControl } from '@/components/sdm/biodata-reviews/field-review-control';
+import {
+  buildReviewMap,
+  getReviewBorderClass,
+  reviewMapKey,
+  type BiodataReviewItem,
+} from '@/components/sdm/biodata-reviews/types';
 
 export interface SdmDocumentItem {
   id: string;
@@ -55,6 +62,11 @@ export function SdmDocumentSection({
   onRefresh,
   supportsVerification = false,
   allowSelfManage = false,
+  readOnly = false,
+  reviews = [],
+  canReview = false,
+  onReviewSaved,
+  onNotifyToast,
 }: {
   entityType: 'GTK' | 'ORANG_TUA' | 'SISWA' | 'ALUMNI';
   entityId: string;
@@ -63,9 +75,19 @@ export function SdmDocumentSection({
   onRefresh: () => Promise<void>;
   supportsVerification?: boolean;
   allowSelfManage?: boolean;
+  readOnly?: boolean;
+  reviews?: BiodataReviewItem[];
+  canReview?: boolean;
+  onReviewSaved?: (reviewId?: string) => void;
+  onNotifyToast?: (type: 'ok' | 'err', text: string) => void;
 }) {
   const { hasPermission } = usePortalSession();
-  const canManage = hasPermission(PERMISSIONS.SDM_MANAGE) || allowSelfManage;
+  const canManage = !readOnly && (hasPermission(PERMISSIONS.SDM_MANAGE) || allowSelfManage);
+  const reviewMap = useMemo(() => buildReviewMap(reviews), [reviews]);
+  const reviewableEntityType =
+    entityType === 'GTK' || entityType === 'ORANG_TUA' || entityType === 'SISWA'
+      ? entityType
+      : null;
   const [docType, setDocType] = useState(documentOptions[0]?.value || 'LAINNYA');
   const [docTitle, setDocTitle] = useState('');
   const [docNumber, setDocNumber] = useState('');
@@ -380,6 +402,55 @@ export function SdmDocumentSection({
               </div>
             );
           })}
+        </div>
+      )}
+      {reviewableEntityType && (canReview || reviews.length > 0) && (
+        <div className="space-y-2.5 pt-2 border-t border-slate-100">
+          <p className="text-xs font-bold text-slate-800">
+            Catatan Perbaikan per Jenis Dokumen
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {documentOptions.map((opt) => {
+              const matchedDocs = documents.filter((d) => d.document_type === opt.value);
+              const docReview =
+                reviewMap.get(reviewMapKey('DOCUMENT_TYPE', opt.value)) || null;
+              if (!canReview && !docReview) return null;
+              return (
+                <div
+                  key={opt.value}
+                  id={`doc-card-${opt.value}`}
+                  className={`rounded-2xl border border-slate-200 p-3 space-y-1.5 text-xs scroll-mt-24 ${getReviewBorderClass(docReview)}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-900 break-words">{opt.label}</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                        matchedDocs.length > 0
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {matchedDocs.length > 0
+                        ? `${matchedDocs.length} Berkas`
+                        : 'Belum Diunggah'}
+                    </span>
+                  </div>
+                  <FieldReviewControl
+                    entityType={reviewableEntityType}
+                    entityId={entityId}
+                    targetKind="DOCUMENT_TYPE"
+                    targetKey={opt.value}
+                    review={docReview}
+                    canReview={canReview}
+                    currentValue={matchedDocs.map((d) => d.file_name).join(', ') || null}
+                    onChanged={() => onRefresh()}
+                    onReviewSaved={onReviewSaved}
+                    onNotifyToast={onNotifyToast}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

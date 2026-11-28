@@ -1,6 +1,6 @@
 'use client';
 
-import type { Dispatch, SetStateAction } from 'react';
+import { useMemo, type Dispatch, type SetStateAction } from 'react';
 import {
   CreditCard,
   ExternalLink,
@@ -11,6 +11,13 @@ import {
   Upload,
 } from 'lucide-react';
 import { DigitalStudentCard } from '@/components/portal/cards/digital-card-viewer';
+import { FieldReviewControl } from '@/components/sdm/biodata-reviews/field-review-control';
+import {
+  buildReviewMap,
+  getReviewBorderClass,
+  reviewMapKey,
+  type BiodataReviewItem,
+} from '@/components/sdm/biodata-reviews/types';
 import type { StudentCardData } from '@/lib/cards/card-png-renderer';
 import {
   STANDARD_DOCUMENTS,
@@ -57,6 +64,11 @@ interface DokumenSectionProps {
   deletingDocId: string | null;
   onUploadDocument: (docType: DocumentType, file: File) => void | Promise<void>;
   onDeleteDocument: (doc: StudentDocument) => void | Promise<void>;
+  reviews?: BiodataReviewItem[];
+  canReview?: boolean;
+  onRefreshReviews?: () => Promise<void> | void;
+  onReviewSaved?: (reviewId?: string) => void;
+  onNotifyToast?: (type: 'ok' | 'err', text: string) => void;
 }
 
 const FILTER_TABS: ReadonlyArray<{ key: DocFilter; label: string }> = [
@@ -88,7 +100,15 @@ export function DokumenSection({
   deletingDocId,
   onUploadDocument,
   onDeleteDocument,
+  reviews = [],
+  canReview = false,
+  onRefreshReviews,
+  onReviewSaved,
+  onNotifyToast,
 }: DokumenSectionProps) {
+  const reviewMap = useMemo(() => buildReviewMap(reviews), [reviews]);
+  const getDocReview = (docType: string) =>
+    reviewMap.get(reviewMapKey('DOCUMENT_TYPE', docType)) || null;
   const counts: Record<DocFilter, number> = {
     ALL: STANDARD_DOCUMENTS.length,
     UPLOADED: STANDARD_DOCUMENTS.filter((d) => docByType.has(d.type)).length,
@@ -159,11 +179,13 @@ export function DokumenSection({
             const existing = docByType.get(docDef.type);
             const isUploading = uploadingType === docDef.type;
             const sizeLabel = formatFileSize(existing?.file_size);
+            const docReview = getDocReview(docDef.type);
 
             return (
               <div
                 key={docDef.type}
-                className="glass-card rounded-2xl p-4 space-y-3 min-w-0 flex flex-col justify-between"
+                id={`doc-card-${docDef.type}`}
+                className={`glass-card rounded-2xl p-4 space-y-3 min-w-0 flex flex-col justify-between scroll-mt-24 ${getReviewBorderClass(docReview)}`}
               >
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-2">
@@ -261,6 +283,19 @@ export function DokumenSection({
                       )}
                     </div>
                   )}
+
+                  <FieldReviewControl
+                    entityType="SISWA"
+                    entityId={studentId}
+                    targetKind="DOCUMENT_TYPE"
+                    targetKey={docDef.type}
+                    review={docReview}
+                    canReview={canReview}
+                    currentValue={existing?.file_name || null}
+                    onChanged={() => onRefreshReviews?.()}
+                    onReviewSaved={onReviewSaved}
+                    onNotifyToast={onNotifyToast}
+                  />
                 </div>
 
                 {canManage && (
@@ -304,12 +339,27 @@ export function DokumenSection({
       )}
 
       {/* Dokumen Pendukung Lainnya */}
-      <div className="glass-card rounded-3xl p-4 sm:p-5 space-y-4">
+      <div
+        id="doc-card-LAINNYA"
+        className={`glass-card rounded-3xl p-4 sm:p-5 space-y-4 scroll-mt-24 ${getReviewBorderClass(getDocReview('LAINNYA'))}`}
+      >
         <div className="space-y-0.5">
           <h3 className="text-sm font-bold text-slate-900">Dokumen Pendukung Lainnya</h3>
           <p className="text-[11px] text-slate-500">
             Unggah sertifikat prestasi, piagam, surat pindah, atau dokumen tambahan lainnya (maks. 5 MB).
           </p>
+          <FieldReviewControl
+            entityType="SISWA"
+            entityId={studentId}
+            targetKind="DOCUMENT_TYPE"
+            targetKey="LAINNYA"
+            review={getDocReview('LAINNYA')}
+            canReview={canReview}
+            currentValue={otherDocs.map((d) => d.file_name).join(', ') || null}
+            onChanged={() => onRefreshReviews?.()}
+            onReviewSaved={onReviewSaved}
+            onNotifyToast={onNotifyToast}
+          />
         </div>
 
         {canManage && (

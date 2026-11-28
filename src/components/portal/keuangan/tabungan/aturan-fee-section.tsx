@@ -20,7 +20,8 @@ import {
   type SavingsFeeTier,
 } from '@/lib/domain/tabungan-fee';
 import type { TierFormState } from './types';
-import { normalizeDecimalInput, parseDecimalInput } from '@/lib/validation/decimal';
+import { parseDecimalInput } from '@/lib/validation/decimal';
+import { DecimalInput } from '@/components/ui/decimal-input';
 
 interface AturanFeeSectionProps {
   canManage: boolean;
@@ -711,13 +712,11 @@ export function AturanFeeSection({
                   Persentase Fee (%)
                 </label>
                 <div className="relative">
-                  <input
+                  <DecimalInput
                     id="tier-pct"
-                    type="text"
-                    inputMode="decimal"
+                    maxDecimals={2}
                     value={feePctInput}
-                    onChange={(e) => {
-                      const normalized = normalizeDecimalInput(e.target.value);
+                    onValueChange={(normalized) => {
                       setFeePctInput(normalized);
                       const parsed = parseDecimalInput(normalized);
                       if (parsed !== null) {

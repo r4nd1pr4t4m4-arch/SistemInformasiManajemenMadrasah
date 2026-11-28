@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { decimalNumber } from '@/lib/validation/decimal-schema';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import {
   getActiveAcademicYear,
@@ -20,7 +21,7 @@ const SaveColumnScoresSchema = z.object({
     z.object({
       column_id: z.string().uuid(),
       student_id: z.string().uuid(),
-      score: z.number().min(0).max(100).nullable(),
+      score: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Nilai' }).nullable(),
     })
   ),
 });
@@ -40,9 +41,9 @@ const SaveExamScoresSchema = z.object({
   scores: z.array(
     z.object({
       student_id: z.string().uuid(),
-      score: z.number().min(0).max(100).nullable(),
-      remedial_score: z.number().min(0).max(100).nullable(),
-      enrichment_score: z.number().min(0).max(100).nullable(),
+      score: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Nilai' }).nullable(),
+      remedial_score: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Nilai remedial' }).nullable(),
+      enrichment_score: decimalNumber({ min: 0, max: 100, maxDecimals: 2, label: 'Nilai pengayaan' }).nullable(),
       notes: z.string().max(500).nullable(),
     })
   ),

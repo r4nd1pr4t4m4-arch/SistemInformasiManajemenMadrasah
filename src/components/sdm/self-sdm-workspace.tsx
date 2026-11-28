@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
@@ -14,6 +14,16 @@ import { NIK_MAX } from '@/lib/validation/identity';
 import { GtkBiodataSection } from './self-sdm/gtk-biodata-section';
 import { GuardianBiodataSection } from './self-sdm/guardian-biodata-section';
 import { SelfSdmDocumentsSection } from './self-sdm/documents-section';
+import {
+  EntitySelectorBar,
+  type SelectableEntityOption,
+} from './biodata-reviews/entity-selector-bar';
+import { ReviewSummaryBanner } from './biodata-reviews/review-summary-banner';
+import {
+  UnsentReviewLeaveModal,
+  useUnsentReviewSession,
+} from './biodata-reviews/unsent-review-guard';
+import type { BiodataReviewItem } from './biodata-reviews/types';
 import {
   INITIAL_GTK_FORM,
   mapGuardiansToForms,
@@ -47,12 +57,36 @@ export function SelfSdmWorkspace({
 
   const [gtkForm, setGtkForm] = useState<GtkFormState>(INITIAL_GTK_FORM);
   const [guardianForms, setGuardianForms] = useState<Record<string, GuardianFormState>>({});
+  const [canReview, setCanReview] = useState(false);
+  const [isInspectingOther, setIsInspectingOther] = useState(false);
+  const [gtkReviews, setGtkReviews] = useState<BiodataReviewItem[]>([]);
+  const [guardianReviewsById, setGuardianReviewsById] = useState<
+    Record<string, BiodataReviewItem[]>
+  >({});
+  const [teachersList, setTeachersList] = useState<
+    Array<{ id: string; full_name: string; nip?: string | null; nuptk?: string | null; staff_type?: string | null }>
+  >([]);
+  const [guardiansList, setGuardiansList] = useState<
+    Array<{
+      id: string;
+      full_name: string;
+      relationship?: string | null;
+      student?: { full_name?: string; nis?: string | null } | Array<{ full_name?: string; nis?: string | null }> | null;
+    }>
+  >([]);
+  const [selectedEntityId, setSelectedEntityId] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    const params = new URLSearchParams(window.location.search);
+    return roleScope === 'gtk'
+      ? params.get('teacherId') || ''
+      : params.get('guardianId') || '';
+  });
 
-  function showToast(type: 'ok' | 'err', text: string) {
+  const showToast = useCallback((type: 'ok' | 'err', text: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ type, text });
     toastTimerRef.current = setTimeout(() => setToast(null), 4500);
-  }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -60,35 +94,128 @@ export function SelfSdmWorkspace({
     };
   }, []);
 
-  const loadSelfData = useCallback(async () => {
-    setLoadError(null);
-    try {
-      const res = await fetch('/api/sdm/self', { cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg = data.error || 'Gagal memuat data pribadi.';
+  const loadSelfData = useCallback(
+    async (overrideEntityId?: string) => {
+      const targetId = overrideEntityId !== undefined ? overrideEntityId : selectedEntityId;
+      setLoadError(null);
+      try {
+        const qs = new URLSearchParams({ scope: roleScope });
+        if (targetId) {
+          qs.set(roleScope === 'gtk' ? 'teacherId' : 'guardianId', targetId);
+        }
+        const res = await fetch(`/api/sdm/self?${qs.toString()}`, { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const msg = data.error || 'Gagal memuat data pribadi.';
+          setLoadError(msg);
+          showToast('err', msg);
+          return;
+        }
+
+        setCanReview(Boolean(data.canReview));
+        setIsInspectingOther(Boolean(data.isInspectingOther));
+        setGtkReviews(Array.isArray(data.gtkReviews) ? data.gtkReviews : []);
+        setGuardianReviewsById(data.guardianReviewsById || {});
+        if (Array.isArray(data.teachersList)) setTeachersList(data.teachersList);
+        if (Array.isArray(data.guardiansList)) setGuardiansList(data.guardiansList);
+
+        const gtk: GtkSelfPayload | null = data.gtk || null;
+        setGtkData(gtk);
+        if (gtk?.teacher) {
+          setGtkForm(mapTeacherToGtkForm(gtk.teacher));
+        }
+
+        const gList: GuardianSelfPayload[] = data.guardians || [];
+        setGuardians(gList);
+        setGuardianForms(mapGuardiansToForms(gList));
+      } catch {
+        const msg = 'Tidak dapat terhubung ke server untuk memuat data.';
         setLoadError(msg);
         showToast('err', msg);
-        return;
+      } finally {
+        setLoading(false);
       }
+    },
+    [roleScope, selectedEntityId, showToast]
+  );
 
-      const gtk: GtkSelfPayload | null = data.gtk || null;
-      setGtkData(gtk);
-      if (gtk?.teacher) {
-        setGtkForm(mapTeacherToGtkForm(gtk.teacher));
-      }
+  const basePath =
+    roleScope === 'gtk'
+      ? '/portal/gtk/biodata-dokumen'
+      : '/portal/orang-tua/biodata-dokumen';
 
-      const gList: GuardianSelfPayload[] = data.guardians || [];
-      setGuardians(gList);
-      setGuardianForms(mapGuardiansToForms(gList));
-    } catch {
-      const msg = 'Tidak dapat terhubung ke server untuk memuat data.';
-      setLoadError(msg);
-      showToast('err', msg);
-    } finally {
-      setLoading(false);
+  const activeReviewEntity = useMemo(() => {
+    if (roleScope === 'gtk') {
+      return {
+        type: 'GTK' as const,
+        id: gtkData?.teacher?.id ? String(gtkData.teacher.id) : null,
+        label: gtkData?.teacher?.full_name ? String(gtkData.teacher.full_name) : null,
+        reviews: gtkReviews,
+      };
     }
-  }, []);
+    const primaryGuardian = guardians[0] || null;
+    return {
+      type: 'ORANG_TUA' as const,
+      id: primaryGuardian?.id || null,
+      label: primaryGuardian?.full_name || null,
+      reviews: primaryGuardian ? guardianReviewsById[primaryGuardian.id] || [] : [],
+    };
+  }, [gtkData, gtkReviews, guardianReviewsById, guardians, roleScope]);
+
+  const unsentSession = useUnsentReviewSession({
+    entityType: activeReviewEntity.type,
+    entityId: activeReviewEntity.id,
+    entityLabel: activeReviewEntity.label,
+    canReview,
+    allowedBasePath: basePath,
+    reviews: activeReviewEntity.reviews,
+    onAfterCancel: () => loadSelfData(),
+    onNotifyToast: showToast,
+  });
+
+  const handleSelectTargetEntity = useCallback(
+    (nextId: string) => {
+      if (nextId === selectedEntityId) return;
+      unsentSession.guardAction(() => {
+        setSelectedEntityId(nextId);
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          const paramKey = roleScope === 'gtk' ? 'teacherId' : 'guardianId';
+          if (nextId) url.searchParams.set(paramKey, nextId);
+          else url.searchParams.delete(paramKey);
+          window.history.replaceState({}, '', url.toString());
+        }
+        setLoading(true);
+        void loadSelfData(nextId);
+      });
+    },
+    [loadSelfData, roleScope, selectedEntityId, unsentSession]
+  );
+
+  const selectorOptions = useMemo<SelectableEntityOption[]>(() => {
+    if (roleScope === 'gtk') {
+      return teachersList.map((t) => ({
+        id: t.id,
+        label: t.full_name,
+        sublabel: [t.staff_type, t.nip ? `NIP: ${t.nip}` : t.nuptk ? `NUPTK: ${t.nuptk}` : '']
+          .filter(Boolean)
+          .join(' • '),
+      }));
+    }
+    return guardiansList.map((g) => {
+      const stu = Array.isArray(g.student) ? g.student[0] : g.student;
+      return {
+        id: g.id,
+        label: g.full_name,
+        sublabel: [
+          g.relationship || 'WALI',
+          stu?.full_name ? `Siswa: ${stu.full_name}` : '',
+        ]
+          .filter(Boolean)
+          .join(' • '),
+      };
+    });
+  }, [guardiansList, roleScope, teachersList]);
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -168,10 +295,11 @@ export function SelfSdmWorkspace({
     }
   }
 
-  const basePath =
-    roleScope === 'gtk'
-      ? '/portal/gtk/biodata-dokumen'
-      : '/portal/orang-tua/biodata-dokumen';
+  const querySuffix = selectedEntityId
+    ? `?${roleScope === 'gtk' ? 'teacherId' : 'guardianId'}=${encodeURIComponent(selectedEntityId)}`
+    : '';
+  const biodataHref = `${basePath}/biodata${querySuffix}`;
+  const dokumenHref = `${basePath}/dokumen${querySuffix}`;
 
   if (loading) {
     return (
@@ -199,7 +327,7 @@ export function SelfSdmWorkspace({
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <Link
-            href={`${basePath}/biodata`}
+            href={biodataHref}
             className={`min-h-[40px] flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition whitespace-nowrap ${
               section === 'biodata'
                 ? 'bg-emerald-600 text-white shadow-xs'
@@ -209,7 +337,7 @@ export function SelfSdmWorkspace({
             <User className="w-3.5 h-3.5 shrink-0" /> Biodata Lengkap
           </Link>
           <Link
-            href={`${basePath}/dokumen`}
+            href={dokumenHref}
             className={`min-h-[40px] flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition whitespace-nowrap ${
               section === 'dokumen'
                 ? 'bg-emerald-600 text-white shadow-xs'
@@ -222,7 +350,7 @@ export function SelfSdmWorkspace({
             type="button"
             onClick={() => {
               setLoading(true);
-              loadSelfData();
+              void loadSelfData();
             }}
             disabled={loading}
             aria-label="Segarkan data"
@@ -233,6 +361,25 @@ export function SelfSdmWorkspace({
           </button>
         </div>
       </div>
+
+      {canReview && selectorOptions.length > 0 && (
+        <EntitySelectorBar
+          title={
+            roleScope === 'gtk'
+              ? 'Tinjau Biodata & Dokumen GTK (Admin/TU)'
+              : 'Tinjau Biodata & Dokumen Orang Tua / Wali (Admin/TU)'
+          }
+          placeholder={
+            roleScope === 'gtk'
+              ? 'Cari nama GTK / NIP / NUPTK...'
+              : 'Cari nama orang tua / siswa...'
+          }
+          options={selectorOptions}
+          selectedId={selectedEntityId}
+          isInspectingOther={isInspectingOther}
+          onSelect={handleSelectTargetEntity}
+        />
+      )}
 
       {loadError && (
         <div
@@ -277,27 +424,33 @@ export function SelfSdmWorkspace({
 
       {!loadError && roleScope === 'gtk' && !gtkData && (
         <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-3xl p-5 sm:p-6 text-xs space-y-1.5">
-          <p className="font-bold text-sm">Akun Belum Tertaut ke Data GTK</p>
+          <p className="font-bold text-sm">
+            {canReview ? 'Pilih GTK untuk Ditinjau' : 'Akun Belum Tertaut ke Data GTK'}
+          </p>
           <p className="leading-relaxed">
-            Akun portal Anda saat ini belum ditautkan dengan data Guru/Tenaga Kependidikan oleh Admin/TU.
-            Silakan hubungi Operator atau Tata Usaha untuk menautkan akun Anda di menu{' '}
-            <strong>Manajemen SDM → Manajemen GTK</strong>.
+            {canReview
+              ? 'Akun Anda belum tertaut ke data GTK pribadi. Gunakan pemilih GTK di atas untuk meninjau dan memberikan catatan perbaikan pada biodata/dokumen GTK.'
+              : 'Akun portal Anda saat ini belum ditautkan dengan data Guru/Tenaga Kependidikan oleh Admin/TU. Silakan hubungi Operator atau Tata Usaha untuk menautkan akun Anda di menu Manajemen SDM → Manajemen GTK.'}
           </p>
         </div>
       )}
 
       {!loadError && roleScope === 'orang-tua' && guardians.length === 0 && (
         <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-3xl p-5 sm:p-6 text-xs space-y-1.5">
-          <p className="font-bold text-sm">Akun Belum Tertaut ke Data Orang Tua / Wali</p>
+          <p className="font-bold text-sm">
+            {canReview
+              ? 'Pilih Orang Tua / Wali untuk Ditinjau'
+              : 'Akun Belum Tertaut ke Data Orang Tua / Wali'}
+          </p>
           <p className="leading-relaxed">
-            Akun portal Anda saat ini belum ditautkan dengan data Orang Tua/Wali Siswa oleh Admin/TU.
-            Silakan hubungi Operator atau Tata Usaha untuk menautkan akun Anda di menu{' '}
-            <strong>Manajemen SDM → Manajemen Orang Tua/Wali Siswa</strong>.
+            {canReview
+              ? 'Akun Anda tidak tertaut sebagai Orang Tua/Wali pribadi. Gunakan pemilih Orang Tua/Wali di atas untuk meninjau dan memberikan catatan perbaikan.'
+              : 'Akun portal Anda saat ini belum ditautkan dengan data Orang Tua/Wali Siswa oleh Admin/TU. Silakan hubungi Operator atau Tata Usaha untuk menautkan akun Anda di menu Manajemen SDM → Manajemen Orang Tua/Wali Siswa.'}
           </p>
         </div>
       )}
 
-      {!loadError && gtkData && guardians.length > 0 && (
+      {!loadError && !isInspectingOther && gtkData && guardians.length > 0 && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-xs text-emerald-900 flex items-start gap-2.5">
           <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
           <p className="leading-relaxed">
@@ -309,6 +462,36 @@ export function SelfSdmWorkspace({
         </div>
       )}
 
+      {roleScope === 'gtk' && gtkData && (
+        <ReviewSummaryBanner
+          entityType="GTK"
+          entityId={String(gtkData.teacher.id)}
+          activeSection={section}
+          otherSectionHref={section === 'biodata' ? dokumenHref : biodataHref}
+          reviews={gtkReviews}
+          canReview={canReview}
+          unsentCount={unsentSession.unsentCount}
+          onNotified={unsentSession.clearUnsent}
+          onNotifyToast={showToast}
+        />
+      )}
+
+      {roleScope === 'orang-tua' &&
+        guardians.map((g) => (
+          <ReviewSummaryBanner
+            key={`banner-${g.id}`}
+            entityType="ORANG_TUA"
+            entityId={g.id}
+            activeSection={section}
+            otherSectionHref={section === 'biodata' ? dokumenHref : biodataHref}
+            reviews={guardianReviewsById[g.id] || []}
+            canReview={canReview}
+            unsentCount={activeReviewEntity.id === g.id ? unsentSession.unsentCount : 0}
+            onNotified={unsentSession.clearUnsent}
+            onNotifyToast={showToast}
+          />
+        ))}
+
       {roleScope === 'gtk' && gtkData && section === 'biodata' && (
         <GtkBiodataSection
           gtkData={gtkData}
@@ -316,6 +499,12 @@ export function SelfSdmWorkspace({
           setGtkForm={setGtkForm}
           savingGtk={savingGtk}
           onSubmit={handleSaveGtk}
+          readOnly={isInspectingOther}
+          reviews={gtkReviews}
+          canReview={canReview}
+          onRefreshReviews={() => loadSelfData()}
+          onReviewSaved={unsentSession.markReviewSaved}
+          onNotifyToast={showToast}
         />
       )}
 
@@ -326,6 +515,12 @@ export function SelfSdmWorkspace({
           setGuardianForms={setGuardianForms}
           savingGuardianId={savingGuardianId}
           onSubmit={handleSaveGuardian}
+          readOnly={isInspectingOther}
+          reviewsById={guardianReviewsById}
+          canReview={canReview}
+          onRefreshReviews={() => loadSelfData()}
+          onReviewSaved={unsentSession.markReviewSaved}
+          onNotifyToast={showToast}
         />
       )}
 
@@ -334,9 +529,17 @@ export function SelfSdmWorkspace({
           roleScope={roleScope}
           gtkData={gtkData}
           guardians={guardians}
-          onRefresh={loadSelfData}
+          onRefresh={() => loadSelfData()}
+          readOnly={isInspectingOther}
+          gtkReviews={gtkReviews}
+          guardianReviewsById={guardianReviewsById}
+          canReview={canReview}
+          onReviewSaved={unsentSession.markReviewSaved}
+          onNotifyToast={showToast}
         />
       )}
+
+      <UnsentReviewLeaveModal {...unsentSession.modalProps} />
     </div>
   );
 }
