@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
 import { buildVerificationUrl } from '@/lib/verification/document-verify';
+import { drawLogoInBox, loadInstitutionLogoForPdf } from './pdf-logo-helper';
 import { formatRupiah } from './honorarium';
 import {
   describeSavingsFilterLabel,
@@ -51,6 +52,7 @@ function formatWibPrintTimestamp(): string {
 export async function exportSavingsHistoryToPdf(params: {
   institutionName?: string | null;
   institutionAddress?: string | null;
+  institutionLogoUrl?: string | null;
   ownerDisplayName: string;
   accounts: SavingsAccountSummaryForPdf[];
   selectedAccountId: string; // 'ALL' or account.id
@@ -63,6 +65,7 @@ export async function exportSavingsHistoryToPdf(params: {
   const {
     institutionName,
     institutionAddress,
+    institutionLogoUrl,
     ownerDisplayName,
     accounts,
     selectedAccountId,
@@ -123,20 +126,28 @@ export async function exportSavingsHistoryToPdf(params: {
   doc.setFillColor(6, 95, 70); // emerald-800
   doc.rect(0, 0, pageWidth, 28, 'F');
 
+  const instLogo = await loadInstitutionLogoForPdf(institutionLogoUrl);
+  const headerTextX = instLogo ? 38 : 14;
+  if (instLogo) {
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(14, 4, 20, 20, 2, 2, 'F');
+    drawLogoInBox(doc, instLogo, 15, 5, 18, 18);
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
-  doc.text('RIWAYAT MUTASI REKENING TABUNGAN DIGITAL', 14, 11);
+  doc.text('RIWAYAT MUTASI REKENING TABUNGAN DIGITAL', headerTextX, 11);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   const instLine = institutionName?.trim()
     ? `${institutionName.trim()} — SiM-M`
     : 'SiM-M — Sistem Informasi Manajemen Madrasah & Sekolah';
-  doc.text(instLine, 14, 17);
+  doc.text(instLine, headerTextX, 17);
   if (institutionAddress?.trim()) {
     doc.setFontSize(7.5);
-    doc.text(institutionAddress.trim().slice(0, 110), 14, 22.5);
+    doc.text(institutionAddress.trim().slice(0, 100), headerTextX, 22.5);
   }
 
   // Metadata Cetak & Ref di sebelah kiri QR Code

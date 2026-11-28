@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import {
   AlertCircle,
   CheckCircle2,
-  GraduationCap,
   Loader2,
   MapPin,
   Search,
@@ -196,10 +195,6 @@ export function AlumniClient() {
     <div className="max-w-6xl mx-auto py-6 sm:py-10 px-4 sm:px-6 space-y-6 sm:space-y-8">
       <div className="glass-card rounded-3xl p-5 sm:p-8 space-y-5">
         <div className="space-y-1.5">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold">
-            <GraduationCap className="w-3.5 h-3.5 shrink-0" /> Portal Alumni &amp; Tracer Study
-            Publik
-          </span>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 [overflow-wrap:anywhere]">
             Sebaran Lulusan &amp; Tracer Study Alumni
           </h1>

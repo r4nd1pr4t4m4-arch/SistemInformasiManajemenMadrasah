@@ -1,15 +1,27 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from 'react';
+import * as XLSX from 'xlsx';
 import {
   AlertCircle,
   CheckCircle2,
+  Download,
+  FileSpreadsheet,
+  FileText,
   HelpCircle,
   Loader2,
   Pencil,
   Plus,
   RefreshCw,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
@@ -23,10 +35,111 @@ interface FaqRow {
   is_published: boolean;
 }
 
+interface ParsedImportFaq {
+  question: string;
+  answer: string;
+  sort_order: number;
+  is_published: boolean;
+}
+
 const EMPTY_FORM = { question: '', answer: '', sort_order: 0, is_published: true };
 
 const INPUT_CLASS =
   'w-full min-h-[40px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 transition';
+
+function parseBooleanValue(raw: unknown, defaultVal = true): boolean {
+  if (typeof raw === 'boolean') return raw;
+  const s = String(raw ?? '')
+    .trim()
+    .toLowerCase();
+  if (!s) return defaultVal;
+  if (['false', '0', 'tidak', 'no', 'draft', 'nonaktif'].includes(s)) return false;
+  if (['true', '1', 'ya', 'yes', 'publik', 'published', 'aktif'].includes(s)) return true;
+  return defaultVal;
+}
+
+function parseMarkdownFaqs(markdownText: string, startOrder = 0): ParsedImportFaq[] {
+  const normalized = markdownText.replace(/\r\n/g, '\n').trim();
+  if (!normalized) return [];
+
+  const results: ParsedImportFaq[] = [];
+
+  // Pola 1: Heading (## / ###) sebagai pertanyaan, isi di bawahnya sebagai jawaban
+  const headingMatches = Array.from(normalized.matchAll(/^#{2,4}\s+(.+)$/gm));
+  if (headingMatches.length > 0) {
+    for (let i = 0; i < headingMatches.length; i++) {
+      const current = headingMatches[i];
+      const next = headingMatches[i + 1];
+      const question = (current[1] || '')
+        .replace(/^\d+[.)]\s*/, '')
+        .replace(/^(?:Q|T|Pertanyaan)\s*:\s*/i, '')
+        .replace(/\*\*/g, '')
+        .trim();
+      const bodyStart = (current.index ?? 0) + current[0].length;
+      const bodyEnd = next?.index ?? normalized.length;
+      const answer = normalized
+        .slice(bodyStart, bodyEnd)
+        .replace(/^\s*(?:A|J|Jawaban)\s*:\s*/i, '')
+        .trim();
+      if (question.length >= 5 && answer.length >= 5) {
+        results.push({
+          question,
+          answer,
+          sort_order: startOrder + results.length,
+          is_published: true,
+        });
+      }
+    }
+    if (results.length > 0) return results;
+  }
+
+  // Pola 2: Blok Q:/Pertanyaan: diikuti A:/Jawaban:
+  const lines = normalized.split('\n');
+  let curQ = '';
+  let curA: string[] = [];
+  const flushQA = () => {
+    const q = curQ.trim();
+    const a = curA.join('\n').trim();
+    if (q.length >= 5 && a.length >= 5) {
+      results.push({
+        question: q,
+        answer: a,
+        sort_order: startOrder + results.length,
+        is_published: true,
+      });
+    }
+    curQ = '';
+    curA = [];
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const qMatch = /^(?:[-*]\s*)?(?:\d+[.)]\s*)?(?:\*\*)?(?:Q|T|Pertanyaan)\s*:\s*(.+?)(?:\*\*)?$/i.exec(
+      line
+    );
+    const numberedBoldQ = /^(?:\d+[.)]\s*)\*\*(.+?)\*\*\s*$/.exec(line);
+    const aMatch = /^(?:[-*]\s*)?(?:\*\*)?(?:A|J|Jawaban)\s*:\s*(.*)$/i.exec(line);
+
+    if (qMatch) {
+      flushQA();
+      curQ = qMatch[1].replace(/\*\*/g, '').trim();
+    } else if (numberedBoldQ && !curQ) {
+      flushQA();
+      curQ = numberedBoldQ[1].trim();
+    } else if (aMatch && curQ) {
+      if (aMatch[1].trim()) curA.push(aMatch[1].replace(/\*\*/g, '').trim());
+    } else if (curQ) {
+      if (line === '---' || line === '***') {
+        flushQA();
+      } else if (line || curA.length > 0) {
+        curA.push(rawLine);
+      }
+    }
+  }
+  flushQA();
+
+  return results;
+}
 
 export default function CmsFaqPage() {
   const { hasPermission } = usePortalSession();
@@ -38,17 +151,28 @@ export default function CmsFaqPage() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteFaq, setConfirmDeleteFaq] = useState<FaqRow | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmBatchDeleteOpen, setConfirmBatchDeleteOpen] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
+  // Import state
+  const [showImportPanel, setShowImportPanel] = useState(false);
+  const [importPreview, setImportPreview] = useState<ParsedImportFaq[]>([]);
+  const [importFileName, setImportFileName] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const showToast = useCallback((text: string, type: 'ok' | 'err' = 'ok') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ type, text });
-    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+    toastTimerRef.current = setTimeout(() => setToast(null), 4500);
   }, []);
 
   useEffect(() => {
@@ -59,13 +183,16 @@ export default function CmsFaqPage() {
   }, []);
 
   useEffect(() => {
-    if (!confirmDeleteFaq) return;
+    if (!confirmDeleteFaq && !confirmBatchDeleteOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !deletingId) setConfirmDeleteFaq(null);
+      if (e.key === 'Escape') {
+        if (!deletingId) setConfirmDeleteFaq(null);
+        if (!batchDeleting) setConfirmBatchDeleteOpen(false);
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [confirmDeleteFaq, deletingId]);
+  }, [confirmDeleteFaq, confirmBatchDeleteOpen, deletingId, batchDeleting]);
 
   const loadFaqs = useCallback(async () => {
     abortRef.current?.abort();
@@ -82,7 +209,10 @@ export default function CmsFaqPage() {
       const data = await res.json().catch(() => ({}));
       if (controller.signal.aborted) return;
       if (res.ok) {
-        setFaqs(Array.isArray(data.faqs) ? data.faqs : []);
+        const nextFaqs: FaqRow[] = Array.isArray(data.faqs) ? data.faqs : [];
+        setFaqs(nextFaqs);
+        const validIds = new Set(nextFaqs.map((f) => f.id));
+        setSelectedIds((prev) => prev.filter((id) => validIds.has(id)));
       } else {
         setLoadError(data.error || 'Gagal memuat daftar FAQ.');
       }
@@ -143,6 +273,7 @@ export default function CmsFaqPage() {
           setEditingId(null);
           setForm(EMPTY_FORM);
         }
+        setSelectedIds((prev) => prev.filter((id) => id !== faq.id));
         showToast('FAQ berhasil dihapus.');
         await loadFaqs();
       } else {
@@ -152,6 +283,202 @@ export default function CmsFaqPage() {
       showToast('Terjadi kesalahan jaringan saat menghapus FAQ.', 'err');
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleBatchDelete() {
+    if (!canManage || batchDeleting || selectedIds.length === 0) return;
+    setBatchDeleting(true);
+    try {
+      const res = await fetch('/api/cms/faqs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || 'Gagal menghapus FAQ terpilih.', 'err');
+        return;
+      }
+      if (editingId && selectedIds.includes(editingId)) {
+        setEditingId(null);
+        setForm(EMPTY_FORM);
+      }
+      const deletedCount = Number(data.deletedCount) || selectedIds.length;
+      setSelectedIds([]);
+      setConfirmBatchDeleteOpen(false);
+      showToast(`${deletedCount} FAQ terpilih berhasil dihapus.`);
+      await loadFaqs();
+    } catch {
+      showToast('Terjadi kesalahan jaringan saat menghapus FAQ secara batch.', 'err');
+    } finally {
+      setBatchDeleting(false);
+    }
+  }
+
+  function toggleSelectFaq(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }
+
+  const allSelected = faqs.length > 0 && faqs.every((f) => selectedIds.includes(f.id));
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(faqs.map((f) => f.id));
+    }
+  }
+
+  function handleDownloadXlsxTemplate() {
+    const sampleRows = [
+      {
+        Pertanyaan: 'Bagaimana cara mendaftar PPDB secara daring?',
+        Jawaban:
+          'Buka halaman /ppdb pada website resmi, pilih jalur pendaftaran, lengkapi biodata, unggah berkas persyaratan, lalu cetak Kartu Bukti Pendaftaran.',
+        Urutan: 1,
+        Publik: 'Ya',
+      },
+      {
+        Pertanyaan: 'Dokumen apa saja yang wajib disiapkan saat mendaftar?',
+        Jawaban:
+          'Kartu Keluarga (KK), Akta Kelahiran, Ijazah/SKL, Pas Foto 3x4, serta dokumen khusus sesuai jalur yang dipilih.',
+        Urutan: 2,
+        Publik: 'Ya',
+      },
+    ];
+    const ws = XLSX.utils.json_to_sheet(sampleRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template_FAQ');
+    XLSX.writeFile(wb, 'Template_Import_FAQ.xlsx');
+  }
+
+  function handleDownloadMarkdownTemplate() {
+    const mdContent = [
+      '## Bagaimana cara mendaftar PPDB secara daring?',
+      'Buka halaman /ppdb pada website resmi, pilih jalur pendaftaran, lengkapi biodata, unggah berkas persyaratan, lalu cetak Kartu Bukti Pendaftaran.',
+      '',
+      '## Dokumen apa saja yang wajib disiapkan saat mendaftar?',
+      'Kartu Keluarga (KK), Akta Kelahiran, Ijazah/SKL, Pas Foto 3x4, serta dokumen khusus sesuai jalur yang dipilih.',
+      '',
+    ].join('\n');
+    const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Template_Import_FAQ.md';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImportFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+    const startOrder = faqs.length;
+    try {
+      let parsed: ParsedImportFaq[] = [];
+
+      if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const firstSheet = workbook.SheetNames[0];
+        if (!firstSheet) {
+          showToast('File Excel tidak memiliki lembar kerja (sheet).', 'err');
+          return;
+        }
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+          workbook.Sheets[firstSheet],
+          { defval: '' }
+        );
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const entries = Object.entries(row);
+          const findVal = (patterns: RegExp[]) => {
+            const found = entries.find(([k]) => patterns.some((p) => p.test(k.trim())));
+            return found ? found[1] : '';
+          };
+          const qRaw = findVal([/^(pertanyaan|question|soal|q)$/i, /pertanyaan|question/i]);
+          const aRaw = findVal([/^(jawaban|answer|a)$/i, /jawaban|answer/i]);
+          const orderRaw = findVal([/^(urutan|sort_order|order|no)$/i]);
+          const pubRaw = findVal([/^(publik|published|is_published|status|tampil)$/i]);
+
+          const question = String(qRaw ?? '').trim();
+          const answer = String(aRaw ?? '').trim();
+          if (question.length >= 5 && answer.length >= 5) {
+            const parsedOrder = Number(orderRaw);
+            parsed.push({
+              question,
+              answer,
+              sort_order:
+                Number.isFinite(parsedOrder) && parsedOrder >= 0
+                  ? Math.floor(parsedOrder)
+                  : startOrder + parsed.length,
+              is_published: parseBooleanValue(pubRaw, true),
+            });
+          }
+        }
+      } else if (
+        lowerName.endsWith('.md') ||
+        lowerName.endsWith('.markdown') ||
+        lowerName.endsWith('.txt')
+      ) {
+        const text = await file.text();
+        parsed = parseMarkdownFaqs(text, startOrder);
+      } else {
+        showToast('Format file harus berupa .xlsx, .xls, atau .md (Markdown).', 'err');
+        return;
+      }
+
+      if (parsed.length === 0) {
+        showToast(
+          'Tidak ditemukan pasangan Pertanyaan & Jawaban yang valid (minimal 5 karakter masing-masing).',
+          'err'
+        );
+        setImportPreview([]);
+        setImportFileName(null);
+        return;
+      }
+
+      setImportPreview(parsed.slice(0, 200));
+      setImportFileName(file.name);
+      showToast(`Berhasil membaca ${Math.min(parsed.length, 200)} item FAQ dari ${file.name}.`);
+    } catch {
+      showToast('Gagal membaca berkas impor FAQ. Pastikan format file valid.', 'err');
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!canManage || importing || importPreview.length === 0) return;
+    setImporting(true);
+    try {
+      const res = await fetch('/api/cms/faqs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'BATCH_IMPORT',
+          items: importPreview,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || 'Gagal mengimpor data FAQ.', 'err');
+        return;
+      }
+      const importedCount = Number(data.importedCount) || importPreview.length;
+      showToast(`${importedCount} FAQ berhasil diimpor ke database.`);
+      setImportPreview([]);
+      setImportFileName(null);
+      setShowImportPanel(false);
+      await loadFaqs();
+    } catch {
+      showToast('Terjadi kesalahan jaringan saat mengimpor FAQ.', 'err');
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -198,19 +525,143 @@ export default function CmsFaqPage() {
                 Pertanyaan yang sering diajukan oleh masyarakat dan calon wali murid di halaman /kontak.
               </p>
             </div>
-            {editingId && (
+            <div className="flex flex-wrap items-center gap-2">
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setForm(EMPTY_FORM);
+                  }}
+                  className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                >
+                  <X className="w-3.5 h-3.5" /> Batal Edit
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  setEditingId(null);
-                  setForm(EMPTY_FORM);
-                }}
-                className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                onClick={() => setShowImportPanel((prev) => !prev)}
+                className={`min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border text-xs font-semibold transition ${
+                  showImportPanel
+                    ? 'bg-emerald-700 text-white border-emerald-700'
+                    : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                }`}
               >
-                <X className="w-3.5 h-3.5" /> Batal Edit
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import XLSX / Markdown</span>
               </button>
-            )}
+            </div>
           </div>
+
+          {showImportPanel && (
+            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4 sm:p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-bold text-emerald-950">
+                    Import Massal FAQ (.xlsx / .md)
+                  </h2>
+                  <p className="text-[11px] text-emerald-800/80 mt-0.5">
+                    Unggah file Excel (kolom: Pertanyaan, Jawaban, Urutan, Publik) atau Markdown
+                    (heading <code>## Pertanyaan</code> diikuti paragraf jawaban, atau format{' '}
+                    <code>Q:</code> / <code>A:</code>).
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleDownloadXlsxTemplate}
+                    className="min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-200 hover:bg-emerald-50 text-emerald-800 text-[11px] font-semibold transition"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <Download className="w-3 h-3" />
+                    <span>Template XLSX</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadMarkdownTemplate}
+                    className="min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] font-semibold transition"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <Download className="w-3 h-3" />
+                    <span>Template Markdown</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.md,.markdown,.txt"
+                  onChange={(e) => void handleImportFileChange(e)}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="min-h-[40px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-dashed border-emerald-400 bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-semibold transition"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Pilih Berkas .xlsx atau .md</span>
+                </button>
+                {importFileName && (
+                  <span className="text-xs text-slate-600 font-medium truncate">
+                    File terpilih: <strong>{importFileName}</strong> ({importPreview.length} item)
+                  </span>
+                )}
+              </div>
+
+              {importPreview.length > 0 && (
+                <div className="space-y-3">
+                  <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+                    {importPreview.map((item, idx) => (
+                      <div key={idx} className="p-3 text-xs space-y-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-bold text-slate-900">
+                            {idx + 1}. {item.question}
+                          </p>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">
+                            #{item.sort_order} • {item.is_published ? 'Publik' : 'Draft'}
+                          </span>
+                        </div>
+                        <p className="text-slate-600 line-clamp-2 whitespace-pre-line">
+                          {item.answer}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={importing}
+                      onClick={() => {
+                        setImportPreview([]);
+                        setImportFileName(null);
+                      }}
+                      className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      disabled={importing}
+                      onClick={() => void handleConfirmImport()}
+                      className="min-h-[38px] inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-semibold transition"
+                    >
+                      {importing ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Upload className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        {importing ? 'Mengimpor...' : `Import ${importPreview.length} FAQ`}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-3.5">
             <div>
@@ -281,15 +732,41 @@ export default function CmsFaqPage() {
 
       <div className="glass-card rounded-3xl p-5 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-bold text-slate-900">Daftar FAQ ({faqs.length})</h2>
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => void loadFaqs()}
-            className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 disabled:opacity-50 transition"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Segarkan
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-base font-bold text-slate-900">Daftar FAQ ({faqs.length})</h2>
+            {canManage && faqs.length > 0 && (
+              <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 accent-emerald-600"
+                />
+                <span>Pilih Semua</span>
+              </label>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {canManage && selectedIds.length > 0 && (
+              <button
+                type="button"
+                disabled={batchDeleting}
+                onClick={() => setConfirmBatchDeleteOpen(true)}
+                className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-semibold transition"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Hapus Terpilih ({selectedIds.length})</span>
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void loadFaqs()}
+              className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 disabled:opacity-50 transition"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Segarkan
+            </button>
+          </div>
         </div>
 
         {loadError && (
@@ -322,75 +799,98 @@ export default function CmsFaqPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {faqs.map((faq) => (
-              <div
-                key={faq.id}
-                className="modular-card rounded-2xl p-4 space-y-2 text-xs border border-slate-200/80 min-w-0"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono text-[10px]">
-                        #{faq.sort_order}
-                      </span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          faq.is_published
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {faq.is_published ? 'Publik' : 'Draft'}
-                      </span>
+            {faqs.map((faq) => {
+              const isSelected = selectedIds.includes(faq.id);
+              return (
+                <div
+                  key={faq.id}
+                  className={`modular-card rounded-2xl p-4 space-y-2 text-xs border min-w-0 transition ${
+                    isSelected
+                      ? 'border-emerald-400 bg-emerald-50/20 ring-1 ring-emerald-400/30'
+                      : 'border-slate-200/80'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      {canManage && (
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectFaq(faq.id)}
+                          aria-label={`Pilih FAQ ${faq.question}`}
+                          className="mt-0.5 w-4 h-4 rounded border-slate-300 text-emerald-600 accent-emerald-600 shrink-0 cursor-pointer"
+                        />
+                      )}
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono text-[10px]">
+                            #{faq.sort_order}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              faq.is_published
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            {faq.is_published ? 'Publik' : 'Draft'}
+                          </span>
+                        </div>
+                        <p className="font-bold text-slate-900 [overflow-wrap:anywhere]">
+                          {faq.question}
+                        </p>
+                        <p className="text-slate-600 whitespace-pre-line [overflow-wrap:anywhere]">
+                          {faq.answer}
+                        </p>
+                      </div>
                     </div>
-                    <p className="font-bold text-slate-900 [overflow-wrap:anywhere]">{faq.question}</p>
-                    <p className="text-slate-600 whitespace-pre-line [overflow-wrap:anywhere]">
-                      {faq.answer}
-                    </p>
+                    {canManage && (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingId(faq.id);
+                            setForm({
+                              question: faq.question,
+                              answer: faq.answer,
+                              sort_order: faq.sort_order,
+                              is_published: faq.is_published,
+                            });
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-emerald-300 text-slate-700 font-semibold transition"
+                          title="Edit FAQ"
+                          aria-label={`Edit FAQ ${faq.question}`}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={deletingId === faq.id}
+                          onClick={() => setConfirmDeleteFaq(faq)}
+                          className="min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold disabled:opacity-50 transition"
+                          title="Hapus FAQ"
+                          aria-label={`Hapus FAQ ${faq.question}`}
+                        >
+                          {deletingId === faq.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                          <span className="hidden sm:inline">Hapus</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {canManage && (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingId(faq.id);
-                          setForm({
-                            question: faq.question,
-                            answer: faq.answer,
-                            sort_order: faq.sort_order,
-                            is_published: faq.is_published,
-                          });
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }}
-                        className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center p-2 rounded-lg border border-slate-200 bg-white hover:border-emerald-300 text-slate-700 transition"
-                        title="Edit FAQ"
-                        aria-label={`Edit FAQ ${faq.question}`}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={deletingId === faq.id}
-                        onClick={() => setConfirmDeleteFaq(faq)}
-                        className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center p-2 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 disabled:opacity-50 transition"
-                        title="Hapus FAQ"
-                        aria-label={`Hapus FAQ ${faq.question}`}
-                      >
-                        {deletingId === faq.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
+      {/* Modal Konfirmasi Hapus Tunggal */}
       {confirmDeleteFaq && (
         <div
           role="dialog"
@@ -429,6 +929,51 @@ export default function CmsFaqPage() {
               >
                 {deletingId && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <span>Ya, Hapus</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Konfirmasi Hapus Batch */}
+      {confirmBatchDeleteOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="batch-delete-faq-title"
+          onClick={() => {
+            if (!batchDeleting) setConfirmBatchDeleteOpen(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 backdrop-blur-xs p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4"
+          >
+            <h2 id="batch-delete-faq-title" className="text-base font-bold text-slate-900">
+              Hapus {selectedIds.length} FAQ Terpilih?
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Sebanyak <strong>{selectedIds.length} item FAQ</strong> yang dipilih akan dihapus
+              permanen dari database dan halaman publik. Tindakan ini tidak dapat dibatalkan.
+            </p>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={batchDeleting}
+                onClick={() => setConfirmBatchDeleteOpen(false)}
+                className="min-h-[40px] px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={batchDeleting}
+                onClick={() => void handleBatchDelete()}
+                className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-xs font-semibold transition"
+              >
+                {batchDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Ya, Hapus Semua ({selectedIds.length})</span>
               </button>
             </div>
           </div>

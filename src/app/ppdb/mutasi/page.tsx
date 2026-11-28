@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRightLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { PublicShell } from '@/components/layout/public-shell';
 import { MutasiContent } from '@/components/ppdb/mutasi-content';
 
@@ -18,10 +18,6 @@ export default function PpdbMutasiPage() {
         <div className="glass-card rounded-3xl overflow-hidden">
           <div className="bg-gradient-to-r from-emerald-700 to-teal-700 text-white p-5 sm:p-7 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 print:hidden">
             <div className="min-w-0">
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold text-emerald-50 mb-2 border border-white/20">
-                <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
-                <span>Layanan Mutasi Masuk Siswa Pindahan</span>
-              </div>
               <h1 className="text-xl sm:text-2xl font-bold leading-tight">
                 PPDB Khusus Mutasi Masuk
               </h1>

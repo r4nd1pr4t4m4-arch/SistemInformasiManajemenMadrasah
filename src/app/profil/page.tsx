@@ -78,47 +78,13 @@ async function ProfilContent() {
     ? school.mission.map((m) => (typeof m === 'string' ? m.trim() : '')).filter(Boolean)
     : [];
 
-  const institutionLabel = school.institution_type === 'MADRASAH' ? 'Madrasah' : 'Sekolah';
   const headName =
     school.headmaster_name?.trim() || school.head_title_label || 'Kepala Lembaga';
   const coords = getValidCoordinates(school.geofence_lat, school.geofence_lng);
   const orgStructureUrl = getSafeExternalUrl(school.org_structure_url);
 
-  const quickNavItems = [
-    { href: '#tentang', label: 'Tentang & Visi Misi' },
-    { href: '#sambutan', label: 'Sambutan' },
-    ...(leadership.length > 0 || orgStructureUrl
-      ? [{ href: '#struktur', label: 'Struktur Pimpinan' }]
-      : []),
-    ...(coords ? [{ href: '#lokasi', label: 'Lokasi Kampus' }] : []),
-    { href: '#sarana', label: 'Sarana & Prasarana' },
-  ];
-
   return (
     <>
-      {/* Top Badge & Quick Jump Navigation */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <span className="inline-flex items-center gap-2 w-fit text-xs font-semibold px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80">
-          <Building2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span>Profil Lembaga ({institutionLabel})</span>
-        </span>
-
-        <nav
-          aria-label="Navigasi Bagian Profil"
-          className="flex flex-wrap items-center gap-1.5"
-        >
-          {quickNavItems.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              className="min-h-[34px] inline-flex items-center px-3 py-1 rounded-full text-xs font-medium text-slate-600 bg-white/80 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200/80 hover:border-emerald-200 transition"
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      </div>
-
       {/* Identitas, Sejarah, Visi & Misi */}
       <section
         id="tentang"
@@ -368,15 +334,6 @@ async function ProfilContent() {
 function ProfilSkeleton() {
   return (
     <div className="space-y-6 animate-pulse" aria-hidden="true">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="h-7 w-44 rounded-full bg-slate-200/80" />
-        <div className="flex gap-2">
-          <div className="h-8 w-28 rounded-full bg-slate-200/70" />
-          <div className="h-8 w-24 rounded-full bg-slate-200/70" />
-          <div className="h-8 w-32 rounded-full bg-slate-200/70" />
-        </div>
-      </div>
-
       <div className="glass-card rounded-3xl p-5 sm:p-8 md:p-10 space-y-6">
         <div className="space-y-3">
           <div className="h-8 w-2/3 max-w-md rounded-xl bg-slate-200/80" />

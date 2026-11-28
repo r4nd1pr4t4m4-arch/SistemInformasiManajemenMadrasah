@@ -45,6 +45,14 @@ const AssignLibraryOnlySchema = z.object({
   address: z.string().optional().nullable(),
 });
 
+const BatchPlaceAccountsSchema = z.object({
+  type: z.literal('BATCH_PLACE_ACCOUNTS'),
+  target_category: z.enum(['STUDENT', 'TEACHER', 'LIBRARY_ONLY']),
+  profile_ids: z.array(z.string().uuid()).min(1, 'Pilih minimal 1 akun.').max(200),
+  gender: z.enum(['L', 'P']).default('L'),
+  staff_type: z.enum(['GURU', 'TATA_USAHA', 'LAINNYA']).default('GURU'),
+});
+
 const BulkImportStudentsSchema = z.object({
   type: z.literal('BULK_IMPORT_STUDENTS'),
   records: z
@@ -432,6 +440,209 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ member });
+    }
+
+    if (body.type === 'BATCH_PLACE_ACCOUNTS') {
+      const parsed = BatchPlaceAccountsSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message || 'Data penempatan batch tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const uniqueIds = Array.from(new Set(parsed.data.profile_ids));
+      const { data: profiles, error: profErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, phone, primary_role, is_active, account_status')
+        .in('id', uniqueIds);
+
+      if (profErr) {
+        return NextResponse.json({ error: profErr.message }, { status: 500 });
+      }
+
+      const activeList = (profiles || []).filter(
+        (p) => p.is_active && (!p.account_status || p.account_status === 'AKTIF')
+      );
+      if (activeList.length === 0) {
+        return NextResponse.json(
+          { error: 'Tidak ada akun aktif yang valid untuk ditempatkan.' },
+          { status: 400 }
+        );
+      }
+
+      const activeIds = activeList.map((p) => p.id);
+      const [{ data: existingStudents }, { data: existingTeachers }, { data: existingLibs }] =
+        await Promise.all([
+          supabase.from('students').select('profile_id').in('profile_id', activeIds),
+          supabase.from('teachers_staff').select('profile_id').in('profile_id', activeIds),
+          supabase.from('library_members').select('profile_id').in('profile_id', activeIds),
+        ]);
+
+      const existingStudentSet = new Set(
+        (existingStudents || []).map((r) => r.profile_id).filter(Boolean) as string[]
+      );
+      const existingTeacherSet = new Set(
+        (existingTeachers || []).map((r) => r.profile_id).filter(Boolean) as string[]
+      );
+      const existingLibSet = new Set(
+        (existingLibs || []).map((r) => r.profile_id).filter(Boolean) as string[]
+      );
+
+      let placedCount = 0;
+      let skippedCount = 0;
+      const baseStamp = Date.now().toString().slice(-6);
+
+      if (parsed.data.target_category === 'STUDENT') {
+        for (let i = 0; i < activeList.length; i++) {
+          const prof = activeList[i];
+          if (existingStudentSet.has(prof.id) || (prof.full_name || '').trim().length < 2) {
+            skippedCount += 1;
+            continue;
+          }
+          const { data: student, error: sErr } = await supabase
+            .from('students')
+            .insert({
+              profile_id: prof.id,
+              full_name: prof.full_name.trim(),
+              gender: parsed.data.gender,
+              phone: prof.phone || null,
+              email: prof.email || null,
+              status: 'AKTIF',
+            })
+            .select('id, profile_id, full_name, phone, email')
+            .single();
+
+          if (sErr || !student) {
+            skippedCount += 1;
+            continue;
+          }
+
+          if (prof.primary_role === 'UMUM') {
+            await supabase.from('profiles').update({ primary_role: 'SISWA' }).eq('id', prof.id);
+            await supabase
+              .from('user_roles')
+              .upsert({ user_id: prof.id, role: 'SISWA' }, { onConflict: 'user_id,role' });
+          }
+
+          if (!existingLibSet.has(prof.id)) {
+            await supabase.from('library_members').insert({
+              member_code: `LIB-S-${baseStamp}-${i + 1}`,
+              member_type: 'SISWA',
+              profile_id: student.profile_id,
+              student_id: student.id,
+              full_name: student.full_name,
+              phone: student.phone,
+              email: student.email,
+              is_auto_registered: true,
+              status: 'AKTIF',
+            });
+          }
+          placedCount += 1;
+        }
+      } else if (parsed.data.target_category === 'TEACHER') {
+        const initialPosition =
+          parsed.data.staff_type === 'TATA_USAHA'
+            ? 'Staf Tata Usaha'
+            : parsed.data.staff_type === 'LAINNYA'
+            ? 'Tenaga Kependidikan'
+            : 'Guru Mata Pelajaran';
+        const today = getWibTodayDateString();
+
+        for (let i = 0; i < activeList.length; i++) {
+          const prof = activeList[i];
+          if (existingTeacherSet.has(prof.id) || (prof.full_name || '').trim().length < 2) {
+            skippedCount += 1;
+            continue;
+          }
+          const { data: teacher, error: tErr } = await supabase
+            .from('teachers_staff')
+            .insert({
+              profile_id: prof.id,
+              full_name: prof.full_name.trim(),
+              staff_type: parsed.data.staff_type,
+              gender: parsed.data.gender,
+              employment_status: 'GTY',
+              phone: prof.phone || null,
+              email: prof.email || null,
+            })
+            .select('id, profile_id, full_name, phone, email')
+            .single();
+
+          if (tErr || !teacher) {
+            skippedCount += 1;
+            continue;
+          }
+
+          if (prof.primary_role === 'UMUM') {
+            const nextRole = parsed.data.staff_type === 'TATA_USAHA' ? 'STAF_TU' : 'GURU';
+            await supabase.from('profiles').update({ primary_role: nextRole }).eq('id', prof.id);
+            await supabase
+              .from('user_roles')
+              .upsert({ user_id: prof.id, role: nextRole }, { onConflict: 'user_id,role' });
+          }
+
+          await supabase.from('employment_histories').insert({
+            teacher_id: teacher.id,
+            position_title: initialPosition,
+            start_date: today,
+          });
+
+          if (!existingLibSet.has(prof.id)) {
+            await supabase.from('library_members').insert({
+              member_code: `LIB-G-${baseStamp}-${i + 1}`,
+              member_type: 'GTK',
+              profile_id: teacher.profile_id,
+              teacher_id: teacher.id,
+              full_name: teacher.full_name,
+              phone: teacher.phone,
+              email: teacher.email,
+              is_auto_registered: true,
+              status: 'AKTIF',
+            });
+          }
+          placedCount += 1;
+        }
+      } else {
+        for (let i = 0; i < activeList.length; i++) {
+          const prof = activeList[i];
+          if (existingLibSet.has(prof.id)) {
+            skippedCount += 1;
+            continue;
+          }
+          const { error: lErr } = await supabase.from('library_members').insert({
+            member_code: `LIB-U-${baseStamp}-${i + 1}`,
+            member_type: 'UMUM',
+            profile_id: prof.id,
+            full_name: prof.full_name,
+            phone: prof.phone || null,
+            email: prof.email || null,
+            is_auto_registered: false,
+            status: 'AKTIF',
+          });
+          if (lErr) {
+            skippedCount += 1;
+            continue;
+          }
+          placedCount += 1;
+        }
+      }
+
+      if (placedCount === 0) {
+        return NextResponse.json(
+          {
+            error:
+              'Semua akun yang dipilih sudah terdaftar pada kategori tujuan tersebut atau tidak memenuhi syarat.',
+          },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json({
+        placedCount,
+        skippedCount,
+        targetCategory: parsed.data.target_category,
+      });
     }
 
     if (body.type === 'BULK_IMPORT_STUDENTS') {

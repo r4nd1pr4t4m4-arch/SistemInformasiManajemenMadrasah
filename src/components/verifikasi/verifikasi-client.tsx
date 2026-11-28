@@ -10,13 +10,11 @@ import {
   CheckCircle2,
   Copy,
   FileCheck2,
-  FileText,
   ImageUp,
   Loader2,
   QrCode,
   RotateCcw,
   Search,
-  ShieldCheck,
   X,
   XCircle,
 } from 'lucide-react';
@@ -42,17 +40,6 @@ const MAX_UPLOAD_SCAN_DIMENSION = 1200;
 const MAX_CAMERA_SCAN_DIMENSION = 720;
 const CAMERA_SCAN_INTERVAL_MS = 120;
 const MAX_IMAGE_FILE_BYTES = 15 * 1024 * 1024;
-
-const SUPPORTED_DOCUMENT_TYPES = [
-  { prefix: 'TRX-...', label: 'Slip Tabungan Digital' },
-  { prefix: 'MUT-...', label: 'Mutasi Rekening Tabungan' },
-  { prefix: 'SPP-...', label: 'Slip SPP / Iuran Komite' },
-  { prefix: 'HON-...', label: 'Slip Honorarium GTK' },
-  { prefix: 'LIB-...', label: 'Kartu Anggota E-Library' },
-  { prefix: 'NIS / NISN', label: 'Kartu Pelajar Digital' },
-  { prefix: 'AGD-... / No. Surat', label: 'Surat & Buku Agenda' },
-  { prefix: 'RKP-... / PNL-...', label: 'Rekap Absensi & Penilaian' },
-] as const;
 
 function formatIssuedAt(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
@@ -445,10 +432,6 @@ export function VerifikasiClient() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6 sm:space-y-8">
       {/* Header */}
       <section className="rounded-3xl bg-gradient-to-br from-slate-900 via-emerald-950 to-teal-900 text-white p-5 sm:p-8 lg:p-10 shadow-xl space-y-3">
-        <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-200 text-xs font-semibold">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
-          Validasi Keaslian Dokumen Resmi
-        </span>
         <h1 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight [overflow-wrap:anywhere]">
           Verifikasi Dokumen &amp; QR Code
         </h1>
@@ -726,34 +709,6 @@ export function VerifikasiClient() {
             </dl>
           )}
         </div>
-      )}
-
-      {/* Panduan Jenis Dokumen Didukung (Idle State) */}
-      {!result && !loading && (
-        <section
-          aria-label="Jenis Dokumen yang Didukung"
-          className="glass-card rounded-3xl p-5 sm:p-7 space-y-4 border border-slate-200/80"
-        >
-          <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-emerald-700 shrink-0" />
-            <h2 className="text-sm font-bold text-slate-900">
-              Dokumen Resmi yang Dapat Diverifikasi
-            </h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {SUPPORTED_DOCUMENT_TYPES.map((item) => (
-              <div
-                key={item.prefix}
-                className="rounded-2xl bg-white/85 border border-slate-200/80 px-3.5 py-3 space-y-0.5 min-w-0"
-              >
-                <p className="text-[11px] font-mono font-bold text-emerald-700 truncate">
-                  {item.prefix}
-                </p>
-                <p className="text-xs font-medium text-slate-600 leading-snug">{item.label}</p>
-              </div>
-            ))}
-          </div>
-        </section>
       )}
 
       <SmartCaptchaMount containerRef={captchaContainerRef} />

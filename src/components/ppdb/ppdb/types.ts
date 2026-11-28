@@ -11,7 +11,18 @@ export interface ActivePeriod {
   name: string;
   open_date: string;
   close_date: string;
+  announcement_date?: string | null;
+  is_announcement_open?: boolean;
   pathway_quotas?: PathwayQuotas;
+}
+
+export interface AnnouncementPeriodInfo {
+  id: string;
+  name: string;
+  open_date: string;
+  close_date: string;
+  announcement_date: string | null;
+  is_announcement_open: boolean;
 }
 
 export interface UploadedDoc {

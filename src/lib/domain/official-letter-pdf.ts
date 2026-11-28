@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
 import { buildVerificationUrl } from '@/lib/verification/document-verify';
+import { drawLogoInBox, loadInstitutionLogoForPdf } from './pdf-logo-helper';
 import {
   extractLinkedStudent,
   extractLinkedTeacher,
@@ -234,17 +235,22 @@ export async function generateOfficialLetterPdf(params: {
   // =========================================================================
   // 1. KOP SURAT RESMI (OFFICIAL LETTERHEAD)
   // =========================================================================
-  // Emblem / Inisial Kotak Lembaga di Kiri Kop
-  doc.setFillColor(6, 95, 70);
-  doc.roundedRect(marginX, 12, 18, 18, 2.5, 2.5, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.5);
-  const acronym = (institution?.short_name || instName.slice(0, 3))
-    .replace(/[^A-Za-z0-9]/g, '')
-    .slice(0, 4)
-    .toUpperCase();
-  doc.text(acronym || 'SIMM', marginX + 9, 22.8, { align: 'center' });
+  // Logo Institusi di Kiri Kop (fallback ke emblem inisial jika logo belum diunggah)
+  const instLogo = await loadInstitutionLogoForPdf(institution?.logo_url);
+  if (instLogo) {
+    drawLogoInBox(doc, instLogo, marginX, 11.5, 19, 19);
+  } else {
+    doc.setFillColor(6, 95, 70);
+    doc.roundedRect(marginX, 12, 18, 18, 2.5, 2.5, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    const acronym = (institution?.short_name || instName.slice(0, 3))
+      .replace(/[^A-Za-z0-9]/g, '')
+      .slice(0, 4)
+      .toUpperCase();
+    doc.text(acronym || 'SIMM', marginX + 9, 22.8, { align: 'center' });
+  }
 
   const kopCenterX = pageWidth / 2 + 8;
   doc.setTextColor(15, 23, 42);

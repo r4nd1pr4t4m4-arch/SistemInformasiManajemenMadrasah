@@ -12,18 +12,36 @@ export const DEFAULT_PATHWAY_QUOTAS: PathwayQuotas = {
   PRESTASI: 40,
 };
 
+export type PpdbDocumentType =
+  | 'KK'
+  | 'AKTA_KELAHIRAN'
+  | 'IJAZAH_SKL'
+  | 'PAS_FOTO'
+  | 'SERTIFIKAT_PRESTASI'
+  | 'LAINNYA';
+
 export interface PathwayDocRequirement {
   key: string;
   label: string;
-  documentType:
-    | 'KK'
-    | 'AKTA_KELAHIRAN'
-    | 'IJAZAH_SKL'
-    | 'PAS_FOTO'
-    | 'SERTIFIKAT_PRESTASI'
-    | 'LAINNYA';
+  documentType: PpdbDocumentType;
   required: boolean;
 }
+
+export interface PathwayDocumentsEntry {
+  generalDocs: PathwayDocRequirement[];
+  specialDocs: PathwayDocRequirement[];
+}
+
+export type PathwayDocumentsConfig = Record<PpdbPathwayCode, PathwayDocumentsEntry>;
+
+export const PPDB_DOCUMENT_TYPE_OPTIONS: Array<{ value: PpdbDocumentType; label: string }> = [
+  { value: 'KK', label: 'Kartu Keluarga (KK)' },
+  { value: 'AKTA_KELAHIRAN', label: 'Akta Kelahiran' },
+  { value: 'IJAZAH_SKL', label: 'Ijazah / SKL' },
+  { value: 'PAS_FOTO', label: 'Pas Foto' },
+  { value: 'SERTIFIKAT_PRESTASI', label: 'Sertifikat / Piagam Prestasi' },
+  { value: 'LAINNYA', label: 'Dokumen Lainnya' },
+];
 
 export interface PathwayDefinition {
   code: PpdbPathwayCode;
@@ -103,6 +121,111 @@ export const PPDB_PATHWAYS: PathwayDefinition[] = [
     ],
   },
 ];
+
+export const DEFAULT_PATHWAY_DOCUMENTS: PathwayDocumentsConfig = {
+  DOMISILI: {
+    generalDocs: GENERAL_PPDB_DOCS.map((d) => ({ ...d })),
+    specialDocs: [],
+  },
+  AFIRMASI: {
+    generalDocs: GENERAL_PPDB_DOCS.map((d) => ({ ...d })),
+    specialDocs: [
+      {
+        key: 'KARTU_AFIRMASI',
+        label: 'Kartu KIP / PKH / KKS / SKTM Resmi',
+        documentType: 'LAINNYA',
+        required: true,
+      },
+    ],
+  },
+  PRESTASI: {
+    generalDocs: GENERAL_PPDB_DOCS.map((d) => ({ ...d })),
+    specialDocs: [
+      {
+        key: 'SERTIFIKAT_PRESTASI',
+        label: 'Sertifikat / Piagam Kejuaraan & Rapor Unggulan',
+        documentType: 'SERTIFIKAT_PRESTASI',
+        required: true,
+      },
+    ],
+  },
+};
+
+const VALID_DOC_TYPES = new Set<PpdbDocumentType>([
+  'KK',
+  'AKTA_KELAHIRAN',
+  'IJAZAH_SKL',
+  'PAS_FOTO',
+  'SERTIFIKAT_PRESTASI',
+  'LAINNYA',
+]);
+
+function sanitizeDocList(raw: unknown, fallback: PathwayDocRequirement[]): PathwayDocRequirement[] {
+  if (!Array.isArray(raw)) return fallback.map((d) => ({ ...d }));
+  const seen = new Set<string>();
+  const cleaned: PathwayDocRequirement[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const label = typeof rec.label === 'string' ? rec.label.trim() : '';
+    if (!label) continue;
+    const rawKey =
+      typeof rec.key === 'string' && rec.key.trim()
+        ? rec.key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+        : label
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .slice(0, 40) || `DOC_${cleaned.length + 1}`;
+    let key = rawKey;
+    let suffix = 2;
+    while (seen.has(key)) {
+      key = `${rawKey}_${suffix++}`;
+    }
+    seen.add(key);
+    const docType =
+      typeof rec.documentType === 'string' && VALID_DOC_TYPES.has(rec.documentType as PpdbDocumentType)
+        ? (rec.documentType as PpdbDocumentType)
+        : 'LAINNYA';
+    cleaned.push({
+      key,
+      label,
+      documentType: docType,
+      required: Boolean(rec.required),
+    });
+  }
+  return cleaned;
+}
+
+export function normalizePathwayDocumentsConfig(raw?: unknown): PathwayDocumentsConfig {
+  const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const codes: PpdbPathwayCode[] = ['DOMISILI', 'AFIRMASI', 'PRESTASI'];
+  const result = {} as PathwayDocumentsConfig;
+  for (const code of codes) {
+    const entry =
+      obj[code] && typeof obj[code] === 'object' ? (obj[code] as Record<string, unknown>) : null;
+    result[code] = {
+      generalDocs: entry && 'generalDocs' in entry
+        ? sanitizeDocList(entry.generalDocs, DEFAULT_PATHWAY_DOCUMENTS[code].generalDocs)
+        : DEFAULT_PATHWAY_DOCUMENTS[code].generalDocs.map((d) => ({ ...d })),
+      specialDocs: entry && 'specialDocs' in entry
+        ? sanitizeDocList(entry.specialDocs, DEFAULT_PATHWAY_DOCUMENTS[code].specialDocs)
+        : DEFAULT_PATHWAY_DOCUMENTS[code].specialDocs.map((d) => ({ ...d })),
+    };
+  }
+  return result;
+}
+
+export function mergePathwayDefinitions(
+  config?: Partial<PathwayDocumentsConfig> | null
+): PathwayDefinition[] {
+  const normalized = normalizePathwayDocumentsConfig(config);
+  return PPDB_PATHWAYS.map((pw) => ({
+    ...pw,
+    generalDocs: normalized[pw.code].generalDocs,
+    specialDocs: normalized[pw.code].specialDocs,
+  }));
+}
 
 export function getPathwayLabel(pathway: string): string {
   if (pathway === 'DOMISILI' || pathway === 'REGULER') return 'Jalur Domisili';

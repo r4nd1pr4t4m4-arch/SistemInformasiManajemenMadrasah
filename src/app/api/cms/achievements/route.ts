@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { toPublicMediaProxyUrl } from '@/lib/storage/r2-url-helper';
 
 const AchievementCreateSchema = z.object({
   title: z.string().trim().min(3, 'Judul prestasi minimal 3 karakter.'),
@@ -32,7 +33,11 @@ export async function GET() {
     .limit(200);
 
   if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
-  return NextResponse.json({ achievements: data || [] });
+  const achievements = (data || []).map((item) => ({
+    ...item,
+    image_url: item.image_url ? toPublicMediaProxyUrl(item.image_url) : null,
+  }));
+  return NextResponse.json({ achievements });
 }
 
 export async function POST(request: Request) {

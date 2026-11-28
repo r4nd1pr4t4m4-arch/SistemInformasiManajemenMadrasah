@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { Users } from 'lucide-react';
 import { connection } from 'next/server';
 import { PublicShell } from '@/components/layout/public-shell';
 import { DirektoriView } from '@/components/direktori/direktori-view';
@@ -54,19 +53,14 @@ export default function DirektoriPage() {
   return (
     <PublicShell>
       <div className="max-w-6xl mx-auto py-6 sm:py-10 px-4 sm:px-6 space-y-6 sm:space-y-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="space-y-1 min-w-0">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight [overflow-wrap:anywhere]">
-              Direktori GTK &amp; Prestasi Lembaga
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              Profil pendidik dan tenaga kependidikan aktif, karya ilmiah, serta rekam jejak
-              prestasi siswa dan lembaga.
-            </p>
-          </div>
-          <span className="self-start sm:self-auto inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 shrink-0">
-            <Users className="w-3.5 h-3.5 shrink-0" /> Direktori Publik
-          </span>
+        <div className="space-y-1 min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight [overflow-wrap:anywhere]">
+            Direktori GTK &amp; Prestasi Lembaga
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+            Profil pendidik dan tenaga kependidikan aktif, karya ilmiah, serta rekam jejak
+            prestasi siswa dan lembaga.
+          </p>
         </div>
 
         <Suspense fallback={<DirektoriSkeleton />}>

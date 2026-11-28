@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { Newspaper } from 'lucide-react';
 import { connection } from 'next/server';
 import { PublicShell } from '@/components/layout/public-shell';
 import { BeritaFeed } from '@/components/berita/berita-feed';
@@ -59,19 +58,14 @@ export default function BeritaPage() {
   return (
     <PublicShell>
       <div className="max-w-6xl mx-auto py-6 sm:py-10 px-4 sm:px-6 space-y-6 sm:space-y-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="space-y-1 min-w-0">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight [overflow-wrap:anywhere]">
-              Publikasi &amp; Informasi Lembaga
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              Liputan kegiatan, pengumuman ujian/libur, artikel pendidikan, serta karya tulis guru
-              dan siswa.
-            </p>
-          </div>
-          <span className="self-start sm:self-auto inline-flex text-xs font-semibold px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 items-center gap-1.5 shrink-0">
-            <Newspaper className="w-3.5 h-3.5 shrink-0" /> Berita &amp; Artikel
-          </span>
+        <div className="space-y-1 min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight [overflow-wrap:anywhere]">
+            Publikasi &amp; Informasi Lembaga
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+            Liputan kegiatan, pengumuman ujian/libur, artikel pendidikan, serta karya tulis guru
+            dan siswa.
+          </p>
         </div>
 
         <Suspense fallback={<BeritaSkeleton />}>

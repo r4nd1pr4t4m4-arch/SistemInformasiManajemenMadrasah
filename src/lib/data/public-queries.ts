@@ -91,7 +91,7 @@ export async function getPublicDirectoryData() {
         .order('full_name'),
       supabase
         .from('achievements')
-        .select('id, title, level, rank, participant_name, achieved_at, organizer, description')
+        .select('id, title, level, rank, participant_name, achieved_at, organizer, image_url, description')
         .order('achieved_at', { ascending: false })
         .limit(20),
     ]);
@@ -191,7 +191,10 @@ export async function getPublicDirectoryData() {
 
     return {
       teachers: enrichedTeachers,
-      achievements: achievements || [],
+      achievements: (achievements || []).map((a) => ({
+        ...a,
+        image_url: normalizeNullableMediaUrl(a.image_url),
+      })),
     };
   } catch {
     return { teachers: [], achievements: [] };

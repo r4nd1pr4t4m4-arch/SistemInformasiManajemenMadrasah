@@ -5,6 +5,7 @@ import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
 import { buildVerificationUrl, registerDocumentLedger } from '@/lib/verification/document-verify';
 import { fetchInstitutionSettings } from '@/lib/hooks/use-institution-settings';
+import { drawLogoInBox, loadInstitutionLogoForPdf } from './pdf-logo-helper';
 
 export interface TahfidzCertificatePayload {
   studentId: string;
@@ -30,15 +31,24 @@ export async function generateTahfidzReportPdf(payload: TahfidzCertificatePayloa
 
   doc.setFillColor(6, 95, 70);
   doc.rect(0, 0, pageWidth, 28, 'F');
+
+  const instLogo = await loadInstitutionLogoForPdf(settings?.logo_url);
+  const kopTextX = instLogo ? 38 : 14;
+  if (instLogo) {
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(14, 4, 20, 20, 2, 2, 'F');
+    drawLogoInBox(doc, instLogo, 15, 5, 18, 18);
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.text((settings?.name || 'SERTIFIKAT & RAPOR TAHFIDZ AL-QUR\'AN').toUpperCase(), 14, 11);
+  doc.text((settings?.name || 'SERTIFIKAT & RAPOR TAHFIDZ AL-QUR\'AN').toUpperCase(), kopTextX, 11);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text('Sertifikat & Laporan Capaian Hafalan Al-Qur\'an (Program Guru Wali)', 14, 18);
+  doc.text('Sertifikat & Laporan Capaian Hafalan Al-Qur\'an (Program Guru Wali)', kopTextX, 18);
   doc.setFontSize(7.5);
-  doc.text(`Ref Verifikasi: ${refCode}`, 14, 24);
+  doc.text(`Ref Verifikasi: ${refCode}`, kopTextX, 24);
 
   try {
     const verifyUrl = buildVerificationUrl({

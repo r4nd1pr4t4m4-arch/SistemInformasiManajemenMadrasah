@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { usePortalSession } from '@/lib/hooks/use-portal-session';
 import { PERMISSIONS } from '@/lib/auth/rbac';
+import { normalizeSafeImageUrl } from '@/lib/storage/r2-url-helper';
 
 interface AchievementRow {
   id: string;
@@ -68,6 +69,7 @@ export default function CmsPrestasiPage() {
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<AchievementRow | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(createEmptyForm);
+  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -397,68 +399,92 @@ export default function CmsPrestasiPage() {
           </div>
         ) : (
           <div className="space-y-2.5">
-            {rows.map((row) => (
-              <div
-                key={row.id}
-                className="modular-card rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border border-slate-200/80 min-w-0"
-              >
-                <div className="space-y-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 font-bold text-[10px]">
-                      {row.level}
-                    </span>
-                    {row.rank && (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold text-[10px]">
-                        {row.rank}
-                      </span>
+            {rows.map((row) => {
+              const safeImageUrl = normalizeSafeImageUrl(row.image_url);
+              const showImage = Boolean(safeImageUrl) && !brokenImages[row.id];
+              return (
+                <div
+                  key={row.id}
+                  className="modular-card rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border border-slate-200/80 min-w-0"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 min-w-0 flex-1">
+                    {showImage && safeImageUrl && (
+                      <div className="w-full sm:w-28 aspect-video sm:aspect-square rounded-xl overflow-hidden bg-slate-100 border border-slate-200/80 shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={safeImageUrl}
+                          alt={row.title}
+                          loading="lazy"
+                          decoding="async"
+                          referrerPolicy="no-referrer"
+                          onError={() =>
+                            setBrokenImages((prev) => ({ ...prev, [row.id]: true }))
+                          }
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
                     )}
-                    <span className="text-[11px] text-slate-400">{row.achieved_at}</span>
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 font-bold text-[10px]">
+                          {row.level}
+                        </span>
+                        {row.rank && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold text-[10px]">
+                            {row.rank}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-slate-400">{row.achieved_at}</span>
+                      </div>
+                      <p className="font-bold text-slate-900 [overflow-wrap:anywhere]">
+                        {row.title}
+                      </p>
+                      <p className="text-slate-600 [overflow-wrap:anywhere]">
+                        Peraih: <strong>{row.participant_name}</strong>
+                        {row.organizer ? ` • Penyelenggara: ${row.organizer}` : ''}
+                      </p>
+                    </div>
                   </div>
-                  <p className="font-bold text-slate-900 [overflow-wrap:anywhere]">{row.title}</p>
-                  <p className="text-slate-600 [overflow-wrap:anywhere]">
-                    Peraih: <strong>{row.participant_name}</strong>
-                    {row.organizer ? ` • Penyelenggara: ${row.organizer}` : ''}
-                  </p>
+                  {canManage && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(row.id);
+                          setForm({
+                            title: row.title,
+                            level: row.level,
+                            rank: row.rank || '',
+                            participant_name: row.participant_name,
+                            achieved_at: row.achieved_at,
+                            organizer: row.organizer || '',
+                            image_url: row.image_url || '',
+                            description: row.description || '',
+                          });
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-emerald-300 text-slate-700 font-semibold transition"
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingId === row.id}
+                        onClick={() => setConfirmDeleteRow(row)}
+                        className="min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold disabled:opacity-50 transition"
+                      >
+                        {deletingId === row.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3 h-3" />
+                        )}
+                        Hapus
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {canManage && (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingId(row.id);
-                        setForm({
-                          title: row.title,
-                          level: row.level,
-                          rank: row.rank || '',
-                          participant_name: row.participant_name,
-                          achieved_at: row.achieved_at,
-                          organizer: row.organizer || '',
-                          image_url: row.image_url || '',
-                          description: row.description || '',
-                        });
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      className="min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-emerald-300 text-slate-700 font-semibold transition"
-                    >
-                      <Pencil className="w-3 h-3" /> Edit
-                    </button>
-                    <button
-                      type="button"
-                      disabled={deletingId === row.id}
-                      onClick={() => setConfirmDeleteRow(row)}
-                      className="min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold disabled:opacity-50 transition"
-                    >
-                      {deletingId === row.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-3 h-3" />
-                      )}
-                      Hapus
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

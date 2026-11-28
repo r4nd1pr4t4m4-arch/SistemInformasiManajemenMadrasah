@@ -13,7 +13,6 @@ import {
   Newspaper,
   Quote,
   ShieldCheck,
-  Sparkles,
   UserCheck,
   Users,
   Wallet,
@@ -99,14 +98,6 @@ async function HeroIntro() {
 
   return (
     <>
-      <div className="inline-flex items-center gap-2 bg-white/90 backdrop-blur border border-emerald-200/80 rounded-full px-3.5 sm:px-4 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs max-w-full">
-        <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-        <span className="truncate">
-          Sistem Informasi Manajemen{' '}
-          {school.institution_type === 'MADRASAH' ? 'Madrasah' : 'Sekolah'}
-        </span>
-      </div>
-
       <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900 leading-[1.14] [overflow-wrap:anywhere]">
         {school.name || 'Lembaga Pendidikan Terpadu'}
       </h1>
@@ -122,7 +113,6 @@ async function HeroIntro() {
 function HeroIntroSkeleton() {
   return (
     <>
-      <div className="h-7 w-64 max-w-full rounded-full bg-emerald-100/70 animate-pulse" />
       <div className="space-y-2.5">
         <div className="h-10 sm:h-11 w-full max-w-lg rounded-xl bg-slate-200/80 animate-pulse" />
         <div className="h-10 sm:h-11 w-3/4 rounded-xl bg-slate-200/80 animate-pulse" />
@@ -268,9 +258,8 @@ async function InstitutionStatsStrip() {
           return (
             <div
               key={item.label}
-              className={`rounded-2xl bg-white/75 border border-slate-200/70 px-3 py-3.5 sm:px-4 sm:py-4 flex flex-col items-center text-center gap-1.5 min-w-0 ${
-                isOrphanOnMobile ? 'col-span-2 sm:col-span-1' : ''
-              }`}
+              className={`rounded-2xl bg-white/75 border border-slate-200/70 px-3 py-3.5 sm:px-4 sm:py-4 flex flex-col items-center text-center gap-1.5 min-w-0 ${isOrphanOnMobile ? 'col-span-2 sm:col-span-1' : ''
+                }`}
             >
               <div
                 className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 ${item.iconBg}`}
@@ -304,9 +293,8 @@ function InstitutionStatsSkeleton() {
         {[0, 1, 2, 3, 4].map((idx) => (
           <div
             key={idx}
-            className={`rounded-2xl bg-white/75 border border-slate-200/70 px-3 py-3.5 sm:px-4 sm:py-4 flex flex-col items-center gap-2 ${
-              idx === 4 ? 'col-span-2 sm:col-span-1' : ''
-            }`}
+            className={`rounded-2xl bg-white/75 border border-slate-200/70 px-3 py-3.5 sm:px-4 sm:py-4 flex flex-col items-center gap-2 ${idx === 4 ? 'col-span-2 sm:col-span-1' : ''
+              }`}
           >
             <div className="w-8 h-8 rounded-xl bg-slate-200/80 animate-pulse" />
             <div className="h-7 w-14 rounded-lg bg-slate-200 animate-pulse" />
@@ -868,94 +856,6 @@ export default function HomePage() {
           <Suspense fallback={<LatestPostsSkeleton />}>
             <LatestPosts />
           </Suspense>
-        </section>
-
-        {/* Quick Access Modular Strip */}
-        <section
-          aria-label="Akses Cepat Layanan"
-          className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-12 w-full"
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Link
-              href="/ppdb"
-              className="modular-card rounded-2xl p-5 flex items-start justify-between gap-3 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-            >
-              <div className="flex items-start gap-3.5 min-w-0">
-                <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 shrink-0 group-hover:bg-amber-100 transition-colors">
-                  <Users className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-bold text-slate-900 text-sm group-hover:text-emerald-700 transition-colors">
-                    PPDB Online
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Daftar, unggah berkas &amp; cek kelulusan
-                  </p>
-                </div>
-              </div>
-              <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 shrink-0 mt-0.5 transition-colors" />
-            </Link>
-
-            <Link
-              href="/e-library"
-              className="modular-card rounded-2xl p-5 flex items-start justify-between gap-3 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-            >
-              <div className="flex items-start gap-3.5 min-w-0">
-                <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 shrink-0 group-hover:bg-emerald-100 transition-colors">
-                  <BookOpen className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-bold text-slate-900 text-sm group-hover:text-emerald-700 transition-colors">
-                    E-Library Publik
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Daftar anggota umum &amp; baca e-book
-                  </p>
-                </div>
-              </div>
-              <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 shrink-0 mt-0.5 transition-colors" />
-            </Link>
-
-            <Link
-              href="/alumni"
-              className="modular-card rounded-2xl p-5 flex items-start justify-between gap-3 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-            >
-              <div className="flex items-start gap-3.5 min-w-0">
-                <div className="p-2.5 rounded-xl bg-sky-50 text-sky-600 shrink-0 group-hover:bg-sky-100 transition-colors">
-                  <Landmark className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-bold text-slate-900 text-sm group-hover:text-emerald-700 transition-colors">
-                    Tracer Study Alumni
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Sebaran studi lanjut &amp; dunia kerja
-                  </p>
-                </div>
-              </div>
-              <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 shrink-0 mt-0.5 transition-colors" />
-            </Link>
-
-            <Link
-              href="/portal"
-              className="modular-card rounded-2xl p-5 flex items-start justify-between gap-3 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-            >
-              <div className="flex items-start gap-3.5 min-w-0">
-                <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 shrink-0 group-hover:bg-rose-100 transition-colors">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-bold text-slate-900 text-sm group-hover:text-emerald-700 transition-colors">
-                    Portal Akademik &amp; TU
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Akses GTK, Siswa, Bendahara &amp; Operator
-                  </p>
-                </div>
-              </div>
-              <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 shrink-0 mt-0.5 transition-colors" />
-            </Link>
-          </div>
         </section>
       </main>
 

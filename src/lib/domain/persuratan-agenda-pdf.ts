@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
 import { buildVerificationUrl, registerDocumentLedger } from '@/lib/verification/document-verify';
+import { drawLogoInBox, loadInstitutionLogoForPdf } from './pdf-logo-helper';
 
 export type LetterDirection = 'MASUK' | 'KELUAR';
 
@@ -70,6 +71,7 @@ export interface InstitutionInfoForLetter {
   head_title_label?: string | null;
   nsm?: string | null;
   npsn?: string | null;
+  logo_url?: string | null;
 }
 
 export const LETTER_CATEGORY_OPTIONS: ReadonlyArray<{
@@ -290,20 +292,28 @@ export async function exportLettersAgendaToPdf(params: {
   doc.setFillColor(6, 95, 70); // emerald-800
   doc.rect(0, 0, pageWidth, 28, 'F');
 
+  const instLogo = await loadInstitutionLogoForPdf(institution?.logo_url);
+  const headerTextX = instLogo ? 38 : 14;
+  if (instLogo) {
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(14, 4, 20, 20, 2, 2, 'F');
+    drawLogoInBox(doc, instLogo, 15, 5, 18, 18);
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
-  doc.text('BUKU AGENDA ARSIP PERSURATAN DIGITAL RESMI', 14, 11);
+  doc.text('BUKU AGENDA ARSIP PERSURATAN DIGITAL RESMI', headerTextX, 11);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   const instLine = institution?.name?.trim()
     ? `${institution.name.trim()} — SiM-M`
     : 'SiM-M — Sistem Informasi Manajemen Madrasah & Sekolah';
-  doc.text(instLine, 14, 17);
+  doc.text(instLine, headerTextX, 17);
   if (institution?.address?.trim()) {
     doc.setFontSize(7.5);
-    doc.text(institution.address.trim().slice(0, 120), 14, 22.5);
+    doc.text(institution.address.trim().slice(0, 110), headerTextX, 22.5);
   }
 
   // Metadata Cetak & QR Code Verifikasi
@@ -475,12 +485,20 @@ export async function exportSingleLetterArchivePdf(params: {
   doc.setFillColor(6, 95, 70);
   doc.rect(0, 0, pageWidth, 32, 'F');
 
+  const instLogo = await loadInstitutionLogoForPdf(institution?.logo_url);
+  const kopTextX = instLogo ? 40 : 14;
+  if (instLogo) {
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(14, 5, 22, 22, 2, 2, 'F');
+    drawLogoInBox(doc, instLogo, 15, 6, 20, 20);
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.text(
     (institution?.name || 'SISTEM INFORMASI MANAJEMEN MADRASAH & SEKOLAH').toUpperCase(),
-    14,
+    kopTextX,
     12
   );
 
@@ -493,11 +511,11 @@ export async function exportSingleLetterArchivePdf(params: {
   ]
     .filter(Boolean)
     .join('  •  ');
-  doc.text(subHeader || 'Layanan Tata Usaha & Arsip Persuratan Digital', 14, 18);
+  doc.text(subHeader || 'Layanan Tata Usaha & Arsip Persuratan Digital', kopTextX, 18);
 
   if (institution?.address) {
     doc.setFontSize(8);
-    doc.text(institution.address.slice(0, 95), 14, 24);
+    doc.text(institution.address.slice(0, 88), kopTextX, 24);
   }
 
   // Judul Lembar

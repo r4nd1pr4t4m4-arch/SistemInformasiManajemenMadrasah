@@ -7,12 +7,12 @@ import {
   CheckCircle2,
   FileText,
   Loader2,
+  Megaphone,
   RefreshCw,
   RotateCcw,
   Sparkles,
 } from 'lucide-react';
 import {
-  PPDB_PATHWAYS,
   type PathwayDefinition,
   type PathwayQuotas,
   type PpdbPathwayCode,
@@ -21,22 +21,31 @@ import {
   PpdbRegistrationCard,
   type RegistrationCardData,
 } from '@/components/ppdb/registration-card';
-import { formatPeriodDate, type ActivePeriod, type PpdbTab } from './types';
+import {
+  formatPeriodDate,
+  type ActivePeriod,
+  type AnnouncementPeriodInfo,
+  type PpdbTab,
+} from './types';
 
 interface PpdbPeriodBannerProps {
   loadingPeriod: boolean;
   periodError: string | null;
   activePeriod: ActivePeriod | null;
+  announcementPeriod: AnnouncementPeriodInfo | null;
   activeTab: PpdbTab;
   onRetry: () => void;
+  onOpenCheckStatus?: () => void;
 }
 
 export function PpdbPeriodBanner({
   loadingPeriod,
   periodError,
   activePeriod,
+  announcementPeriod,
   activeTab,
   onRetry,
+  onOpenCheckStatus,
 }: PpdbPeriodBannerProps) {
   return (
     <>
@@ -63,6 +72,34 @@ export function PpdbPeriodBanner({
         </div>
       )}
 
+      {!loadingPeriod && !periodError && announcementPeriod?.is_announcement_open && (
+        <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200 text-sky-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+            <Megaphone className="w-4 h-4 text-sky-700 shrink-0 mt-0.5 sm:mt-0" />
+            <div className="min-w-0">
+              <p className="font-bold text-sm text-sky-950">
+                Pengumuman Hasil Seleksi {announcementPeriod.name} Sudah Dibuka!
+              </p>
+              <p className="text-sky-800 mt-0.5">
+                {announcementPeriod.announcement_date
+                  ? `Tanggal Pengumuman: ${formatPeriodDate(announcementPeriod.announcement_date)}. `
+                  : ''}
+                Silakan cek status kelulusan Anda menggunakan Nomor Pendaftaran.
+              </p>
+            </div>
+          </div>
+          {activeTab !== 'cek' && onOpenCheckStatus && (
+            <button
+              type="button"
+              onClick={onOpenCheckStatus}
+              className="min-h-[38px] px-4 py-2 rounded-xl bg-sky-700 hover:bg-sky-800 text-white text-xs font-semibold transition shrink-0"
+            >
+              Cek Hasil Pengumuman
+            </button>
+          )}
+        </div>
+      )}
+
       {!loadingPeriod && !periodError && activePeriod && (
         <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-emerald-900 print:hidden">
           <span className="font-semibold flex items-center gap-2">
@@ -72,6 +109,9 @@ export function PpdbPeriodBanner({
           <span className="font-medium text-emerald-800 sm:text-right">
             {formatPeriodDate(activePeriod.open_date)} s/d{' '}
             {formatPeriodDate(activePeriod.close_date)}
+            {activePeriod.announcement_date
+              ? ` • Pengumuman: ${formatPeriodDate(activePeriod.announcement_date)}`
+              : ''}
           </span>
         </div>
       )}
@@ -96,6 +136,7 @@ export function PpdbPeriodBanner({
 }
 
 interface PpdbPathwaySelectorProps {
+  pathways: PathwayDefinition[];
   selectedPathway: PpdbPathwayCode | null;
   activePathwayDef: PathwayDefinition | null;
   quotas: PathwayQuotas;
@@ -103,6 +144,7 @@ interface PpdbPathwaySelectorProps {
 }
 
 export function PpdbPathwaySelector({
+  pathways,
   selectedPathway,
   activePathwayDef,
   quotas,
@@ -152,7 +194,7 @@ export function PpdbPathwaySelector({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {PPDB_PATHWAYS.map((pw) => {
+          {pathways.map((pw) => {
             const isSelected = selectedPathway === pw.code;
             const quota = quotas[pw.code];
             return (
@@ -202,7 +244,10 @@ export function PpdbPathwaySelector({
                     ))
                   )}
                   <p className="text-slate-500 pt-1">
-                    + Persyaratan Umum (KK, Akta, Ijazah/SKL)
+                    + Persyaratan Umum:{' '}
+                    {pw.generalDocs.length > 0
+                      ? pw.generalDocs.map((d) => d.label).join(', ')
+                      : 'Tidak ada syarat umum'}
                   </p>
                 </div>
               </button>

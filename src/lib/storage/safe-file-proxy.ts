@@ -15,6 +15,8 @@ export const EXT_TO_MIME: Record<string, string> = {
   svg: 'image/svg+xml',
   mp4: 'video/mp4',
   webm: 'video/webm',
+  ogg: 'video/ogg',
+  mov: 'video/quicktime',
 };
 
 const INLINE_ALLOWED_MIMES = new Set([
@@ -25,6 +27,8 @@ const INLINE_ALLOWED_MIMES = new Set([
   'image/gif',
   'video/mp4',
   'video/webm',
+  'video/ogg',
+  'video/quicktime',
 ]);
 
 export const DEFAULT_MAX_PROXY_BYTES = 15 * 1024 * 1024; // 15 MB

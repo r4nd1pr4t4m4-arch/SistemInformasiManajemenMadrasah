@@ -15,7 +15,11 @@ const PUBLIC_MEDIA_ALLOWED_MIMES = new Set([
   'image/gif',
   'video/mp4',
   'video/webm',
+  'video/ogg',
+  'video/quicktime',
 ]);
+
+const MAX_PUBLIC_VIDEO_BYTES = 100 * 1024 * 1024; // 100 MB
 
 export async function GET(request: NextRequest) {
   const rateLimitResponse = await enforceProxyRateLimit(request, 'pub-media', {
@@ -39,11 +43,65 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Format media publik tidak diizinkan.' }, { status: 400 });
   }
 
+  const isVideo = inferredMime.startsWith('video/');
+
   try {
     const bytes = await getR2ObjectBuffer(rawKey);
+    const buffer = Buffer.from(bytes);
     const fileName = rawKey.split('/').pop() || 'media';
+
+    if (isVideo) {
+      if (buffer.byteLength > MAX_PUBLIC_VIDEO_BYTES) {
+        return NextResponse.json(
+          { error: 'Ukuran video melebihi batas yang diizinkan.' },
+          { status: 413 }
+        );
+      }
+
+      const rangeHeader = request.headers.get('range');
+      const totalLength = buffer.byteLength;
+      const baseHeaders: Record<string, string> = {
+        'Content-Type': inferredMime,
+        'Accept-Ranges': 'bytes',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+      };
+
+      if (rangeHeader) {
+        const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+        if (match) {
+          const start = match[1] ? Number.parseInt(match[1], 10) : 0;
+          const end = match[2] ? Math.min(Number.parseInt(match[2], 10), totalLength - 1) : totalLength - 1;
+          if (Number.isFinite(start) && Number.isFinite(end) && start >= 0 && start <= end && end < totalLength) {
+            const chunk = buffer.subarray(start, end + 1);
+            return new NextResponse(new Uint8Array(chunk), {
+              status: 206,
+              headers: {
+                ...baseHeaders,
+                'Content-Range': `bytes ${start}-${end}/${totalLength}`,
+                'Content-Length': String(chunk.byteLength),
+              },
+            });
+          }
+          return new NextResponse(null, {
+            status: 416,
+            headers: { 'Content-Range': `bytes */${totalLength}` },
+          });
+        }
+      }
+
+      return new NextResponse(new Uint8Array(buffer), {
+        status: 200,
+        headers: {
+          ...baseHeaders,
+          'Content-Length': String(totalLength),
+        },
+      });
+    }
+
     return buildSafeFileResponse({
-      buffer: Buffer.from(bytes),
+      buffer,
       detectedMime: inferredMime,
       fileName,
       fallbackBase: 'Media_SIMMS',

@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { DEFAULT_PATHWAY_QUOTAS } from '@/lib/ppdb/pathways';
+import {
+  loadPpdbPathwayDocuments,
+  syncPpdbPeriodsBySchedule,
+} from '@/lib/ppdb/period-sync';
 import { verifyCaptchaToken } from '@/lib/security/captcha-server';
 import type { CaptchaPayload } from '@/lib/security/captcha-types';
 import { sanitizeApiError } from '@/lib/security/api-error';
@@ -54,15 +58,12 @@ export async function GET(request: Request) {
   const supabase = createSupabaseAdminClient();
 
   if (info === 'active') {
-    const [{ data: period }, { data: classroomRows }] = await Promise.all([
-      supabase
-        .from('ppdb_periods')
-        .select('*')
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle(),
-      supabase.from('classrooms').select('grade_level').order('grade_level'),
-    ]);
+    const [{ activePeriod, announcementPeriod, todayWib }, pathwayDocuments, { data: classroomRows }] =
+      await Promise.all([
+        syncPpdbPeriodsBySchedule(supabase),
+        loadPpdbPathwayDocuments(supabase),
+        supabase.from('classrooms').select('grade_level').order('grade_level'),
+      ]);
 
     const pathwayCounts: Record<string, number> = {
       DOMISILI: 0,
@@ -70,11 +71,11 @@ export async function GET(request: Request) {
       PRESTASI: 0,
       MUTASI: 0,
     };
-    if (period?.id) {
+    if (activePeriod?.id) {
       const { data: regRows } = await supabase
         .from('ppdb_registrations')
         .select('pathway')
-        .eq('period_id', period.id);
+        .eq('period_id', activePeriod.id);
       for (const r of regRows || []) {
         const key = String(r.pathway || '').toUpperCase();
         if (key in pathwayCounts) pathwayCounts[key] += 1;
@@ -87,13 +88,25 @@ export async function GET(request: Request) {
     const gradeLevels = dbGrades.length > 0 ? dbGrades : ['VII', 'VIII', 'IX'];
 
     return NextResponse.json({
-      period: period
+      period: activePeriod
         ? {
-            ...period,
-            pathway_quotas: period.pathway_quotas || DEFAULT_PATHWAY_QUOTAS,
+            ...activePeriod,
+            pathway_quotas: activePeriod.pathway_quotas || DEFAULT_PATHWAY_QUOTAS,
             pathway_counts: pathwayCounts,
           }
         : null,
+      announcementPeriod: announcementPeriod
+        ? {
+            id: announcementPeriod.id,
+            name: announcementPeriod.name,
+            open_date: announcementPeriod.open_date,
+            close_date: announcementPeriod.close_date,
+            announcement_date: announcementPeriod.announcement_date,
+            is_announcement_open: announcementPeriod.is_announcement_open,
+          }
+        : null,
+      pathwayDocuments,
+      todayWib,
       gradeLevels,
     });
   }
@@ -160,14 +173,10 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseAdminClient();
 
-    // Pastikan ada periode PPDB aktif untuk jalur reguler; Mutasi Masuk tetap dibuka sepanjang tahun
+    // Sinkronkan status periode secara otomatis berdasarkan tanggal buka & tutup (WIB)
+    // Mutasi Masuk tetap dibuka sepanjang tahun
     const isMutasi = parsed.data.pathway === 'MUTASI';
-    const { data: activePeriod } = await supabase
-      .from('ppdb_periods')
-      .select('id')
-      .eq('is_active', true)
-      .limit(1)
-      .maybeSingle();
+    const { activePeriod } = await syncPpdbPeriodsBySchedule(supabase);
 
     if (!activePeriod && !isMutasi) {
       return NextResponse.json(

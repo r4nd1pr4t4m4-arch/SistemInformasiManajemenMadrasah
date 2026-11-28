@@ -41,6 +41,10 @@ export function PenempatanAkunSection({
   showToast,
 }: PenempatanAkunSectionProps) {
   const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [batchCategory, setBatchCategory] = useState<'STUDENT' | 'TEACHER' | 'LIBRARY_ONLY'>(
+    'STUDENT'
+  );
+  const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [placementGender, setPlacementGender] = useState<'L' | 'P'>('L');
   const [placementStaffType, setPlacementStaffType] = useState<'GURU' | 'TATA_USAHA' | 'LAINNYA'>(
@@ -109,6 +113,53 @@ export function PenempatanAkunSection({
   }
 
   const selectedAccount = activeAccounts.find((a) => a.id === selectedAccountId) || null;
+
+  function isEligibleForBatchCategory(
+    acc: ActiveAccountRow,
+    category: 'STUDENT' | 'TEACHER' | 'LIBRARY_ONLY'
+  ): boolean {
+    if (category === 'STUDENT') return !acc.is_student;
+    if (category === 'TEACHER') return !acc.is_teacher;
+    return !acc.is_library_member;
+  }
+
+  const eligiblePaginatedAccounts = paginatedAccounts.filter((acc) =>
+    isEligibleForBatchCategory(acc, batchCategory)
+  );
+  const validBatchSelectedIds = batchSelectedIds.filter((id) => {
+    const found = activeAccounts.find((a) => a.id === id);
+    return Boolean(found && isEligibleForBatchCategory(found, batchCategory));
+  });
+  const allEligiblePageSelected =
+    eligiblePaginatedAccounts.length > 0 &&
+    eligiblePaginatedAccounts.every((acc) => validBatchSelectedIds.includes(acc.id));
+
+  function toggleBatchSelectAccount(acc: ActiveAccountRow) {
+    if (!isEligibleForBatchCategory(acc, batchCategory)) return;
+    setBatchSelectedIds((prev) =>
+      prev.includes(acc.id) ? prev.filter((id) => id !== acc.id) : [...prev, acc.id]
+    );
+  }
+
+  function toggleSelectAllEligibleOnPage() {
+    if (allEligiblePageSelected) {
+      const pageSet = new Set(eligiblePaginatedAccounts.map((a) => a.id));
+      setBatchSelectedIds((prev) => prev.filter((id) => !pageSet.has(id)));
+    } else {
+      setBatchSelectedIds((prev) => {
+        const merged = new Set(prev);
+        for (const acc of eligiblePaginatedAccounts) merged.add(acc.id);
+        return Array.from(merged);
+      });
+    }
+  }
+
+  const batchCategoryLabel =
+    batchCategory === 'STUDENT'
+      ? 'Siswa'
+      : batchCategory === 'TEACHER'
+      ? 'Guru / GTK'
+      : 'Anggota E-Library';
 
   return (
     <div className="space-y-5">
@@ -374,6 +425,100 @@ export function PenempatanAkunSection({
           </div>
         </div>
 
+        {/* Panel Penempatan Batch (Kategori Sama) */}
+        <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200/80 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-xs sm:text-sm font-bold text-emerald-950">
+                Penempatan Akun Secara Batch (Kategori Sama)
+              </h2>
+              <p className="text-[11px] text-emerald-900/75 mt-0.5">
+                Pilih satu kategori tujuan terlebih dahulu, lalu centang beberapa akun pada daftar
+                di bawah untuk ditempatkan sekaligus ke kategori yang sama.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {(
+                [
+                  ['STUDENT', 'Ke Siswa'],
+                  ['TEACHER', 'Ke Guru / GTK'],
+                  ['LIBRARY_ONLY', 'Ke E-Library'],
+                ] as const
+              ).map(([cat, label]) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => {
+                    setBatchCategory(cat);
+                    setBatchSelectedIds([]);
+                  }}
+                  className={`min-h-[34px] px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition ${
+                    batchCategory === cat
+                      ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-emerald-200/60">
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <label className="inline-flex items-center gap-2 font-semibold text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allEligiblePageSelected}
+                  disabled={eligiblePaginatedAccounts.length === 0}
+                  onChange={toggleSelectAllEligibleOnPage}
+                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 accent-emerald-600"
+                />
+                <span>
+                  Pilih semua yang memenuhi syarat di halaman ini ({eligiblePaginatedAccounts.length}
+                  )
+                </span>
+              </label>
+              {validBatchSelectedIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setBatchSelectedIds([])}
+                  className="text-[11px] font-semibold text-slate-500 hover:text-rose-600 underline"
+                >
+                  Kosongkan ({validBatchSelectedIds.length})
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              disabled={submitting || validBatchSelectedIds.length === 0}
+              onClick={async () => {
+                if (validBatchSelectedIds.length === 0) return;
+                const ok = await submitEntity(
+                  {
+                    type: 'BATCH_PLACE_ACCOUNTS',
+                    target_category: batchCategory,
+                    profile_ids: validBatchSelectedIds,
+                    gender: placementGender,
+                    staff_type: placementStaffType,
+                  },
+                  `${validBatchSelectedIds.length} akun berhasil ditempatkan secara batch ke kategori ${batchCategoryLabel}.`
+                );
+                if (ok) {
+                  setBatchSelectedIds([]);
+                }
+              }}
+              className="w-full sm:w-auto min-h-[38px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-45 text-white text-xs font-semibold transition shadow-xs"
+            >
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>
+                Tempatkan {validBatchSelectedIds.length} Akun ke {batchCategoryLabel}
+              </span>
+            </button>
+          </div>
+        </div>
+
         {/* Pencarian & Filter Daftar Akun */}
         <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center">
           <div className="relative flex-1 min-w-0">
@@ -437,44 +582,64 @@ export function PenempatanAkunSection({
             <div className="space-y-2">
               {paginatedAccounts.map((acc) => {
                 const isSelected = selectedAccountId === acc.id;
+                const eligibleForBatch = isEligibleForBatchCategory(acc, batchCategory);
+                const isBatchChecked =
+                  eligibleForBatch && validBatchSelectedIds.includes(acc.id);
                 return (
                   <div
                     key={acc.id}
                     className={`modular-card rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs ${
-                      isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/20' : ''
+                      isSelected || isBatchChecked
+                        ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/20'
+                        : ''
                     }`}
                   >
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-bold text-slate-900 break-words">{acc.full_name}</p>
-                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold">
-                          {acc.primary_role}
-                        </span>
-                      </div>
-                      <p className="text-slate-500 break-words">
-                        {acc.email || 'Tanpa email'} • Telp: {acc.phone || '-'}
-                      </p>
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {acc.is_student && (
-                          <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 text-[10px] font-semibold">
-                            Sudah Siswa
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <input
+                        type="checkbox"
+                        checked={isBatchChecked}
+                        disabled={!eligibleForBatch}
+                        onChange={() => toggleBatchSelectAccount(acc)}
+                        aria-label={`Pilih batch ${acc.full_name} untuk ${batchCategoryLabel}`}
+                        title={
+                          eligibleForBatch
+                            ? `Centang untuk penempatan batch ke ${batchCategoryLabel}`
+                            : `Sudah terdaftar di kategori ${batchCategoryLabel}`
+                        }
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-emerald-600 accent-emerald-600 shrink-0 cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
+                      />
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-bold text-slate-900 break-words">{acc.full_name}</p>
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold">
+                            {acc.primary_role}
                           </span>
-                        )}
-                        {acc.is_teacher && (
-                          <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-semibold">
-                            Sudah GTK
-                          </span>
-                        )}
-                        {acc.is_library_member && (
-                          <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[10px] font-semibold">
-                            Sudah E-Library
-                          </span>
-                        )}
-                        {!acc.is_student && !acc.is_teacher && !acc.is_library_member && (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold">
-                            Belum ditempatkan
-                          </span>
-                        )}
+                        </div>
+                        <p className="text-slate-500 break-words">
+                          {acc.email || 'Tanpa email'} • Telp: {acc.phone || '-'}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {acc.is_student && (
+                            <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 text-[10px] font-semibold">
+                              Sudah Siswa
+                            </span>
+                          )}
+                          {acc.is_teacher && (
+                            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-semibold">
+                              Sudah GTK
+                            </span>
+                          )}
+                          {acc.is_library_member && (
+                            <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[10px] font-semibold">
+                              Sudah E-Library
+                            </span>
+                          )}
+                          {!acc.is_student && !acc.is_teacher && !acc.is_library_member && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold">
+                              Belum ditempatkan
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 

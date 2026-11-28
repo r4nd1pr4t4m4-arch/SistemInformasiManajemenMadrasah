@@ -4,6 +4,7 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supa
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { getCurrentUserWithRoles, hasAnyRole } from '@/lib/auth/session';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { toPublicMediaProxyUrl } from '@/lib/storage/r2-url-helper';
 
 const AddBookSchema = z.object({
   action: z.literal('ADD_BOOK'),
@@ -148,6 +149,7 @@ export async function GET(request: NextRequest) {
       const hasPremiumAccess = !isPremium || isAdminOrLibrarian || Boolean(grant);
       return {
         ...b,
+        cover_url: b.cover_url ? toPublicMediaProxyUrl(b.cover_url) : null,
         ebook_file_url: isAdminOrLibrarian ? b.ebook_file_url : null,
         has_ebook: Boolean(b.ebook_file_url),
         is_premium: isPremium,

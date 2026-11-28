@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { EmptyState, NoSearchResultState } from '@/components/ui/state-views';
+import { toPublicMediaProxyUrl } from '@/lib/storage/r2-url-helper';
 
 export interface PublicGalleryItem {
   id: string;
@@ -26,13 +27,33 @@ export interface PublicGalleryItem {
 
 const PAGE_SIZE = 12;
 
+function extractGoogleDriveId(url: string | null | undefined): string | null {
+  const trimmed = url?.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    const host = parsed.hostname.toLowerCase();
+    if (!host.includes('drive.google.com') && !host.includes('docs.google.com')) return null;
+
+    const fileMatch = /\/file\/d\/([A-Za-z0-9_-]{10,})/.exec(parsed.pathname);
+    if (fileMatch?.[1]) return fileMatch[1];
+
+    const idParam = parsed.searchParams.get('id');
+    if (idParam && /^[A-Za-z0-9_-]{10,}$/.test(idParam)) return idParam;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function getSafeMediaUrl(url: string | null | undefined): string | null {
   const trimmed = url?.trim();
   if (!trimmed) return null;
-  if (trimmed.startsWith('/')) return trimmed;
+  const proxied = toPublicMediaProxyUrl(trimmed);
+  if (proxied.startsWith('/') || proxied.startsWith('data:video/')) return proxied;
   try {
-    const parsed = new URL(trimmed);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? trimmed : null;
+    const parsed = new URL(proxied);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? proxied : null;
   } catch {
     return null;
   }
@@ -42,7 +63,16 @@ function getSafeImageUrl(url: string | null | undefined): string | null {
   const trimmed = url?.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith('data:image/')) return trimmed;
+  const driveId = extractGoogleDriveId(trimmed);
+  if (driveId) {
+    return `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w1600`;
+  }
   return getSafeMediaUrl(trimmed);
+}
+
+function isPhotoMediaType(mediaType: string | null | undefined): boolean {
+  const normalized = (mediaType || '').trim().toUpperCase();
+  return normalized === 'FOTO' || normalized === 'IMAGE' || normalized === 'PHOTO';
 }
 
 function extractYouTubeId(url: string | null | undefined): string | null {
@@ -76,9 +106,13 @@ function extractYouTubeId(url: string | null | undefined): string | null {
 function isDirectVideoUrl(url: string | null | undefined): boolean {
   const safe = getSafeMediaUrl(url);
   if (!safe) return false;
+  if (safe.startsWith('data:video/')) return true;
   try {
     const parsed = safe.startsWith('/') ? new URL(safe, 'https://simms.local') : new URL(safe);
-    return /\.(mp4|webm|ogg|mov)$/i.test(parsed.pathname);
+    if (/\.(mp4|webm|ogg|mov)$/i.test(parsed.pathname)) return true;
+    const keyParam = parsed.searchParams.get('key');
+    if (keyParam && /\.(mp4|webm|ogg|mov)$/i.test(keyParam)) return true;
+    return false;
   } catch {
     return /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(safe);
   }
@@ -104,7 +138,7 @@ function resolvePreviewUrl(item: PublicGalleryItem): string | null {
   const safeThumb = getSafeImageUrl(item.thumbnail_url);
   if (safeThumb) return safeThumb;
 
-  if (item.media_type === 'FOTO') {
+  if (isPhotoMediaType(item.media_type)) {
     const safePhoto = getSafeImageUrl(item.media_url);
     if (safePhoto) return safePhoto;
   }
@@ -210,9 +244,26 @@ export function GaleriGrid({ gallery }: { gallery: PublicGalleryItem[] }) {
     );
   }
 
+  const activeIsPhoto = activeItem ? isPhotoMediaType(activeItem.media_type) : false;
   const activeSafeMediaUrl = activeItem ? getSafeMediaUrl(activeItem.media_url) : null;
-  const activeSafePhotoUrl = activeItem ? getSafeImageUrl(activeItem.media_url) : null;
+  const activePrimaryPhotoUrl = activeItem ? getSafeImageUrl(activeItem.media_url) : null;
+  const activeFallbackThumbUrl = activeItem ? getSafeImageUrl(activeItem.thumbnail_url) : null;
+  const activeSafePhotoUrl =
+    activePrimaryPhotoUrl && !brokenUrls[activePrimaryPhotoUrl]
+      ? activePrimaryPhotoUrl
+      : activeFallbackThumbUrl && !brokenUrls[activeFallbackThumbUrl]
+        ? activeFallbackThumbUrl
+        : null;
   const activeYouTubeId = activeItem ? extractYouTubeId(activeItem.media_url) : null;
+  const activeDriveId = activeItem ? extractGoogleDriveId(activeItem.media_url) : null;
+  const activeCanPlayDirectVideo = Boolean(
+    !activeIsPhoto &&
+      !activeYouTubeId &&
+      !activeDriveId &&
+      activeSafeMediaUrl &&
+      (isDirectVideoUrl(activeSafeMediaUrl) ||
+        activeSafeMediaUrl.startsWith('/api/public/media'))
+  );
 
   return (
     <div className="space-y-6">
@@ -343,6 +394,7 @@ export function GaleriGrid({ gallery }: { gallery: PublicGalleryItem[] }) {
                           alt={item.title || 'Dokumentasi Galeri'}
                           loading="lazy"
                           decoding="async"
+                          referrerPolicy="no-referrer"
                           onError={() =>
                             setBrokenUrls((prev) => ({ ...prev, [previewUrl]: true }))
                           }
@@ -489,10 +541,11 @@ export function GaleriGrid({ gallery }: { gallery: PublicGalleryItem[] }) {
 
             {/* Body Modal Scrollable */}
             <div className="overflow-y-auto overscroll-contain flex-1">
-              <div className="bg-slate-950 flex items-center justify-center relative">
+              <div className="bg-slate-950 flex items-center justify-center relative min-h-[240px]">
                 {activeYouTubeId ? (
                   <div className="w-full aspect-video">
                     <iframe
+                      key={activeYouTubeId}
                       src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(activeYouTubeId)}`}
                       title={activeItem.title || 'Video YouTube'}
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -500,29 +553,41 @@ export function GaleriGrid({ gallery }: { gallery: PublicGalleryItem[] }) {
                       className="w-full h-full border-0"
                     />
                   </div>
-                ) : activeItem.media_type === 'FOTO' &&
-                  activeSafePhotoUrl &&
-                  !brokenUrls[activeSafePhotoUrl] ? (
+                ) : activeIsPhoto && activeSafePhotoUrl ? (
                   <div className="w-full flex items-center justify-center p-2 sm:p-4">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
+                      key={activeSafePhotoUrl}
                       src={activeSafePhotoUrl}
                       alt={activeItem.title || 'Foto Dokumentasi'}
                       decoding="async"
+                      referrerPolicy="no-referrer"
                       onError={() =>
                         setBrokenUrls((prev) => ({ ...prev, [activeSafePhotoUrl]: true }))
                       }
                       className="max-h-[58dvh] w-auto max-w-full object-contain rounded-xl"
                     />
                   </div>
-                ) : activeItem.media_type !== 'FOTO' &&
-                  activeSafeMediaUrl &&
-                  isDirectVideoUrl(activeSafeMediaUrl) ? (
+                ) : !activeIsPhoto && activeDriveId ? (
+                  <div className="w-full aspect-video">
+                    <iframe
+                      key={activeDriveId}
+                      src={`https://drive.google.com/file/d/${encodeURIComponent(activeDriveId)}/preview`}
+                      title={activeItem.title || 'Video Dokumentasi'}
+                      allow="autoplay; fullscreen"
+                      allowFullScreen
+                      className="w-full h-full border-0"
+                    />
+                  </div>
+                ) : activeCanPlayDirectVideo && activeSafeMediaUrl ? (
                   <video
+                    key={activeSafeMediaUrl}
                     src={activeSafeMediaUrl}
+                    poster={activeFallbackThumbUrl || undefined}
                     controls
                     playsInline
-                    className="w-full max-h-[58dvh]"
+                    preload="metadata"
+                    className="w-full max-h-[58dvh] bg-black"
                   />
                 ) : (
                   <div className="p-10 text-center text-slate-300 text-sm space-y-2">

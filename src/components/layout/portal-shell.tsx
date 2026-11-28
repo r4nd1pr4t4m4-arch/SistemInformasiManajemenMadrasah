@@ -20,6 +20,8 @@ import {
   LayoutDashboard,
   Loader2,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Search,
   X,
 } from 'lucide-react';
@@ -77,7 +79,31 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
   const school = useInstitutionSettings();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarHidden, setDesktopSidebarHidden] = useState(false);
   const [user, setUser] = useState<PortalSessionUser | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('simms_desktop_sidebar_hidden');
+      if (saved === '1') {
+        requestAnimationFrame(() => setDesktopSidebarHidden(true));
+      }
+    } catch {
+      // Abaikan jika localStorage tidak tersedia
+    }
+  }, []);
+
+  const toggleDesktopSidebar = useCallback(() => {
+    setDesktopSidebarHidden((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('simms_desktop_sidebar_hidden', next ? '1' : '0');
+      } catch {
+        // Abaikan
+      }
+      return next;
+    });
+  }, []);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -653,7 +679,11 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen simms-ambient flex">
       {/* Desktop Sticky Sidebar */}
-      <aside className="hidden lg:block w-64 shrink-0 border-r border-slate-200/80 bg-white/75 backdrop-blur-xl sticky top-0 h-screen">
+      <aside
+        className={`hidden ${
+          desktopSidebarHidden ? 'lg:hidden' : 'lg:block'
+        } w-64 shrink-0 border-r border-slate-200/80 bg-white/75 backdrop-blur-xl sticky top-0 h-screen`}
+      >
         {SidebarContent}
       </aside>
 
@@ -681,6 +711,22 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         {/* Top Portal Navbar */}
         <header className="sticky top-0 z-30 glass-nav h-16 px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={toggleDesktopSidebar}
+              aria-label={
+                desktopSidebarHidden ? 'Tampilkan panel sidebar' : 'Sembunyikan panel sidebar'
+              }
+              aria-expanded={!desktopSidebarHidden}
+              title={desktopSidebarHidden ? 'Tampilkan Sidebar' : 'Sembunyikan Sidebar'}
+              className="hidden lg:inline-flex items-center justify-center w-9 h-9 rounded-xl bg-white/85 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200/80 text-slate-600 transition shrink-0"
+            >
+              {desktopSidebarHidden ? (
+                <PanelLeftOpen className="w-4 h-4" />
+              ) : (
+                <PanelLeftClose className="w-4 h-4" />
+              )}
+            </button>
             <div className="truncate">
               <p className="font-bold text-slate-900 text-sm sm:text-base truncate">
                 {pageTitle}

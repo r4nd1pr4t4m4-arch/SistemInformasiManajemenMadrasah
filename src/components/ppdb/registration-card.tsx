@@ -101,16 +101,30 @@ export function PpdbRegistrationCard({ data }: { data: RegistrationCardData }) {
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print:shadow-none print:rounded-none print:border-slate-400">
         {/* Kop Kartu */}
         <div className="bg-gradient-to-r from-emerald-800 to-teal-700 text-white px-5 py-5 sm:px-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-widest text-emerald-200 font-semibold">
-              Kartu Bukti Pendaftaran Resmi
-            </p>
-            <h3 className="text-base sm:text-lg font-bold mt-0.5 break-words">
-              {school.name || 'Lembaga Pendidikan'}
-            </h3>
-            {school.address && (
-              <p className="text-xs text-emerald-100 mt-0.5 break-words">{school.address}</p>
+          <div className="flex items-center gap-3.5 min-w-0">
+            {school.logo_url && (
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/95 p-1.5 shadow-xs flex items-center justify-center shrink-0 overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={school.logo_url}
+                  alt={`Logo ${school.name || 'Lembaga'}`}
+                  className="w-full h-full object-contain"
+                />
+              </div>
             )}
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-widest text-emerald-200 font-semibold">
+                Kartu Bukti Pendaftaran Resmi
+              </p>
+              <h3 className="text-base sm:text-lg font-bold mt-0.5 [overflow-wrap:anywhere]">
+                {school.name || 'Lembaga Pendidikan'}
+              </h3>
+              {school.address && (
+                <p className="text-xs text-emerald-100 mt-0.5 [overflow-wrap:anywhere]">
+                  {school.address}
+                </p>
+              )}
+            </div>
           </div>
           <div className="text-left sm:text-right shrink-0">
             <span className="inline-block text-[11px] font-bold uppercase px-3 py-1 rounded-full bg-white/15 border border-white/25">

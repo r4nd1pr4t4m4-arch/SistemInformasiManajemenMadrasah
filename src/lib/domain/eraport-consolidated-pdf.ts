@@ -7,6 +7,7 @@ import QRCode from 'qrcode';
 import { formatScoreDecimal } from '@/lib/validation/decimal';
 import { buildVerificationUrl, registerDocumentLedger } from '@/lib/verification/document-verify';
 import { fetchInstitutionSettings } from '@/lib/hooks/use-institution-settings';
+import { drawLogoInBox, loadInstitutionLogoForPdf } from './pdf-logo-helper';
 
 export interface ERaportSubjectScore {
   subjectId: string;
@@ -77,12 +78,21 @@ export async function generateConsolidatedERaportPdf(payload: ERaportStudentPayl
   // Kop Lembaga
   doc.setFillColor(6, 95, 70);
   doc.rect(0, 0, pageWidth, 26, 'F');
+
+  const instLogo = await loadInstitutionLogoForPdf(settings?.logo_url);
+  const kopTextX = instLogo ? 36 : 14;
+  if (instLogo) {
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(14, 4, 18, 18, 1.8, 1.8, 'F');
+    drawLogoInBox(doc, instLogo, 15, 5, 16, 16);
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.text(
     (settings?.name || 'LAPORAN HASIL BELAJAR PESERTA DIDIK').toUpperCase(),
-    14,
+    kopTextX,
     10.5
   );
   doc.setFont('helvetica', 'normal');
@@ -94,10 +104,10 @@ export async function generateConsolidatedERaportPdf(payload: ERaportStudentPayl
   ]
     .filter(Boolean)
     .join('  •  ');
-  doc.text(subKop || 'Laporan Hasil Belajar (E-Raport Resmi)', 14, 16.5);
+  doc.text(subKop || 'Laporan Hasil Belajar (E-Raport Resmi)', kopTextX, 16.5);
   if (settings?.address) {
     doc.setFontSize(7.5);
-    doc.text(settings.address.slice(0, 95), 14, 22);
+    doc.text(settings.address.slice(0, 82), kopTextX, 22);
   }
 
   // QR Verifikasi

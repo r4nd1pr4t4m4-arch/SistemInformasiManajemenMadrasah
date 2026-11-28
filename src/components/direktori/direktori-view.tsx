@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { TeacherProfileModal } from './teacher-profile-modal';
+import { normalizeSafeImageUrl } from '@/lib/storage/r2-url-helper';
 
 export interface PublicEmploymentHistoryItem {
   id: string;
@@ -60,6 +61,7 @@ export interface PublicAchievementItem {
   participant_name: string | null;
   achieved_at: string | null;
   organizer: string | null;
+  image_url?: string | null;
   description: string | null;
 }
 
@@ -67,15 +69,7 @@ const GTK_PAGE_SIZE = 12;
 const ACHIEVEMENT_PAGE_SIZE = 12;
 
 function getSafeImageUrl(url: string | null | undefined): string | null {
-  const trimmed = url?.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith('/') || trimmed.startsWith('data:image/')) return trimmed;
-  try {
-    const parsed = new URL(trimmed);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? trimmed : null;
-  } catch {
-    return null;
-  }
+  return normalizeSafeImageUrl(url, 1200);
 }
 
 async function copyTextSafely(text: string): Promise<boolean> {
@@ -744,34 +738,54 @@ export function DirektoriView({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {displayedAchievements.map((a) => {
                   const dateLabel = formatAchievementDate(a.achieved_at);
+                  const safeAchImg = getSafeImageUrl(a.image_url);
+                  const showAchImg = Boolean(safeAchImg) && !brokenPhotos[`ach:${a.id}`];
                   return (
                     <article
                       key={a.id}
-                      className="modular-card rounded-2xl p-5 space-y-2.5 flex flex-col justify-between min-w-0"
+                      className="modular-card rounded-2xl overflow-hidden flex flex-col justify-between min-w-0"
                     >
-                      <div className="space-y-2 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 truncate">
-                            {formatEnumLabel(a.level, 'Umum')}
-                          </span>
-                          <Award className="w-4 h-4 text-amber-500 shrink-0" />
-                        </div>
-                        <h3 className="font-bold text-slate-900 text-sm leading-snug [overflow-wrap:anywhere]">
-                          {a.title}
-                        </h3>
-                        <p className="text-xs text-emerald-700 font-semibold [overflow-wrap:anywhere]">
-                          {a.rank ? `${a.rank} — ` : ''}
-                          {a.participant_name || 'Tim Lembaga'}
-                        </p>
-                        {a.description?.trim() && (
-                          <p className="text-xs text-slate-600 leading-relaxed [overflow-wrap:anywhere]">
-                            {a.description}
-                          </p>
+                      <div>
+                        {showAchImg && safeAchImg && (
+                          <div className="aspect-video w-full bg-slate-100 overflow-hidden border-b border-slate-100">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={safeAchImg}
+                              alt={a.title}
+                              loading="lazy"
+                              decoding="async"
+                              referrerPolicy="no-referrer"
+                              onError={() =>
+                                setBrokenPhotos((prev) => ({ ...prev, [`ach:${a.id}`]: true }))
+                              }
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
                         )}
+                        <div className="p-5 space-y-2 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 truncate">
+                              {formatEnumLabel(a.level, 'Umum')}
+                            </span>
+                            <Award className="w-4 h-4 text-amber-500 shrink-0" />
+                          </div>
+                          <h3 className="font-bold text-slate-900 text-sm leading-snug [overflow-wrap:anywhere]">
+                            {a.title}
+                          </h3>
+                          <p className="text-xs text-emerald-700 font-semibold [overflow-wrap:anywhere]">
+                            {a.rank ? `${a.rank} — ` : ''}
+                            {a.participant_name || 'Tim Lembaga'}
+                          </p>
+                          {a.description?.trim() && (
+                            <p className="text-xs text-slate-600 leading-relaxed [overflow-wrap:anywhere]">
+                              {a.description}
+                            </p>
+                          )}
+                        </div>
                       </div>
 
                       {(a.organizer || dateLabel) && (
-                        <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 min-w-0">
+                        <div className="px-5 pb-4 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 min-w-0">
                           {a.organizer && (
                             <span className="truncate">Penyelenggara: {a.organizer}</span>
                           )}

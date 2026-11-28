@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 import { sanitizeApiError } from '@/lib/security/api-error';
+import { toPublicMediaProxyUrl } from '@/lib/storage/r2-url-helper';
 
 const FacilitySchema = z.object({
   name: z.string().min(2, 'Nama sarana/prasarana minimal 2 karakter.'),
@@ -33,7 +34,12 @@ export async function GET() {
     return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
   }
 
-  return NextResponse.json({ facilities: data || [] });
+  const facilities = (data || []).map((item) => ({
+    ...item,
+    image_url: item.image_url ? toPublicMediaProxyUrl(item.image_url) : null,
+  }));
+
+  return NextResponse.json({ facilities });
 }
 
 export async function POST(request: Request) {

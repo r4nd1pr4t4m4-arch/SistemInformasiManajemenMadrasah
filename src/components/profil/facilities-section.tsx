@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Building2, Layers, RotateCcw, Search, X } from 'lucide-react';
+import { normalizeSafeImageUrl } from '@/lib/storage/r2-url-helper';
 
 export interface PublicFacilityItem {
   id: string;
@@ -22,20 +23,7 @@ const CONDITION_OPTIONS = [
 ] as const;
 
 function isSafeImageSrc(rawUrl?: string | null): string | null {
-  const trimmed = rawUrl?.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith('/') || trimmed.startsWith('data:image/')) {
-    return trimmed;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-      return trimmed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  return normalizeSafeImageUrl(rawUrl, 1200);
 }
 
 function getConditionMeta(condition: string | null): { label: string; badgeClass: string } {
@@ -283,6 +271,7 @@ export function FacilitiesSection({ facilities }: { facilities: PublicFacilityIt
                       alt={f.name || 'Foto Fasilitas'}
                       loading="lazy"
                       decoding="async"
+                      referrerPolicy="no-referrer"
                       onError={() => setBrokenImages((prev) => ({ ...prev, [f.id]: true }))}
                       className="w-full h-full object-cover"
                     />

@@ -7,8 +7,17 @@ import { sanitizeApiError } from '@/lib/security/api-error';
 const FaqCreateSchema = z.object({
   question: z.string().trim().min(5, 'Pertanyaan minimal 5 karakter.'),
   answer: z.string().trim().min(5, 'Jawaban minimal 5 karakter.'),
-  sort_order: z.number().int().min(0).default(0),
+  sort_order: z.coerce.number().int().min(0).default(0),
   is_published: z.boolean().default(true),
+});
+
+const FaqBatchImportSchema = z.object({
+  action: z.literal('BATCH_IMPORT'),
+  items: z.array(FaqCreateSchema).min(1, 'Minimal 1 FAQ untuk diimpor.').max(200),
+});
+
+const FaqBatchDeleteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1, 'Pilih minimal 1 FAQ untuk dihapus.').max(200),
 });
 
 const FaqUpdateSchema = FaqCreateSchema.extend({
@@ -40,6 +49,26 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+    const supabase = createSupabaseAdminClient();
+
+    if (body?.action === 'BATCH_IMPORT') {
+      const parsedBatch = FaqBatchImportSchema.safeParse(body);
+      if (!parsedBatch.success) {
+        return NextResponse.json(
+          { error: parsedBatch.error.issues[0]?.message || 'Data impor FAQ tidak valid.' },
+          { status: 400 }
+        );
+      }
+
+      const { data, error } = await supabase
+        .from('faqs')
+        .insert(parsedBatch.data.items)
+        .select('*');
+
+      if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+      return NextResponse.json({ faqs: data || [], importedCount: (data || []).length });
+    }
+
     const parsed = FaqCreateSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -48,7 +77,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = createSupabaseAdminClient();
     const { data, error } = await supabase
       .from('faqs')
       .insert(parsed.data)
@@ -102,12 +130,32 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'Supabase belum dikonfigurasi.' }, { status: 503 });
   }
 
+  const supabase = createSupabaseAdminClient();
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
-  if (!id) return NextResponse.json({ error: 'ID FAQ wajib diisi.' }, { status: 400 });
 
-  const supabase = createSupabaseAdminClient();
-  const { error } = await supabase.from('faqs').delete().eq('id', id);
-  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
-  return NextResponse.json({ ok: true });
+  if (id) {
+    if (!z.string().uuid().safeParse(id).success) {
+      return NextResponse.json({ error: 'ID FAQ tidak valid.' }, { status: 400 });
+    }
+    const { error } = await supabase.from('faqs').delete().eq('id', id);
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+    return NextResponse.json({ ok: true, deletedCount: 1 });
+  }
+
+  try {
+    const body = await request.json().catch(() => null);
+    const parsed = FaqBatchDeleteSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message || 'ID FAQ wajib diisi.' },
+        { status: 400 }
+      );
+    }
+    const { error } = await supabase.from('faqs').delete().in('id', parsed.data.ids);
+    if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+    return NextResponse.json({ ok: true, deletedCount: parsed.data.ids.length });
+  } catch {
+    return NextResponse.json({ error: 'Gagal menghapus FAQ terpilih.' }, { status: 500 });
+  }
 }

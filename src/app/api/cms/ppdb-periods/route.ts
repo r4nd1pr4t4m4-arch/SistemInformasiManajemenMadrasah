@@ -3,7 +3,17 @@ import { z } from 'zod';
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { requireApiRoles, PERMISSIONS } from '@/lib/auth/api-guard';
 
-import { DEFAULT_PATHWAY_QUOTAS } from '@/lib/ppdb/pathways';
+import {
+  DEFAULT_PATHWAY_QUOTAS,
+  normalizePathwayDocumentsConfig,
+} from '@/lib/ppdb/pathways';
+import {
+  computePeriodSchedule,
+  getWibTodayIso,
+  loadPpdbPathwayDocuments,
+  savePpdbPathwayDocuments,
+  syncPpdbPeriodsBySchedule,
+} from '@/lib/ppdb/period-sync';
 import { sanitizeApiError } from '@/lib/security/api-error';
 
 const PathwayQuotasSchema = z.object({
@@ -38,17 +48,20 @@ export async function GET() {
   if (guard.errorResponse) return guard.errorResponse;
 
   if (!isSupabaseAdminConfigured()) {
-    return NextResponse.json({ periods: [] });
+    return NextResponse.json({
+      periods: [],
+      pathwayDocuments: normalizePathwayDocumentsConfig(null),
+      todayWib: getWibTodayIso(),
+    });
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
-    .from('ppdb_periods')
-    .select('*')
-    .order('open_date', { ascending: false });
+  const [{ periods, todayWib }, pathwayDocuments] = await Promise.all([
+    syncPpdbPeriodsBySchedule(supabase),
+    loadPpdbPathwayDocuments(supabase),
+  ]);
 
-  if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
-  return NextResponse.json({ periods: data || [] });
+  return NextResponse.json({ periods, pathwayDocuments, todayWib });
 }
 
 export async function POST(request: Request) {
@@ -67,7 +80,17 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseAdminClient();
-    if (parsed.data.is_active) {
+    const todayWib = getWibTodayIso();
+    const { shouldBeActive } = computePeriodSchedule(
+      {
+        open_date: parsed.data.open_date,
+        close_date: parsed.data.close_date,
+        announcement_date: parsed.data.announcement_date || null,
+      },
+      todayWib
+    );
+
+    if (shouldBeActive) {
       await supabase.from('ppdb_periods').update({ is_active: false }).eq('is_active', true);
     }
 
@@ -85,7 +108,7 @@ export async function POST(request: Request) {
         announcement_date: parsed.data.announcement_date || null,
         quota: totalQuota,
         pathway_quotas: pathwayQuotas,
-        is_active: parsed.data.is_active,
+        is_active: shouldBeActive,
       })
       .select('*')
       .single();
@@ -100,7 +123,7 @@ export async function POST(request: Request) {
           close_date: parsed.data.close_date,
           announcement_date: parsed.data.announcement_date || null,
           quota: totalQuota,
-          is_active: parsed.data.is_active,
+          is_active: shouldBeActive,
         })
         .select('*')
         .single();
@@ -109,6 +132,7 @@ export async function POST(request: Request) {
     }
 
     if (error) return NextResponse.json({ error: sanitizeApiError(error) }, { status: 500 });
+    await syncPpdbPeriodsBySchedule(supabase);
     return NextResponse.json({ period: data });
   } catch {
     return NextResponse.json({ error: 'Gagal membuat periode PPDB.' }, { status: 500 });
@@ -125,12 +149,25 @@ export async function PATCH(request: Request) {
 
   try {
     const body = await request.json();
+    const supabase = createSupabaseAdminClient();
+
+    if (body?.action === 'UPDATE_PATHWAY_DOCUMENTS') {
+      const normalized = normalizePathwayDocumentsConfig(body.pathway_documents);
+      const saved = await savePpdbPathwayDocuments(supabase, normalized);
+      if (!saved.ok) {
+        return NextResponse.json(
+          { error: saved.error || 'Gagal menyimpan standar dokumen persyaratan.' },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({ pathwayDocuments: normalized });
+    }
+
     const parsed = UpdatePeriodSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Data pembaruan periode tidak valid.' }, { status: 400 });
     }
 
-    const supabase = createSupabaseAdminClient();
     if (parsed.data.is_active === true) {
       await supabase.from('ppdb_periods').update({ is_active: false }).eq('is_active', true);
     }

@@ -100,7 +100,7 @@ export function LoginFormView({
         </div>
         <div className="space-y-1 min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-            {mode === 'login' ? 'Masuk Portal SIMMS' : 'Daftar Akun Baru'}
+            {mode === 'login' ? 'Masuk Portal SiM-M' : 'Daftar Akun Baru'}
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
             {mode === 'login'

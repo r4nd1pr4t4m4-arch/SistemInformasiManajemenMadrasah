@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, UserPlus } from 'lucide-react';
 import {
+  DEFAULT_PATHWAY_DOCUMENTS,
   DEFAULT_PATHWAY_QUOTAS,
-  PPDB_PATHWAYS,
+  mergePathwayDefinitions,
   type PathwayDocRequirement,
+  type PathwayDocumentsConfig,
   type PathwayQuotas,
   type PpdbPathwayCode,
 } from '@/lib/ppdb/pathways';
@@ -21,6 +23,7 @@ import {
   uploadFileToR2,
   validatePpdbForm,
   type ActivePeriod,
+  type AnnouncementPeriodInfo,
   type PpdbFormState,
   type PpdbTab,
   type UploadedDoc,
@@ -40,6 +43,10 @@ export function PpdbContent() {
   const [periodError, setPeriodError] = useState<string | null>(null);
   const [periodRetryTick, setPeriodRetryTick] = useState(0);
   const [activePeriod, setActivePeriod] = useState<ActivePeriod | null>(null);
+  const [announcementPeriod, setAnnouncementPeriod] = useState<AnnouncementPeriodInfo | null>(null);
+  const [pathwayDocuments, setPathwayDocuments] = useState<PathwayDocumentsConfig>(
+    DEFAULT_PATHWAY_DOCUMENTS
+  );
   const [selectedPathway, setSelectedPathway] = useState<PpdbPathwayCode | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
@@ -81,6 +88,10 @@ export function PpdbContent() {
       })
       .then((d) => {
         setActivePeriod(d?.period ?? null);
+        setAnnouncementPeriod(d?.announcementPeriod ?? null);
+        if (d?.pathwayDocuments) {
+          setPathwayDocuments(d.pathwayDocuments);
+        }
         setPeriodError(null);
       })
       .catch((err) => {
@@ -102,7 +113,8 @@ export function PpdbContent() {
 
   const hasActivePeriod = Boolean(activePeriod);
   const quotas: PathwayQuotas = activePeriod?.pathway_quotas || DEFAULT_PATHWAY_QUOTAS;
-  const activePathwayDef = PPDB_PATHWAYS.find((p) => p.code === selectedPathway) || null;
+  const pathways = mergePathwayDefinitions(pathwayDocuments);
+  const activePathwayDef = pathways.find((p) => p.code === selectedPathway) || null;
 
   function showFormError(message: string) {
     setErrorMsg(message);
@@ -328,12 +340,14 @@ export function PpdbContent() {
           loadingPeriod={loadingPeriod}
           periodError={periodError}
           activePeriod={activePeriod}
+          announcementPeriod={announcementPeriod}
           activeTab={activeTab}
           onRetry={() => {
             setLoadingPeriod(true);
             setPeriodError(null);
             setPeriodRetryTick((t) => t + 1);
           }}
+          onOpenCheckStatus={() => setActiveTab('cek')}
         />
 
         {activeTab === 'daftar' ? (
@@ -346,6 +360,7 @@ export function PpdbContent() {
           ) : (
             <div className="space-y-6">
               <PpdbPathwaySelector
+                pathways={pathways}
                 selectedPathway={selectedPathway}
                 activePathwayDef={activePathwayDef}
                 quotas={quotas}

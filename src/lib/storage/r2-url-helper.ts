@@ -8,6 +8,7 @@ export const PUBLIC_R2_MEDIA_PREFIXES = [
   'gallery/',
   'institution-logos/',
   'avatars/',
+  'ebooks/',
 ] as const;
 
 export function extractPublicMediaR2Key(rawUrl?: string | null): string | null {
@@ -73,5 +74,49 @@ export function isDirectR2OrKeyUrl(rawUrl?: string | null, prefixes?: readonly s
     return host.endsWith('.r2.dev') || host.endsWith('.r2.cloudflarestorage.com');
   } catch {
     return false;
+  }
+}
+
+export function extractGoogleDriveFileId(rawUrl?: string | null): string | null {
+  const trimmed = rawUrl?.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    const host = parsed.hostname.toLowerCase();
+    if (!host.includes('drive.google.com') && !host.includes('docs.google.com')) return null;
+
+    const fileMatch = /\/file\/d\/([A-Za-z0-9_-]{10,})/.exec(parsed.pathname);
+    if (fileMatch?.[1]) return fileMatch[1];
+
+    const idParam = parsed.searchParams.get('id');
+    if (idParam && /^[A-Za-z0-9_-]{10,}$/.test(idParam)) return idParam;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Menormalkan URL gambar (termasuk R2, Google Drive share link, data:image/, dan path internal)
+ * menjadi src <img> yang aman dan dapat dimuat di browser.
+ */
+export function normalizeSafeImageUrl(rawUrl?: string | null, maxWidth = 1200): string | null {
+  const trimmed = rawUrl?.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('data:image/')) return trimmed;
+
+  const driveId = extractGoogleDriveFileId(trimmed);
+  if (driveId) {
+    return `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w${maxWidth}`;
+  }
+
+  const proxied = toPublicMediaProxyUrl(trimmed);
+  if (proxied.startsWith('/')) return proxied;
+
+  try {
+    const parsed = new URL(proxied);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? proxied : null;
+  } catch {
+    return null;
   }
 }
